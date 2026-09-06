@@ -51,6 +51,8 @@ const ALLOWED_MESSAGE_TYPES = new Set([
   'SYNC_RECORDS_BATCH',
   'LIVE_RECORD_BROADCAST',
   'SYNC_CONFIG',
+  'PING',
+  'PONG',
 ]);
 
 export class PeerSyncManager {
@@ -65,8 +67,10 @@ export class PeerSyncManager {
     this.isSyncing = false;
     this.pendingChallengeNonce = null;
     this.authTimeoutTimer = null;
+    this.heartbeatTimer = null;
     this.connectionType = null; // 'direct' | 'relayed' | null
     this._hasRetriedUnavailableId = false;
+    this.initPromise = null;
   }
 
   on(event, callback) {
@@ -76,9 +80,28 @@ export class PeerSyncManager {
     this.listeners.get(event).push(callback);
   }
 
+  off(event, callback) {
+    if (!this.listeners.has(event)) return;
+    if (!callback) {
+      this.listeners.delete(event);
+      return;
+    }
+    const handlers = this.listeners.get(event);
+    const index = handlers.indexOf(callback);
+    if (index !== -1) {
+      handlers.splice(index, 1);
+    }
+  }
+
   emit(event, payload) {
     const handlers = this.listeners.get(event) || [];
-    handlers.forEach((fn) => fn(payload));
+    [...handlers].forEach((fn) => {
+      try {
+        fn(payload);
+      } catch (err) {
+        console.error(`Error in peerSync listener for ${event}:`, err);
+      }
+    });
   }
 
   /**
@@ -89,8 +112,12 @@ export class PeerSyncManager {
   async init(cryptoKey, customId = null) {
     this.cryptoKey = cryptoKey;
 
-    if (this.peer && !this.peer.destroyed) {
+    if (this.peer && !this.peer.destroyed && this.peer.open) {
       return this.myPeerId;
+    }
+
+    if (this.initPromise) {
+      return this.initPromise;
     }
 
     if (customId && !PEER_ID_REGEX.test(customId)) {
@@ -103,7 +130,7 @@ export class PeerSyncManager {
       { urls: 'stun:global.stun.twilio.com:3478' },
     ];
 
-    return new Promise((resolve, reject) => {
+    this.initPromise = new Promise((resolve, reject) => {
       // Check stored device ID or generate clean cryptographically random 12-char peer ID
       let peerId = customId;
       if (!peerId) {
@@ -119,6 +146,7 @@ export class PeerSyncManager {
           debug: 0, // Disable internal PeerJS logging
         });
       } catch (err) {
+        this.initPromise = null;
         return reject(new Error('Failed to create WebRTC peer instance'));
       }
 
@@ -126,6 +154,7 @@ export class PeerSyncManager {
         this.myPeerId = id;
         this._hasRetriedUnavailableId = false;
         setStoredDevicePeerId(id);
+        this.initPromise = null;
         this.emit('status', { state: 'ready', peerId: id });
         resolve(id);
       });
@@ -142,6 +171,7 @@ export class PeerSyncManager {
             setTimeout(() => {
               try { this.peer?.destroy(); } catch {}
               this.peer = null;
+              this.initPromise = null;
               this.init(cryptoKey, peerId).then(resolve).catch(reject);
             }, 1200);
             return;
@@ -149,6 +179,8 @@ export class PeerSyncManager {
           this._hasRetriedUnavailableId = false;
           const freshId = 'love-' + generateSecureNonce(6).toLowerCase().replace(/[^a-z0-9]/g, 'x');
           setStoredDevicePeerId(freshId);
+          this.peer = null;
+          this.initPromise = null;
           this.init(cryptoKey, freshId).then(resolve).catch(reject);
           return;
         }
@@ -156,6 +188,7 @@ export class PeerSyncManager {
         let msg = 'WebRTC peer connection error';
         if (err?.type === 'peer-unavailable') {
           msg = 'Partner device not found or offline. Ensure your partner has the app open on their screen.';
+          this._closeActiveConnection();
         } else if (err?.type === 'network') {
           msg = 'Network connection issue with signalling server.';
         }
@@ -163,27 +196,53 @@ export class PeerSyncManager {
       });
 
       this.peer.on('disconnected', () => {
-        this._resetAuthState();
+        // Signaling server disconnected (do not disrupt active P2P data connection)
         try {
-          this.peer?.reconnect();
+          if (this.peer && !this.peer.destroyed) {
+            this.peer.reconnect();
+          }
         } catch {
           // safe fail
         }
       });
     });
+
+    return this.initPromise;
   }
 
   /**
    * Connect to partner's Peer ID with strict input validation
    */
-  connectToPartner(partnerPeerId) {
-    if (!this.peer || this.peer.destroyed) {
-      throw new Error('Peer not initialized');
-    }
-
+  async connectToPartner(partnerPeerId) {
     const cleanId = (partnerPeerId || '').trim();
     if (!cleanId || !PEER_ID_REGEX.test(cleanId) || cleanId === this.myPeerId) {
       throw new Error('Invalid Partner Peer ID format');
+    }
+
+    // If already connected and authorized with this partner, avoid tearing down good session
+    if (this.isConnected && this.isAuthorized && this.activeConnection?.peer === cleanId) {
+      return;
+    }
+
+    if (!this.peer || this.peer.destroyed) {
+      if (this.cryptoKey) {
+        await this.init(this.cryptoKey);
+      } else {
+        throw new Error('Peer not initialized');
+      }
+    }
+
+    if (!this.peer.open && this.initPromise) {
+      await this.initPromise;
+    }
+
+    if (!this.peer || this.peer.destroyed || !this.peer.open) {
+      throw new Error('Peer signaling not ready');
+    }
+
+    // Close any previous stale connection before starting new attempt
+    if (this.activeConnection) {
+      this._closeActiveConnection();
     }
 
     this.emit('status', { state: 'connecting', partnerId: cleanId });
@@ -200,18 +259,39 @@ export class PeerSyncManager {
   }
 
   _setupConnection(conn, isInitiator) {
+    // Handle glare / concurrent incoming connections
     if (this.activeConnection && this.activeConnection !== conn) {
-      try {
-        this.activeConnection.close();
-      } catch {
-        // ignore
+      if (this.isConnected && this.isAuthorized) {
+        if (conn.peer === this.activeConnection.peer) {
+          // Partner reloaded or reconnected cleanly: replace old session
+          try { this.activeConnection.close(); } catch {}
+        } else {
+          // Different peer attempted to connect; reject to avoid hijack
+          try { conn.close(); } catch {}
+          return;
+        }
+      } else {
+        // Both devices called connectToPartner at the same time: deterministic tie-break by ID
+        if (this.myPeerId && conn.peer) {
+          if (this.myPeerId > conn.peer) {
+            // Larger ID yields to incoming connection
+            try { this.activeConnection.close(); } catch {}
+          } else {
+            // Smaller ID keeps outgoing, closes incoming
+            try { conn.close(); } catch {}
+            return;
+          }
+        } else {
+          try { this.activeConnection.close(); } catch {}
+        }
       }
     }
 
-    this._resetAuthState();
+    this._closeActiveConnection();
     this.activeConnection = conn;
 
     const handleOpen = async () => {
+      if (this.activeConnection !== conn) return;
       this.isConnected = true;
       this.emit('status', { state: 'connected', partnerId: conn.peer });
 
@@ -230,6 +310,7 @@ export class PeerSyncManager {
     }
 
     conn.on('data', async (data) => {
+      if (this.activeConnection !== conn) return;
       try {
         await this._handleMessage(data);
       } catch {
@@ -239,18 +320,14 @@ export class PeerSyncManager {
 
     conn.on('close', () => {
       if (this.activeConnection === conn) {
-        this._resetAuthState();
-        this.isConnected = false;
-        this.activeConnection = null;
+        this._closeActiveConnection();
         this.emit('status', { state: 'disconnected' });
       }
     });
 
     conn.on('error', () => {
       if (this.activeConnection === conn) {
-        this._resetAuthState();
-        this.isConnected = false;
-        this.activeConnection = null;
+        this._closeActiveConnection();
         this.emit('status', { state: 'error', error: 'Data channel error' });
       }
     });
@@ -260,8 +337,8 @@ export class PeerSyncManager {
     this._clearAuthTimeout();
     this.authTimeoutTimer = setTimeout(() => {
       if (!this.isAuthorized) {
+        this._closeActiveConnection();
         this.emit('status', { state: 'auth_failed', error: 'Authentication timed out after 30 seconds' });
-        this.disconnect();
       }
     }, AUTH_TIMEOUT_MS);
   }
@@ -273,12 +350,55 @@ export class PeerSyncManager {
     }
   }
 
+  _startHeartbeat() {
+    this._clearHeartbeat();
+    this.heartbeatTimer = setInterval(async () => {
+      if (!this.isConnected || !this.isAuthorized || !this.activeConnection?.open || !this.cryptoKey) {
+        this._clearHeartbeat();
+        return;
+      }
+      try {
+        const pingPayload = await encryptJSON({ type: 'PING' }, this.cryptoKey);
+        this.activeConnection.send({ protocol: 'SWEETHEART_V1', payload: pingPayload });
+      } catch {
+        this._closeActiveConnection();
+        this.emit('status', { state: 'disconnected' });
+      }
+    }, 15000);
+  }
+
+  _clearHeartbeat() {
+    if (this.heartbeatTimer) {
+      clearInterval(this.heartbeatTimer);
+      this.heartbeatTimer = null;
+    }
+  }
+
   _resetAuthState() {
     this._clearAuthTimeout();
+    this._clearHeartbeat();
     this.pendingChallengeNonce = null;
     this.isAuthorized = false;
     this.isSyncing = false;
     this.connectionType = null;
+  }
+
+  _closeActiveConnection() {
+    this._resetAuthState();
+    this.isConnected = false;
+    if (this.activeConnection) {
+      try {
+        this.activeConnection.close();
+      } catch {
+        // ignore
+      }
+      this.activeConnection = null;
+    }
+  }
+
+  closeConnection() {
+    this._closeActiveConnection();
+    this.emit('status', { state: 'disconnected' });
   }
 
   /**
@@ -355,11 +475,11 @@ export class PeerSyncManager {
       decrypted = await decryptJSON(ciphertext, iv, this.cryptoKey);
     } catch {
       // Decryption failed -> Mismatched passphrase or corrupted payload
+      this._closeActiveConnection();
       this.emit('status', {
         state: 'auth_failed',
         error: 'Passphrase mismatch! Please verify you both entered the exact same secret passphrase.',
       });
-      this.disconnect();
       return;
     }
 
@@ -381,7 +501,7 @@ export class PeerSyncManager {
       case 'CHALLENGE': {
         // Receiver receives challenge: generate counter-challenge nonce for mutual authentication
         if (typeof decrypted.nonce !== 'string' || decrypted.nonce.length < 16) {
-          this.disconnect();
+          this._closeActiveConnection();
           return;
         }
 
@@ -409,7 +529,7 @@ export class PeerSyncManager {
           typeof decrypted.counterNonce !== 'string'
         ) {
           // Replay or mismatch detected
-          this.disconnect();
+          this._closeActiveConnection();
           return;
         }
 
@@ -430,6 +550,7 @@ export class PeerSyncManager {
         this._clearAuthTimeout();
         this.isAuthorized = true;
         this.connectionType = await this.checkConnectionType();
+        this._startHeartbeat();
         this.emit('status', {
           state: 'authorized',
           partnerId: this.activeConnection?.peer,
@@ -447,7 +568,7 @@ export class PeerSyncManager {
           typeof decrypted.echo !== 'string' ||
           decrypted.echo !== this.pendingChallengeNonce
         ) {
-          this.disconnect();
+          this._closeActiveConnection();
           return;
         }
 
@@ -458,12 +579,27 @@ export class PeerSyncManager {
         this._clearAuthTimeout();
         this.isAuthorized = true;
         this.connectionType = await this.checkConnectionType();
+        this._startHeartbeat();
         this.emit('status', {
           state: 'authorized',
           partnerId: this.activeConnection?.peer,
           connectionType: this.connectionType,
           isDirect: this.connectionType === 'direct',
         });
+        break;
+      }
+
+      case 'PING': {
+        if (!this.isAuthorized) return;
+        try {
+          const pongPayload = await encryptJSON({ type: 'PONG' }, this.cryptoKey);
+          this.activeConnection?.send({ protocol: 'SWEETHEART_V1', payload: pongPayload });
+        } catch {}
+        break;
+      }
+
+      case 'PONG': {
+        // Heartbeat ack received, channel is healthy
         break;
       }
 
@@ -702,23 +838,26 @@ export class PeerSyncManager {
   }
 
   /**
-   * Full disconnect and state teardown
+   * Disconnect from current partner session (leaves local peer listening)
    */
   disconnect() {
-    this._resetAuthState();
-    try {
-      this.activeConnection?.close();
-    } catch {
-      // ignore
-    }
+    this.closeConnection();
+  }
+
+  /**
+   * Full teardown of local peer node and state (called on vault lock or app unload)
+   */
+  destroy() {
+    this._closeActiveConnection();
     try {
       this.peer?.destroy();
     } catch {
       // ignore
     }
     this.peer = null;
-    this.activeConnection = null;
-    this.isConnected = false;
+    this.myPeerId = null;
+    this.cryptoKey = null;
+    this.initPromise = null;
     this.emit('status', { state: 'disconnected' });
   }
 }
@@ -729,12 +868,22 @@ export const peerSync = new PeerSyncManager();
 if (typeof window !== 'undefined') {
   const cleanTeardown = () => {
     try {
-      peerSync.activeConnection?.close();
-      peerSync.peer?.destroy();
+      peerSync.destroy();
     } catch {}
   };
   window.addEventListener('beforeunload', cleanTeardown);
-  window.addEventListener('pagehide', cleanTeardown);
+
+  if (typeof document !== 'undefined') {
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') {
+        if (peerSync.peer && !peerSync.peer.destroyed && peerSync.peer.disconnected) {
+          try {
+            peerSync.peer.reconnect();
+          } catch {}
+        }
+      }
+    });
+  }
 }
 
 export default peerSync;

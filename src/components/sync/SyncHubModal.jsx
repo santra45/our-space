@@ -242,11 +242,19 @@ export function SyncHubModal({ isOpen, onClose }) {
             <div className="flex items-center gap-2">
               <span
                 className={`w-2.5 h-2.5 rounded-full ${
-                  isPartnerConnected ? 'bg-emerald-500 animate-pulse' : 'bg-amber-400'
+                  isPartnerConnected
+                    ? 'bg-emerald-500 animate-pulse'
+                    : syncStatus.state === 'connecting'
+                    ? 'bg-amber-500 animate-ping'
+                    : 'bg-amber-400'
                 }`}
               />
               <span className="text-xs font-bold text-slate-700">
-                {isPartnerConnected ? 'Connected to Partner' : 'Awaiting Connection'}
+                {isPartnerConnected
+                  ? 'Connected to Partner'
+                  : syncStatus.state === 'connecting'
+                  ? 'Connecting to Partner...'
+                  : 'Awaiting Connection'}
               </span>
             </div>
 

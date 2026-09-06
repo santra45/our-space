@@ -2,7 +2,7 @@
  * src/context/SyncContext.jsx
  * Connects peerSync lifecycle to React state and monitors URL hash for auto-pairing links
  */
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import peerSync from '../services/peerSync';
 import { useVault } from './VaultContext';
 import { parseInvite } from '../utils/invite';
@@ -23,10 +23,16 @@ export function SyncProvider({ children }) {
   const [lastSyncNotice, setLastSyncNotice] = useState(null);
   const [connectionType, setConnectionType] = useState(null); // 'direct' | 'relayed' | null
 
+  // Keep latest vaultConfig accessible to sync handlers without triggering effect re-runs
+  const vaultConfigRef = useRef(vaultConfig);
+  useEffect(() => {
+    vaultConfigRef.current = vaultConfig;
+  }, [vaultConfig]);
+
   // Initialize peer when vault is unlocked
   useEffect(() => {
     if (!isUnlocked || !cryptoKey) {
-      peerSync.disconnect();
+      peerSync.closeConnection();
       setMyPeerId(null);
       setSyncStatus({ state: 'disconnected' });
       setConnectionType(null);
@@ -36,7 +42,7 @@ export function SyncProvider({ children }) {
     let isMounted = true;
 
     // Listen to PeerSync events
-    peerSync.on('status', (status) => {
+    const handleStatus = (status) => {
       if (!isMounted) return;
       setSyncStatus(status);
       if (status.peerId) setMyPeerId(status.peerId);
@@ -47,20 +53,23 @@ export function SyncProvider({ children }) {
         } catch {}
       }
       if (status.state === 'authorized') {
-        if (vaultConfig) {
-          peerSync.syncVaultConfig(vaultConfig);
+        if (vaultConfigRef.current) {
+          peerSync.syncVaultConfig(vaultConfigRef.current);
         }
       }
       if (status.message) setLastSyncNotice(status.message);
       if (status.connectionType) setConnectionType(status.connectionType);
       if (status.state === 'disconnected') setConnectionType(null);
-    });
+    };
 
-    peerSync.on('data-updated', (data) => {
+    const handleDataUpdated = (data) => {
       if (!isMounted) return;
       setLastSyncNotice(`Synced ${data.count || 1} new item(s) from partner 💕`);
       setTimeout(() => setLastSyncNotice(null), 4000);
-    });
+    };
+
+    peerSync.on('status', handleStatus);
+    peerSync.on('data-updated', handleDataUpdated);
 
     // Start peer
     peerSync.init(cryptoKey).then((id) => {
@@ -102,7 +111,9 @@ export function SyncProvider({ children }) {
       if (targetPeerId && targetPeerId !== id) {
         setPartnerId(targetPeerId);
         setTimeout(() => {
-          peerSync.connectToPartner(targetPeerId);
+          if (isMounted) {
+            peerSync.connectToPartner(targetPeerId).catch(() => {});
+          }
         }, 800);
       }
     }).catch(() => {
@@ -111,11 +122,15 @@ export function SyncProvider({ children }) {
 
     return () => {
       isMounted = false;
+      peerSync.off('status', handleStatus);
+      peerSync.off('data-updated', handleDataUpdated);
     };
-  }, [isUnlocked, cryptoKey, vaultConfig]);
+  }, [isUnlocked, cryptoKey]);
 
   const connectToPartner = (id) => {
-    peerSync.connectToPartner(id);
+    peerSync.connectToPartner(id).catch((err) => {
+      console.warn('Connect error:', err);
+    });
   };
 
   const reconnectToPartner = () => {
@@ -126,7 +141,9 @@ export function SyncProvider({ children }) {
       } catch {}
     }
     if (target && target !== myPeerId) {
-      peerSync.connectToPartner(target);
+      peerSync.connectToPartner(target).catch((err) => {
+        console.warn('Reconnect error:', err);
+      });
     }
   };
 

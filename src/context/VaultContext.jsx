@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import db from '../db';
 import {
   generateSalt,
@@ -244,6 +244,11 @@ export function VaultProvider({ children }) {
     }
   };
 
+  const vaultConfigRef = useRef(vaultConfig);
+  useEffect(() => {
+    vaultConfigRef.current = vaultConfig;
+  }, [vaultConfig]);
+
   // Listen for live config updates from paired partner
   useEffect(() => {
     if (!isUnlocked || !cryptoKey) return;
@@ -254,7 +259,7 @@ export function VaultProvider({ children }) {
         const meta = await db.vaultMeta.get('config');
         if (!meta) return;
 
-        const currentLocal = vaultConfig || {};
+        const currentLocal = vaultConfigRef.current || {};
         const localUpdatedAt = currentLocal.updatedAt || 0;
         const remoteUpdatedAt = remoteConfig.updatedAt || 0;
 
@@ -291,7 +296,11 @@ export function VaultProvider({ children }) {
     };
 
     peerSync.on('config-synced', handleConfigSynced);
-  }, [isUnlocked, cryptoKey, vaultConfig]);
+
+    return () => {
+      peerSync.off('config-synced', handleConfigSynced);
+    };
+  }, [isUnlocked, cryptoKey]);
 
   /**
    * Lock vault, immediately terminate P2P connections, and clear sensitive memory state
@@ -301,7 +310,7 @@ export function VaultProvider({ children }) {
       sessionStorage.removeItem('sweetheart_session_key');
     } catch {}
     try {
-      peerSync.disconnect();
+      peerSync.destroy();
     } catch {
       // safe fail
     }
