@@ -4,7 +4,7 @@
  */
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Mail, Lock, Unlock, Plus, Clock, Sparkles, X, Heart } from 'lucide-react';
+import { Mail, Lock, Unlock, Plus, Clock, Sparkles, X, Heart, Trash2 } from 'lucide-react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import db from '../../db';
 import { useVault } from '../../context/VaultContext';
@@ -107,6 +107,21 @@ export function SecretCapsule() {
     }
   };
 
+  const handleDeleteLetter = async (e, id) => {
+    if (e) e.stopPropagation();
+    if (!window.confirm('Delete this love letter?')) return;
+    tap();
+    const existing = await db.letters.get(id);
+    if (existing) {
+      const updated = { ...existing, deleted: true, updatedAt: Date.now() };
+      await db.letters.put(updated);
+      peerSync.broadcastLiveRecord('letters', updated);
+    }
+    if (activeReadingLetter?.id === id) {
+      setActiveReadingLetter(null);
+    }
+  };
+
   return (
     <div className="space-y-4">
       {/* Header bar */}
@@ -170,9 +185,9 @@ export function SecretCapsule() {
               }`}
             >
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-3 flex-1 min-w-0 pr-2">
                   <div
-                    className={`w-10 h-10 rounded-2xl flex items-center justify-center shadow-sm ${
+                    className={`w-10 h-10 rounded-2xl flex items-center justify-center shadow-sm flex-shrink-0 ${
                       letter.isLocked
                         ? 'bg-slate-200 text-slate-500'
                         : 'bg-blush-100 text-blush-600'
@@ -180,15 +195,15 @@ export function SecretCapsule() {
                   >
                     {letter.isLocked ? <Lock className="w-5 h-5" /> : <Mail className="w-5 h-5" />}
                   </div>
-                  <div>
-                    <h4 className="text-sm font-bold text-slate-800">{letter.title}</h4>
+                  <div className="min-w-0">
+                    <h4 className="text-sm font-bold text-slate-800 truncate">{letter.title}</h4>
                     <p className="text-[11px] text-slate-400">
                       Written on {formatDatePretty(letter.updatedAt)}
                     </p>
                   </div>
                 </div>
 
-                <div>
+                <div className="flex items-center gap-2 flex-shrink-0">
                   {letter.isLocked ? (
                     <div className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-slate-200/80 text-slate-600 text-[10px] font-bold">
                       <Clock className="w-3 h-3" />
@@ -199,6 +214,14 @@ export function SecretCapsule() {
                       Read Letter 💌
                     </span>
                   )}
+                  <button
+                    type="button"
+                    onClick={(e) => handleDeleteLetter(e, letter.id)}
+                    className="w-8 h-8 rounded-xl flex items-center justify-center text-slate-300 hover:text-rose-500 hover:bg-rose-50 transition ml-1"
+                    title="Delete love letter"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
                 </div>
               </div>
             </GlassCard>
@@ -211,6 +234,7 @@ export function SecretCapsule() {
         <LetterEnvelope
           letter={activeReadingLetter}
           onClose={() => setActiveReadingLetter(null)}
+          onDelete={() => handleDeleteLetter(null, activeReadingLetter.id)}
         />
       )}
 

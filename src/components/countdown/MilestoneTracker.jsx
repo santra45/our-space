@@ -4,7 +4,7 @@
  */
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Heart, Calendar, Sparkles, Plus, Trophy, Award } from 'lucide-react';
+import { Heart, Calendar, Sparkles, Plus, Trophy, Award, Trash2 } from 'lucide-react';
 import { useVault } from '../../context/VaultContext';
 import { useLiveCounter } from '../../hooks/useLiveCounter';
 import { calculateNextMilestone, formatDatePretty } from '../../utils/dateHelpers';
@@ -86,6 +86,17 @@ export function MilestoneTracker() {
     setIsAddingMilestone(false);
     celebration();
     fireHeartConfetti();
+  };
+
+  const handleDeleteMilestone = async (id) => {
+    if (!window.confirm('Delete this milestone?')) return;
+    tap();
+    const existing = await db.milestones.get(id);
+    if (existing) {
+      const updated = { ...existing, deleted: true, updatedAt: Date.now() };
+      await db.milestones.put(updated);
+      peerSync.broadcastLiveRecord('milestones', updated);
+    }
   };
 
   return (
@@ -279,15 +290,25 @@ export function MilestoneTracker() {
             decryptedMilestones.map((m) => (
               <div
                 key={m.id}
-                className="flex items-center justify-between p-3 bg-white/60 rounded-2xl border border-blush-100 hover:bg-white/80 transition"
+                className="flex items-center justify-between p-3 bg-white/60 rounded-2xl border border-blush-100 hover:bg-white/80 transition group"
               >
-                <div className="flex items-center gap-2.5">
-                  <div className="w-2 h-2 rounded-full bg-blush-400" />
-                  <span className="text-xs font-bold text-slate-700">{m.title}</span>
+                <div className="flex items-center gap-2.5 flex-1 min-w-0 pr-2">
+                  <div className="w-2 h-2 rounded-full bg-blush-400 flex-shrink-0" />
+                  <span className="text-xs font-bold text-slate-700 truncate">{m.title}</span>
                 </div>
-                <span className="text-[11px] font-medium text-slate-400">
-                  {formatDatePretty(m.date)}
-                </span>
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  <span className="text-[11px] font-medium text-slate-400">
+                    {formatDatePretty(m.date)}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteMilestone(m.id)}
+                    className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-300 hover:text-rose-500 hover:bg-rose-50 transition"
+                    title="Delete milestone"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
               </div>
             ))
           )}

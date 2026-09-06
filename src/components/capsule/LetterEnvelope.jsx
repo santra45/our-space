@@ -4,12 +4,12 @@
  */
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Heart, X, Sparkles, Calendar } from 'lucide-react';
+import { Heart, X, Sparkles, Calendar, Trash2 } from 'lucide-react';
 import { formatDatePretty } from '../../utils/dateHelpers';
 import { useHaptics } from '../../hooks/useHaptics';
 import { fireHeartConfetti } from '../common/ConfettiBurst';
 
-export function LetterEnvelope({ letter, onClose }) {
+export function LetterEnvelope({ letter, onClose, onDelete }) {
   const [isOpen, setIsOpen] = useState(false);
   const { tap, celebration } = useHaptics();
 
@@ -97,7 +97,20 @@ export function LetterEnvelope({ letter, onClose }) {
 
             <div className="mt-6 pt-4 border-t border-amber-200/50 flex justify-between items-center text-xs text-slate-400 font-sans">
               <span>With all my love forever 💕</span>
-              <span>{formatDatePretty(letter.date || letter.updatedAt)}</span>
+              <div className="flex items-center gap-3">
+                <span>{formatDatePretty(letter.date || letter.updatedAt)}</span>
+                {onDelete && (
+                  <button
+                    type="button"
+                    onClick={onDelete}
+                    className="inline-flex items-center gap-1 text-xs text-slate-400 hover:text-rose-500 transition px-2 py-1 rounded-lg hover:bg-rose-50"
+                    title="Delete letter"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Delete</span>
+                  </button>
+                )}
+              </div>
             </div>
           </motion.div>
         )}

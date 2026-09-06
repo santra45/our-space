@@ -4,7 +4,7 @@
  */
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { CheckSquare, Square, Plus, Check, Sparkles, Trophy, X } from 'lucide-react';
+import { CheckSquare, Square, Plus, Check, Sparkles, Trophy, X, Trash2 } from 'lucide-react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import db from '../../db';
 import { useVault } from '../../context/VaultContext';
@@ -99,6 +99,18 @@ export function BucketList() {
     if (isNowCompleted) {
       celebration();
       fireCelebrationBurst();
+    }
+  };
+
+  const handleDeleteItem = async (e, id) => {
+    e.stopPropagation();
+    if (!window.confirm('Delete this dream from your bucket list?')) return;
+    tap();
+    const existing = await db.bucketList.get(id);
+    if (existing) {
+      const updated = { ...existing, deleted: true, updatedAt: Date.now() };
+      await db.bucketList.put(updated);
+      peerSync.broadcastLiveRecord('bucketList', updated);
     }
   };
 
@@ -219,15 +231,15 @@ export function BucketList() {
             key={item.id}
             layout
             onClick={() => toggleComplete(item)}
-            className={`p-3.5 rounded-2xl border transition flex items-center justify-between cursor-pointer select-none relative overflow-hidden ${
+            className={`p-3.5 rounded-2xl border transition flex items-center justify-between cursor-pointer select-none relative overflow-hidden group ${
               item.completed
                 ? 'bg-matcha-50/70 border-matcha-200/80'
                 : 'bg-white/80 border-blush-100 hover:border-blush-300'
             }`}
           >
-            <div className="flex items-center gap-3 pr-2">
+            <div className="flex items-center gap-3 pr-2 flex-1 min-w-0">
               <div
-                className={`w-6 h-6 rounded-xl flex items-center justify-center transition ${
+                className={`w-6 h-6 rounded-xl flex items-center justify-center transition flex-shrink-0 ${
                   item.completed
                     ? 'bg-matcha-300 text-emerald-900 shadow-sm'
                     : 'border-2 border-blush-300 bg-white'
@@ -236,9 +248,9 @@ export function BucketList() {
                 {item.completed && <Check className="w-3.5 h-3.5 stroke-[3]" />}
               </div>
 
-              <div>
+              <div className="min-w-0">
                 <span
-                  className={`text-xs font-semibold leading-snug transition-all ${
+                  className={`text-xs font-semibold leading-snug transition-all block truncate ${
                     item.completed ? 'line-through text-slate-400' : 'text-slate-700'
                   }`}
                 >
@@ -250,16 +262,28 @@ export function BucketList() {
               </div>
             </div>
 
-            {/* Completed Stamp Effect */}
-            {item.completed && (
-              <motion.div
-                initial={{ scale: 2, rotate: -20, opacity: 0 }}
-                animate={{ scale: 1, rotate: -8, opacity: 0.85 }}
-                className="border-2 border-emerald-600 text-emerald-700 uppercase font-black text-[10px] px-2 py-0.5 rounded-md tracking-wider pointer-events-none"
+            <div className="flex items-center gap-2 flex-shrink-0">
+              {/* Completed Stamp Effect */}
+              {item.completed && (
+                <motion.div
+                  initial={{ scale: 2, rotate: -20, opacity: 0 }}
+                  animate={{ scale: 1, rotate: -8, opacity: 0.85 }}
+                  className="border-2 border-emerald-600 text-emerald-700 uppercase font-black text-[10px] px-2 py-0.5 rounded-md tracking-wider pointer-events-none"
+                >
+                  COMPLETED
+                </motion.div>
+              )}
+
+              {/* Delete Button */}
+              <button
+                type="button"
+                onClick={(e) => handleDeleteItem(e, item.id)}
+                className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-300 hover:text-rose-500 hover:bg-rose-50 transition"
+                title="Delete dream"
               >
-                COMPLETED
-              </motion.div>
-            )}
+                <Trash2 className="w-3.5 h-3.5" />
+              </button>
+            </div>
           </motion.div>
         ))}
       </div>
