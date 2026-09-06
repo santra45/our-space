@@ -10,11 +10,25 @@ export const PEER_ID_REGEX = /^[a-zA-Z0-9_-]{4,64}$/;
  * Builds the full invite URL containing peer ID and vault salt in the URL hash.
  * Fragments (#) are never sent to the web server, preserving zero knowledge.
  */
-export function buildInviteUrl(peerId, salt, baseUrl = null) {
+export function buildInviteUrl(peerId, salt, optionsOrBaseUrl = null) {
+  let baseUrl = null;
+  let startDate = null;
+  let coupleNames = null;
+
+  if (typeof optionsOrBaseUrl === 'string') {
+    baseUrl = optionsOrBaseUrl;
+  } else if (optionsOrBaseUrl && typeof optionsOrBaseUrl === 'object') {
+    baseUrl = optionsOrBaseUrl.baseUrl;
+    startDate = optionsOrBaseUrl.startDate;
+    coupleNames = optionsOrBaseUrl.coupleNames;
+  }
+
   const base = baseUrl || (typeof window !== 'undefined' ? `${window.location.origin}${window.location.pathname}` : 'https://ourspace.app/');
   const hashParams = new URLSearchParams();
   if (peerId) hashParams.set('connect', peerId);
   if (salt) hashParams.set('salt', salt);
+  if (startDate) hashParams.set('start', startDate);
+  if (coupleNames) hashParams.set('names', coupleNames);
   return `${base}#${hashParams.toString()}`;
 }
 
@@ -26,7 +40,7 @@ export function buildInviteUrl(peerId, salt, baseUrl = null) {
  * 4. Composite code (love-123.abc)
  * 5. Plain Peer ID (love-123)
  * @param {string} input
- * @returns {{ partnerPeerId: string, salt: string | null } | null}
+ * @returns {{ partnerPeerId: string, salt: string | null, startDate: string | null, coupleNames: string | null } | null}
  */
 export function parseInvite(input) {
   if (!input || typeof input !== 'string') return null;
@@ -39,10 +53,14 @@ export function parseInvite(input) {
     const params = new URLSearchParams(hashPart);
     const connect = params.get('connect');
     const salt = params.get('salt');
+    const start = params.get('start');
+    const names = params.get('names');
     if (connect && PEER_ID_REGEX.test(connect.trim())) {
       return {
         partnerPeerId: connect.trim(),
         salt: salt ? salt.trim() : null,
+        startDate: start ? start.trim() : null,
+        coupleNames: names ? names.trim() : null,
       };
     }
   }
@@ -53,10 +71,14 @@ export function parseInvite(input) {
     const params = new URLSearchParams(cleanQuery);
     const connect = params.get('connect');
     const salt = params.get('salt');
+    const start = params.get('start');
+    const names = params.get('names');
     if (connect && PEER_ID_REGEX.test(connect.trim())) {
       return {
         partnerPeerId: connect.trim(),
         salt: salt ? salt.trim() : null,
+        startDate: start ? start.trim() : null,
+        coupleNames: names ? names.trim() : null,
       };
     }
   }

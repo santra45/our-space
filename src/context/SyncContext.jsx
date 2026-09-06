@@ -10,9 +10,15 @@ import { parseInvite } from '../utils/invite';
 const SyncContext = createContext(null);
 
 export function SyncProvider({ children }) {
-  const { cryptoKey, isUnlocked } = useVault();
+  const { cryptoKey, isUnlocked, vaultConfig } = useVault();
   const [myPeerId, setMyPeerId] = useState(null);
-  const [partnerId, setPartnerId] = useState(null);
+  const [partnerId, setPartnerId] = useState(() => {
+    try {
+      return localStorage.getItem('sweetheart_paired_partner_id') || null;
+    } catch {
+      return null;
+    }
+  });
   const [syncStatus, setSyncStatus] = useState({ state: 'disconnected' });
   const [lastSyncNotice, setLastSyncNotice] = useState(null);
   const [connectionType, setConnectionType] = useState(null); // 'direct' | 'relayed' | null
@@ -22,7 +28,6 @@ export function SyncProvider({ children }) {
     if (!isUnlocked || !cryptoKey) {
       peerSync.disconnect();
       setMyPeerId(null);
-      setPartnerId(null);
       setSyncStatus({ state: 'disconnected' });
       setConnectionType(null);
       return;
@@ -35,7 +40,17 @@ export function SyncProvider({ children }) {
       if (!isMounted) return;
       setSyncStatus(status);
       if (status.peerId) setMyPeerId(status.peerId);
-      if (status.partnerId) setPartnerId(status.partnerId);
+      if (status.partnerId) {
+        setPartnerId(status.partnerId);
+        try {
+          localStorage.setItem('sweetheart_paired_partner_id', status.partnerId);
+        } catch {}
+      }
+      if (status.state === 'authorized') {
+        if (vaultConfig) {
+          peerSync.syncVaultConfig(vaultConfig);
+        }
+      }
       if (status.message) setLastSyncNotice(status.message);
       if (status.connectionType) setConnectionType(status.connectionType);
       if (status.state === 'disconnected') setConnectionType(null);
@@ -74,7 +89,18 @@ export function SyncProvider({ children }) {
         } catch {}
       }
 
+      // If no invite in hash or session, check stored paired partner
+      if (!targetPeerId) {
+        try {
+          const savedPartner = localStorage.getItem('sweetheart_paired_partner_id');
+          if (savedPartner && savedPartner !== id) {
+            targetPeerId = savedPartner.trim();
+          }
+        } catch {}
+      }
+
       if (targetPeerId && targetPeerId !== id) {
+        setPartnerId(targetPeerId);
         setTimeout(() => {
           peerSync.connectToPartner(targetPeerId);
         }, 800);
@@ -86,10 +112,31 @@ export function SyncProvider({ children }) {
     return () => {
       isMounted = false;
     };
-  }, [isUnlocked, cryptoKey]);
+  }, [isUnlocked, cryptoKey, vaultConfig]);
 
   const connectToPartner = (id) => {
     peerSync.connectToPartner(id);
+  };
+
+  const reconnectToPartner = () => {
+    let target = partnerId;
+    if (!target) {
+      try {
+        target = localStorage.getItem('sweetheart_paired_partner_id');
+      } catch {}
+    }
+    if (target && target !== myPeerId) {
+      peerSync.connectToPartner(target);
+    }
+  };
+
+  const unpairPartner = () => {
+    try {
+      localStorage.removeItem('sweetheart_paired_partner_id');
+      sessionStorage.removeItem('pending_partner_connect');
+    } catch {}
+    setPartnerId(null);
+    peerSync.disconnect();
   };
 
   const syncNow = () => {
@@ -108,6 +155,8 @@ export function SyncProvider({ children }) {
         syncStatus,
         lastSyncNotice,
         connectToPartner,
+        reconnectToPartner,
+        unpairPartner,
         syncNow,
         disconnect,
         connectionType,

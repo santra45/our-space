@@ -95,6 +95,7 @@ export function LockScreen() {
       if (inviteData?.partnerPeerId) {
         try {
           sessionStorage.setItem('pending_partner_connect', inviteData.partnerPeerId);
+          localStorage.setItem('sweetheart_paired_partner_id', inviteData.partnerPeerId);
         } catch {}
       }
       setPassphrase('');
@@ -135,6 +136,8 @@ export function LockScreen() {
 
     let saltToUse = inviteData?.salt;
     let partnerIdToConnect = inviteData?.partnerPeerId;
+    let startDateFromInvite = inviteData?.startDate;
+    let coupleNamesFromInvite = inviteData?.coupleNames;
 
     // If invite data was not from URL hash, parse user's manual input
     if (!saltToUse) {
@@ -147,18 +150,24 @@ export function LockScreen() {
       }
       saltToUse = parsed.salt;
       partnerIdToConnect = parsed.partnerPeerId;
+      startDateFromInvite = parsed.startDate;
+      coupleNamesFromInvite = parsed.coupleNames;
     }
 
     setLoading(true);
     tap();
 
-    const success = await initializeFromPartnerInvite(passphrase, saltToUse);
+    const success = await initializeFromPartnerInvite(passphrase, saltToUse, {
+      startDate: startDateFromInvite,
+      coupleNames: coupleNamesFromInvite,
+    });
     setLoading(false);
 
     if (success) {
       if (partnerIdToConnect) {
         try {
           sessionStorage.setItem('pending_partner_connect', partnerIdToConnect);
+          localStorage.setItem('sweetheart_paired_partner_id', partnerIdToConnect);
         } catch {}
       }
       setPassphrase('');

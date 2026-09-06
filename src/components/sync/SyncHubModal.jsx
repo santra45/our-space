@@ -39,11 +39,13 @@ export function SyncHubModal({ isOpen, onClose }) {
     syncStatus,
     isPartnerConnected,
     connectToPartner,
+    reconnectToPartner,
+    unpairPartner,
     syncNow,
     isDirectP2P,
     connectionType,
   } = useSync();
-  const { vaultSalt } = useVault();
+  const { vaultSalt, vaultConfig } = useVault();
   const [partnerInputId, setPartnerInputId] = useState('');
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [copySuccess, setCopySuccess] = useState(false);
@@ -53,7 +55,10 @@ export function SyncHubModal({ isOpen, onClose }) {
   const qrCanvasRef = useRef(null);
   const { tap, celebration } = useHaptics();
 
-  const shareUrl = buildInviteUrl(myPeerId, vaultSalt);
+  const shareUrl = buildInviteUrl(myPeerId, vaultSalt, {
+    startDate: vaultConfig?.startDate,
+    coupleNames: vaultConfig?.coupleNames,
+  });
 
   // Render QR Code on canvas
   useEffect(() => {
@@ -274,6 +279,49 @@ export function SyncHubModal({ isOpen, onClose }) {
                   <span>Relayed 🛡️ (Encrypted E2EE)</span>
                 </span>
               )}
+            </div>
+          )}
+
+          {/* Paired Partner Info & Reconnect Button */}
+          {partnerId && (
+            <div className="pt-2 border-t border-blush-100/70 text-[11px] flex items-center justify-between">
+              <div className="flex items-center gap-1.5 overflow-hidden">
+                <span className="text-slate-500 font-medium">Partner:</span>
+                <span className="font-mono text-slate-700 font-bold truncate max-w-[130px]">{partnerId}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                {!isPartnerConnected && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      tap();
+                      reconnectToPartner();
+                    }}
+                    className="inline-flex items-center gap-1 font-bold text-blush-600 hover:text-blush-700 underline text-xs"
+                  >
+                    <RefreshCw className="w-3 h-3" />
+                    <span>Reconnect</span>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (window.confirm('Unpair from this partner device?')) {
+                      unpairPartner();
+                    }
+                  }}
+                  className="text-slate-400 hover:text-slate-600 text-[10px]"
+                >
+                  Unpair
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* If error status */}
+          {!isPartnerConnected && syncStatus.state === 'error' && syncStatus.error && (
+            <div className="pt-1.5 text-[10px] text-amber-700 bg-amber-50 p-2 rounded-xl border border-amber-200/60 leading-tight">
+              {syncStatus.error}
             </div>
           )}
         </div>

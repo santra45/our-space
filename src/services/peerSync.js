@@ -50,6 +50,7 @@ const ALLOWED_MESSAGE_TYPES = new Set([
   'SYNC_REQUEST_RECORDS',
   'SYNC_RECORDS_BATCH',
   'LIVE_RECORD_BROADCAST',
+  'SYNC_CONFIG',
 ]);
 
 export class PeerSyncManager {
@@ -65,6 +66,7 @@ export class PeerSyncManager {
     this.pendingChallengeNonce = null;
     this.authTimeoutTimer = null;
     this.connectionType = null; // 'direct' | 'relayed' | null
+    this._hasRetriedUnavailableId = false;
   }
 
   on(event, callback) {
@@ -122,6 +124,7 @@ export class PeerSyncManager {
 
       this.peer.on('open', (id) => {
         this.myPeerId = id;
+        this._hasRetriedUnavailableId = false;
         setStoredDevicePeerId(id);
         this.emit('status', { state: 'ready', peerId: id });
         resolve(id);
@@ -132,8 +135,18 @@ export class PeerSyncManager {
       });
 
       this.peer.on('error', (err) => {
-        // If previous socket didn't close cleanly on reload, roll a fresh ID
+        // If previous socket didn't close cleanly on reload, wait briefly and retry once with same ID
         if (err?.type === 'unavailable-id') {
+          if (!this._hasRetriedUnavailableId) {
+            this._hasRetriedUnavailableId = true;
+            setTimeout(() => {
+              try { this.peer?.destroy(); } catch {}
+              this.peer = null;
+              this.init(cryptoKey, peerId).then(resolve).catch(reject);
+            }, 1200);
+            return;
+          }
+          this._hasRetriedUnavailableId = false;
           const freshId = 'love-' + generateSecureNonce(6).toLowerCase().replace(/[^a-z0-9]/g, 'x');
           setStoredDevicePeerId(freshId);
           this.init(cryptoKey, freshId).then(resolve).catch(reject);
@@ -188,6 +201,11 @@ export class PeerSyncManager {
 
   _setupConnection(conn, isInitiator) {
     if (this.activeConnection) {
+      if (this.isConnected && this.isAuthorized && this.activeConnection.peer === conn.peer) {
+        // Redundant incoming connection from already connected/authorized partner: safely ignore
+        try { conn.close(); } catch {}
+        return;
+      }
       try {
         this.activeConnection.close();
       } catch {
@@ -412,6 +430,7 @@ export class PeerSyncManager {
         this.connectionType = await this.checkConnectionType();
         this.emit('status', {
           state: 'authorized',
+          partnerId: this.activeConnection?.peer,
           connectionType: this.connectionType,
           isDirect: this.connectionType === 'direct',
         });
@@ -439,9 +458,16 @@ export class PeerSyncManager {
         this.connectionType = await this.checkConnectionType();
         this.emit('status', {
           state: 'authorized',
+          partnerId: this.activeConnection?.peer,
           connectionType: this.connectionType,
           isDirect: this.connectionType === 'direct',
         });
+        break;
+      }
+
+      case 'SYNC_CONFIG': {
+        if (!this.isAuthorized) return;
+        this.emit('config-synced', decrypted.config);
         break;
       }
 
@@ -651,6 +677,29 @@ export class PeerSyncManager {
   }
 
   /**
+   * Syncs relationship anniversary start date & couple names across devices
+   */
+  async syncVaultConfig(config) {
+    if (!this.isConnected || !this.isAuthorized || !this.cryptoKey) return;
+    try {
+      const payload = await encryptJSON(
+        {
+          type: 'SYNC_CONFIG',
+          config: {
+            coupleNames: config?.coupleNames || '',
+            startDate: config?.startDate || '',
+            updatedAt: config?.updatedAt || Date.now(),
+          },
+        },
+        this.cryptoKey
+      );
+      this.activeConnection?.send({ protocol: 'SWEETHEART_V1', payload });
+    } catch {
+      // safe fail
+    }
+  }
+
+  /**
    * Full disconnect and state teardown
    */
   disconnect() {
@@ -673,4 +722,17 @@ export class PeerSyncManager {
 }
 
 export const peerSync = new PeerSyncManager();
+
+// Clean up WebRTC signaling socket on browser tab close or refresh to free peer ID immediately
+if (typeof window !== 'undefined') {
+  const cleanTeardown = () => {
+    try {
+      peerSync.activeConnection?.close();
+      peerSync.peer?.destroy();
+    } catch {}
+  };
+  window.addEventListener('beforeunload', cleanTeardown);
+  window.addEventListener('pagehide', cleanTeardown);
+}
+
 export default peerSync;

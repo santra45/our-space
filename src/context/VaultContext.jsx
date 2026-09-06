@@ -106,12 +106,17 @@ export function VaultProvider({ children }) {
 
       const key = await deriveKeyFromPassphrase(passphrase, salt);
 
+      const coupleNames = initialSettings.coupleNames || 'Us';
+      const startDate = initialSettings.startDate || new Date().toISOString().split('T')[0];
+      const updatedAt = initialSettings.startDate ? Date.now() : 0;
+
       const canaryEncrypted = await encryptJSON(
         {
           token: CANARY_SECRET,
-          coupleNames: initialSettings.coupleNames || 'Us',
-          startDate: initialSettings.startDate || new Date().toISOString().split('T')[0],
+          coupleNames,
+          startDate,
           createdAt: Date.now(),
+          updatedAt,
         },
         key
       );
@@ -121,7 +126,7 @@ export function VaultProvider({ children }) {
         salt,
         canary: canaryEncrypted.ciphertext,
         canaryIv: canaryEncrypted.iv,
-        updatedAt: Date.now(),
+        updatedAt,
       };
 
       await db.vaultMeta.put(meta);
@@ -129,8 +134,9 @@ export function VaultProvider({ children }) {
       setVaultSalt(salt);
       setCryptoKey(key);
       setVaultConfig({
-        coupleNames: initialSettings.coupleNames || 'Us',
-        startDate: initialSettings.startDate || new Date().toISOString().split('T')[0],
+        coupleNames,
+        startDate,
+        updatedAt,
       });
       setIsVaultInitialized(true);
       setIsUnlocked(true);
@@ -171,6 +177,7 @@ export function VaultProvider({ children }) {
         setVaultConfig({
           coupleNames: decrypted.coupleNames || 'Us',
           startDate: decrypted.startDate || '',
+          updatedAt: decrypted.updatedAt || meta.updatedAt || 0,
         });
         setIsUnlocked(true);
         return true;
@@ -191,13 +198,12 @@ export function VaultProvider({ children }) {
     if (!cryptoKey) return;
     try {
       const meta = await db.vaultMeta.get('config');
-      const updatedConfig = { ...vaultConfig, ...newSettings };
+      const updatedConfig = { ...vaultConfig, ...newSettings, updatedAt: Date.now() };
       
       const canaryEncrypted = await encryptJSON(
         {
           token: CANARY_SECRET,
           ...updatedConfig,
-          updatedAt: Date.now(),
         },
         cryptoKey
       );
@@ -206,14 +212,66 @@ export function VaultProvider({ children }) {
         ...meta,
         canary: canaryEncrypted.ciphertext,
         canaryIv: canaryEncrypted.iv,
-        updatedAt: Date.now(),
+        updatedAt: updatedConfig.updatedAt,
       });
 
       setVaultConfig(updatedConfig);
+
+      // Broadcast live to connected partner over P2P!
+      peerSync.syncVaultConfig(updatedConfig);
     } catch {
       // safe fail
     }
   };
+
+  // Listen for live config updates from paired partner
+  useEffect(() => {
+    if (!isUnlocked || !cryptoKey) return;
+
+    const handleConfigSynced = async (remoteConfig) => {
+      if (!remoteConfig || !remoteConfig.startDate) return;
+      try {
+        const meta = await db.vaultMeta.get('config');
+        if (!meta) return;
+
+        const currentLocal = vaultConfig || {};
+        const localUpdatedAt = currentLocal.updatedAt || 0;
+        const remoteUpdatedAt = remoteConfig.updatedAt || 0;
+
+        const isLocalDefault = !currentLocal.startDate || currentLocal.startDate === new Date().toISOString().split('T')[0];
+
+        if (remoteUpdatedAt >= localUpdatedAt || isLocalDefault) {
+          const merged = {
+            ...currentLocal,
+            coupleNames: remoteConfig.coupleNames || currentLocal.coupleNames || 'Us',
+            startDate: remoteConfig.startDate,
+            updatedAt: Math.max(remoteUpdatedAt, Date.now()),
+          };
+
+          const canaryEncrypted = await encryptJSON(
+            {
+              token: CANARY_SECRET,
+              ...merged,
+            },
+            cryptoKey
+          );
+
+          await db.vaultMeta.put({
+            ...meta,
+            canary: canaryEncrypted.ciphertext,
+            canaryIv: canaryEncrypted.iv,
+            updatedAt: merged.updatedAt,
+          });
+
+          setVaultConfig(merged);
+        }
+      } catch (err) {
+        console.error('Failed to apply synced config:', err);
+      }
+    };
+
+    peerSync.on('config-synced', handleConfigSynced);
+  }, [isUnlocked, cryptoKey, vaultConfig]);
 
   /**
    * Lock vault, immediately terminate P2P connections, and clear sensitive memory state
