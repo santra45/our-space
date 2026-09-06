@@ -1,31 +1,89 @@
 /**
  * src/components/layout/LockScreen.jsx
- * Zero-knowledge vault unlock and initial pair/setup screen
+ * Zero-knowledge vault unlock, partner pairing, and initial setup screen
  */
-import React, { useState } from 'react';
-import { motion } from 'framer-motion';
-import { Heart, Lock, KeyRound, Sparkles, Eye, EyeOff, ShieldCheck } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import {
+  Heart,
+  Lock,
+  KeyRound,
+  Sparkles,
+  Eye,
+  EyeOff,
+  ShieldCheck,
+  Users,
+  Link2,
+  UserCheck,
+} from 'lucide-react';
 import { useVault } from '../../context/VaultContext';
 import { MIN_PASSPHRASE_LENGTH } from '../../services/crypto';
+import { parseInvite } from '../../utils/invite';
 import GlassCard from '../common/GlassCard';
 import BouncyButton from '../common/BouncyButton';
 import { fireHeartConfetti } from '../common/ConfettiBurst';
 import { useHaptics } from '../../hooks/useHaptics';
 
 export function LockScreen() {
-  const { isVaultInitialized, unlockVault, initializeVault, error } = useVault();
+  const {
+    isVaultInitialized,
+    unlockVault,
+    initializeVault,
+    initializeFromPartnerInvite,
+    vaultSalt,
+    error: vaultError,
+  } = useVault();
+
   const [passphrase, setPassphrase] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [coupleNames, setCoupleNames] = useState('');
   const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
-  const [isSettingUp, setIsSettingUp] = useState(!isVaultInitialized);
+  const [partnerInviteInput, setPartnerInviteInput] = useState('');
+  const [inviteData, setInviteData] = useState(null);
+  const [mode, setMode] = useState('unlock'); // 'unlock' | 'setup' | 'join'
   const [loading, setLoading] = useState(false);
+  const [localError, setLocalError] = useState(null);
   const { celebration, tap } = useHaptics();
+
+  // Detect invite link in URL hash on mount and on hash change
+  useEffect(() => {
+    const handleHash = () => {
+      const invite = parseInvite(window.location.hash);
+      if (invite && (invite.partnerPeerId || invite.salt)) {
+        setInviteData(invite);
+        if (invite.salt) {
+          setMode('join');
+        }
+      }
+    };
+
+    handleHash();
+    window.addEventListener('hashchange', handleHash);
+    return () => window.removeEventListener('hashchange', handleHash);
+  }, []);
+
+  // Update default mode once vault initialization state is known
+  useEffect(() => {
+    if (isVaultInitialized === false) {
+      if (!inviteData?.salt) {
+        setMode((prev) => (prev === 'join' ? 'join' : 'setup'));
+      } else {
+        setMode('join');
+      }
+    } else if (isVaultInitialized === true) {
+      if (!inviteData?.salt) {
+        setMode('unlock');
+      } else {
+        setMode('join');
+      }
+    }
+  }, [isVaultInitialized, inviteData]);
 
   const handleUnlock = async (e) => {
     e.preventDefault();
+    setLocalError(null);
     if (!passphrase.trim() || passphrase.length < MIN_PASSPHRASE_LENGTH) {
-      alert(`Passphrase must be at least ${MIN_PASSPHRASE_LENGTH} characters.`);
+      setLocalError(`Passphrase must be at least ${MIN_PASSPHRASE_LENGTH} characters.`);
       return;
     }
     setLoading(true);
@@ -34,6 +92,11 @@ export function LockScreen() {
     const success = await unlockVault(passphrase);
     setLoading(false);
     if (success) {
+      if (inviteData?.partnerPeerId) {
+        try {
+          sessionStorage.setItem('pending_partner_connect', inviteData.partnerPeerId);
+        } catch {}
+      }
       setPassphrase('');
       celebration();
       fireHeartConfetti();
@@ -42,8 +105,9 @@ export function LockScreen() {
 
   const handleSetup = async (e) => {
     e.preventDefault();
+    setLocalError(null);
     if (!passphrase.trim() || passphrase.length < MIN_PASSPHRASE_LENGTH) {
-      alert(`Please choose a memorable secret passphrase of at least ${MIN_PASSPHRASE_LENGTH} characters.`);
+      setLocalError(`Please choose a memorable secret passphrase of at least ${MIN_PASSPHRASE_LENGTH} characters.`);
       return;
     }
     setLoading(true);
@@ -60,6 +124,50 @@ export function LockScreen() {
       fireHeartConfetti();
     }
   };
+
+  const handleJoin = async (e) => {
+    e.preventDefault();
+    setLocalError(null);
+    if (!passphrase.trim() || passphrase.length < MIN_PASSPHRASE_LENGTH) {
+      setLocalError(`Passphrase must be at least ${MIN_PASSPHRASE_LENGTH} characters.`);
+      return;
+    }
+
+    let saltToUse = inviteData?.salt;
+    let partnerIdToConnect = inviteData?.partnerPeerId;
+
+    // If invite data was not from URL hash, parse user's manual input
+    if (!saltToUse) {
+      const parsed = parseInvite(partnerInviteInput);
+      if (!parsed || !parsed.salt) {
+        setLocalError(
+          'Please paste a valid invite link containing your partner\'s vault salt (e.g. copied from WhatsApp or QR code).'
+        );
+        return;
+      }
+      saltToUse = parsed.salt;
+      partnerIdToConnect = parsed.partnerPeerId;
+    }
+
+    setLoading(true);
+    tap();
+
+    const success = await initializeFromPartnerInvite(passphrase, saltToUse);
+    setLoading(false);
+
+    if (success) {
+      if (partnerIdToConnect) {
+        try {
+          sessionStorage.setItem('pending_partner_connect', partnerIdToConnect);
+        } catch {}
+      }
+      setPassphrase('');
+      celebration();
+      fireHeartConfetti();
+    }
+  };
+
+  const displayError = localError || vaultError;
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center p-4 relative z-10">
@@ -94,8 +202,46 @@ export function LockScreen() {
         </div>
 
         <GlassCard className="border-2 border-blush-100 shadow-xl shadow-blush-200/30">
-          {/* Form */}
-          {isVaultInitialized && !isSettingUp ? (
+          {/* Mode Switcher for Uninitialized Devices */}
+          {!isVaultInitialized && (
+            <div className="flex bg-slate-100/80 p-1 rounded-2xl mb-5">
+              <button
+                type="button"
+                onClick={() => {
+                  tap();
+                  setMode('setup');
+                  setLocalError(null);
+                }}
+                className={`flex-1 py-2 text-xs font-bold rounded-xl transition flex items-center justify-center gap-1.5 ${
+                  mode === 'setup'
+                    ? 'bg-white text-slate-800 shadow-sm'
+                    : 'text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                <Sparkles className="w-3.5 h-3.5 text-blush-500" />
+                <span>Create New Space</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  tap();
+                  setMode('join');
+                  setLocalError(null);
+                }}
+                className={`flex-1 py-2 text-xs font-bold rounded-xl transition flex items-center justify-center gap-1.5 ${
+                  mode === 'join'
+                    ? 'bg-white text-slate-800 shadow-sm'
+                    : 'text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                <Users className="w-3.5 h-3.5 text-indigo-500" />
+                <span>Join Partner's Space</span>
+              </button>
+            </div>
+          )}
+
+          {/* MODE 1: UNLOCK EXISTING VAULT */}
+          {mode === 'unlock' && (
             <form onSubmit={handleUnlock} className="space-y-4">
               <div className="text-center mb-4">
                 <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blush-100/70 text-blush-600 text-xs font-semibold">
@@ -115,7 +261,10 @@ export function LockScreen() {
                   <input
                     type={showPassword ? 'text' : 'password'}
                     value={passphrase}
-                    onChange={(e) => setPassphrase(e.target.value)}
+                    onChange={(e) => {
+                      setPassphrase(e.target.value);
+                      if (localError) setLocalError(null);
+                    }}
                     placeholder="Enter your secret passphrase (min 16 chars)..."
                     required
                     minLength={16}
@@ -133,9 +282,9 @@ export function LockScreen() {
                 </div>
               </div>
 
-              {error && (
+              {displayError && (
                 <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-600 text-xs font-medium text-center">
-                  {error}
+                  {displayError}
                 </div>
               )}
 
@@ -147,17 +296,147 @@ export function LockScreen() {
                 {loading ? 'Deriving Key...' : 'Unlock Our Space 💕'}
               </BouncyButton>
 
-              <div className="pt-2 text-center">
+              <div className="pt-2 flex flex-col gap-1.5 text-center">
                 <button
                   type="button"
-                  onClick={() => setIsSettingUp(true)}
-                  className="text-xs text-blush-600 hover:text-blush-700 underline font-medium"
+                  onClick={() => {
+                    tap();
+                    setMode('join');
+                    setLocalError(null);
+                  }}
+                  className="text-xs text-indigo-600 hover:text-indigo-700 underline font-medium"
                 >
-                  Need to re-initialize or setup fresh vault?
+                  Joining partner's space with an invite link?
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    tap();
+                    setMode('setup');
+                    setLocalError(null);
+                  }}
+                  className="text-xs text-slate-400 hover:text-slate-600 underline"
+                >
+                  Create a fresh new space instead
                 </button>
               </div>
             </form>
-          ) : (
+          )}
+
+          {/* MODE 2: JOIN PARTNER'S SPACE (Via Link or Manual Code) */}
+          {mode === 'join' && (
+            <form onSubmit={handleJoin} className="space-y-4">
+              <div className="text-center mb-3">
+                <div className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-indigo-50 border border-indigo-100 text-indigo-700 text-xs font-bold">
+                  <UserCheck className="w-3.5 h-3.5 text-indigo-500" />
+                  <span>Join Partner's Space 💕</span>
+                </div>
+                <p className="text-xs text-slate-500 mt-2">
+                  {inviteData?.partnerPeerId
+                    ? `Partner device (${inviteData.partnerPeerId}) invited you!`
+                    : 'Pair your device directly with your partner using their invite link.'}
+                </p>
+              </div>
+
+              {/* If no salt was found in URL, show manual invite input */}
+              {!inviteData?.salt && (
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">
+                    Partner's Invite Link or Code
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      value={partnerInviteInput}
+                      onChange={(e) => {
+                        setPartnerInviteInput(e.target.value);
+                        if (localError) setLocalError(null);
+                      }}
+                      placeholder="Paste link (e.g. https://...#connect=...)"
+                      required
+                      className="w-full px-4 py-2.5 pl-10 bg-white/70 border border-blush-200 rounded-2xl text-slate-800 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-400 placeholder:text-slate-400 transition"
+                    />
+                    <Link2 className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
+                  </div>
+                  <p className="text-[11px] text-slate-400 mt-1">
+                    Ask your partner to tap "Share Pairing Link" in their Sync Hub and paste the link here.
+                  </p>
+                </div>
+              )}
+
+              {inviteData?.salt && (
+                <div className="p-2.5 bg-emerald-50/70 border border-emerald-100 rounded-xl text-[11px] text-emerald-800 flex items-center gap-2">
+                  <ShieldCheck className="w-4 h-4 text-emerald-500 flex-shrink-0" />
+                  <span>Partner's encryption salt verified! Enter your shared passphrase to pair.</span>
+                </div>
+              )}
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">
+                  Shared Secret Passphrase
+                </label>
+                <div className="relative">
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    value={passphrase}
+                    onChange={(e) => {
+                      setPassphrase(e.target.value);
+                      if (localError) setLocalError(null);
+                    }}
+                    placeholder="Enter the secret phrase you both agreed on..."
+                    required
+                    minLength={16}
+                    autoFocus
+                    className="w-full px-4 py-3 pl-10 pr-11 bg-white/70 border border-blush-200 rounded-2xl text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 placeholder:text-slate-400 transition"
+                  />
+                  <KeyRound className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3.5 top-3.5 text-slate-400 hover:text-slate-600"
+                  >
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+                <p className="text-[11px] text-slate-400 mt-1">
+                  Must match partner's passphrase exactly to derive the identical 256-bit AES key.
+                </p>
+              </div>
+
+              {displayError && (
+                <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-600 text-xs font-medium text-center">
+                  {displayError}
+                </div>
+              )}
+
+              <BouncyButton
+                type="submit"
+                disabled={loading || !passphrase.trim()}
+                className="w-full py-3.5 text-base font-bold bg-indigo-600 hover:bg-indigo-700 text-white shadow-md shadow-indigo-300/40"
+              >
+                {loading ? 'Deriving Key & Pairing...' : 'Pair & Enter Our Space 💕'}
+              </BouncyButton>
+
+              {isVaultInitialized && (
+                <div className="pt-1 text-center">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      tap();
+                      setMode('unlock');
+                      setLocalError(null);
+                    }}
+                    className="text-xs text-slate-500 hover:text-slate-700 underline"
+                  >
+                    Cancel and return to unlock
+                  </button>
+                </div>
+              )}
+            </form>
+          )}
+
+          {/* MODE 3: CREATE NEW SPACE (Initiator First-Time Setup) */}
+          {mode === 'setup' && (
             <form onSubmit={handleSetup} className="space-y-4">
               <div className="text-center mb-2">
                 <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-lavender-100 text-lavender-700 text-xs font-semibold">
@@ -203,7 +482,10 @@ export function LockScreen() {
                   <input
                     type={showPassword ? 'text' : 'password'}
                     value={passphrase}
-                    onChange={(e) => setPassphrase(e.target.value)}
+                    onChange={(e) => {
+                      setPassphrase(e.target.value);
+                      if (localError) setLocalError(null);
+                    }}
                     placeholder="Create a shared secret phrase (min 16 chars)..."
                     required
                     minLength={16}
@@ -223,9 +505,9 @@ export function LockScreen() {
                 </p>
               </div>
 
-              {error && (
+              {displayError && (
                 <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-600 text-xs font-medium text-center">
-                  {error}
+                  {displayError}
                 </div>
               )}
 
@@ -241,7 +523,11 @@ export function LockScreen() {
                 <div className="pt-1 text-center">
                   <button
                     type="button"
-                    onClick={() => setIsSettingUp(false)}
+                    onClick={() => {
+                      tap();
+                      setMode('unlock');
+                      setLocalError(null);
+                    }}
                     className="text-xs text-slate-500 hover:text-slate-700 underline"
                   >
                     Cancel and return to unlock

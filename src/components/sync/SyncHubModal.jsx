@@ -21,6 +21,7 @@ import {
 import QRCode from 'qrcode';
 import { useSync } from '../../context/SyncContext';
 import { useVault } from '../../context/VaultContext';
+import { buildInviteUrl, parseInvite } from '../../utils/invite';
 import BouncyButton from '../common/BouncyButton';
 import QRScannerModal from './QRScannerModal';
 import { useHaptics } from '../../hooks/useHaptics';
@@ -30,8 +31,6 @@ import {
   decryptBackupContainer,
   MIN_PASSPHRASE_LENGTH,
 } from '../../services/crypto';
-
-const PEER_ID_REGEX = /^[a-zA-Z0-9_-]{4,64}$/;
 
 export function SyncHubModal({ isOpen, onClose }) {
   const {
@@ -44,17 +43,17 @@ export function SyncHubModal({ isOpen, onClose }) {
     isDirectP2P,
     connectionType,
   } = useSync();
+  const { vaultSalt } = useVault();
   const [partnerInputId, setPartnerInputId] = useState('');
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [copySuccess, setCopySuccess] = useState(false);
+  const [codeCopied, setCodeCopied] = useState(false);
   const [backupNotice, setBackupNotice] = useState('');
 
   const qrCanvasRef = useRef(null);
   const { tap, celebration } = useHaptics();
 
-  const shareUrl = typeof window !== 'undefined'
-    ? `${window.location.origin}${window.location.pathname}#connect=${myPeerId}`
-    : '';
+  const shareUrl = buildInviteUrl(myPeerId, vaultSalt);
 
   // Render QR Code on canvas
   useEffect(() => {
@@ -90,48 +89,56 @@ export function SyncHubModal({ isOpen, onClose }) {
       try {
         await navigator.share(shareData);
         celebration();
+        return;
       } catch (err) {
-        // user cancelled or share failed
-      }
-    } else {
-      // Fallback: Copy to clipboard
-      try {
-        await navigator.clipboard.writeText(shareUrl);
-        setCopySuccess(true);
-        setTimeout(() => setCopySuccess(false), 2500);
-      } catch (e) {
-        alert('Could not copy link: ' + shareUrl);
+        // user cancelled or share failed, fallback to copy
       }
     }
+
+    // Fallback: Copy to clipboard
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      setCopySuccess(true);
+      setTimeout(() => setCopySuccess(false), 2500);
+    } catch (e) {
+      alert('Could not copy link: ' + shareUrl);
+    }
+  };
+
+  const handleCopyCode = async () => {
+    if (!myPeerId) return;
+    tap();
+    try {
+      await navigator.clipboard.writeText(myPeerId);
+      setCodeCopied(true);
+      setTimeout(() => setCodeCopied(false), 2000);
+    } catch {}
   };
 
   const handleManualConnect = (e) => {
     e.preventDefault();
-    let target = partnerInputId.trim();
-    if (!target) return;
-    if (target.includes('#connect=')) {
-      target = target.split('#connect=')[1].trim();
-    }
-    if (!PEER_ID_REGEX.test(target)) {
-      alert('Invalid Partner Peer ID format. Must be alphanumeric (4-64 chars).');
+    const raw = partnerInputId.trim();
+    if (!raw) return;
+
+    const parsed = parseInvite(raw);
+    if (!parsed || !parsed.partnerPeerId) {
+      alert('Invalid Partner Peer ID or Invite Link. Please enter a valid ID (e.g. love-xxxx) or paste the full invite link.');
       return;
     }
+
     tap();
-    connectToPartner(target);
+    connectToPartner(parsed.partnerPeerId);
   };
 
   const handleScanSuccess = (detectedId) => {
     setIsScannerOpen(false);
-    let target = (detectedId || '').trim();
-    if (target.includes('#connect=')) {
-      target = target.split('#connect=')[1].trim();
-    }
-    if (!PEER_ID_REGEX.test(target)) {
-      alert('Invalid QR code: incorrect Peer ID format.');
+    const parsed = parseInvite(detectedId);
+    if (!parsed || !parsed.partnerPeerId) {
+      alert('Invalid QR code: no valid partner ID detected.');
       return;
     }
     celebration();
-    connectToPartner(target);
+    connectToPartner(parsed.partnerPeerId);
   };
 
   // Encrypted Backup Export: Encrypts the entire backup with user's passphrase as a single AES-GCM container
@@ -281,9 +288,18 @@ export function SyncHubModal({ isOpen, onClose }) {
           </div>
 
           <div className="mt-3 flex items-center justify-center gap-2">
-            <span className="text-xs font-mono font-bold text-slate-600 bg-white px-3 py-1 rounded-lg border border-slate-200">
-              {myPeerId || 'Generating...'}
-            </span>
+            <button
+              onClick={handleCopyCode}
+              type="button"
+              className="inline-flex items-center gap-1.5 text-xs font-mono font-bold text-slate-600 bg-white px-3 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 transition"
+              title="Click to copy your Device ID"
+            >
+              <span>{myPeerId || 'Generating...'}</span>
+              <Copy className="w-3.5 h-3.5 text-slate-400" />
+            </button>
+            {codeCopied && (
+              <span className="text-[10px] text-emerald-600 font-bold">Copied ID!</span>
+            )}
           </div>
 
           {/* 1-Tap Share via WhatsApp / Messaging */}

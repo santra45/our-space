@@ -17,6 +17,7 @@ export function VaultProvider({ children }) {
   const [isVaultInitialized, setIsVaultInitialized] = useState(null); // null = checking, true/false
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [cryptoKey, setCryptoKey] = useState(null);
+  const [vaultSalt, setVaultSalt] = useState(null);
   const [vaultConfig, setVaultConfig] = useState(null);
   const [error, setError] = useState(null);
 
@@ -26,6 +27,7 @@ export function VaultProvider({ children }) {
       try {
         const meta = await db.vaultMeta.get('config');
         if (meta && meta.salt) {
+          setVaultSalt(meta.salt);
           setIsVaultInitialized(true);
         } else {
           setIsVaultInitialized(false);
@@ -71,6 +73,7 @@ export function VaultProvider({ children }) {
 
       await db.vaultMeta.put(meta);
 
+      setVaultSalt(salt);
       setCryptoKey(key);
       setVaultConfig({
         coupleNames: initialSettings.coupleNames || 'Us',
@@ -82,6 +85,59 @@ export function VaultProvider({ children }) {
     } catch (err) {
       console.error('Failed to initialize vault:', err);
       setError('Could not initialize vault: ' + err.message);
+      return false;
+    }
+  };
+
+  /**
+   * Partner invite setup: Initialize or join vault using partner's salt
+   */
+  const initializeFromPartnerInvite = async (passphrase, salt, initialSettings = {}) => {
+    try {
+      setError(null);
+      if (!passphrase || passphrase.length < MIN_PASSPHRASE_LENGTH) {
+        setError(`Passphrase must be at least ${MIN_PASSPHRASE_LENGTH} characters long.`);
+        return false;
+      }
+      if (!salt || typeof salt !== 'string') {
+        setError('Invalid invite salt. Please request a fresh invite link.');
+        return false;
+      }
+
+      const key = await deriveKeyFromPassphrase(passphrase, salt);
+
+      const canaryEncrypted = await encryptJSON(
+        {
+          token: CANARY_SECRET,
+          coupleNames: initialSettings.coupleNames || 'Us',
+          startDate: initialSettings.startDate || new Date().toISOString().split('T')[0],
+          createdAt: Date.now(),
+        },
+        key
+      );
+
+      const meta = {
+        id: 'config',
+        salt,
+        canary: canaryEncrypted.ciphertext,
+        canaryIv: canaryEncrypted.iv,
+        updatedAt: Date.now(),
+      };
+
+      await db.vaultMeta.put(meta);
+
+      setVaultSalt(salt);
+      setCryptoKey(key);
+      setVaultConfig({
+        coupleNames: initialSettings.coupleNames || 'Us',
+        startDate: initialSettings.startDate || new Date().toISOString().split('T')[0],
+      });
+      setIsVaultInitialized(true);
+      setIsUnlocked(true);
+      return true;
+    } catch (err) {
+      console.error('Failed to initialize from partner invite:', err);
+      setError('Could not pair with partner: ' + (err.message || 'Unknown error'));
       return false;
     }
   };
@@ -110,6 +166,7 @@ export function VaultProvider({ children }) {
           throw new Error('Canary mismatch');
         }
 
+        setVaultSalt(meta.salt);
         setCryptoKey(key);
         setVaultConfig({
           coupleNames: decrypted.coupleNames || 'Us',
@@ -179,9 +236,11 @@ export function VaultProvider({ children }) {
         isVaultInitialized,
         isUnlocked,
         cryptoKey,
+        vaultSalt,
         vaultConfig,
         error,
         initializeVault,
+        initializeFromPartnerInvite,
         unlockVault,
         lockVault,
         updateVaultSettings,

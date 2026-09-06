@@ -9,11 +9,30 @@
  */
 import Peer from 'peerjs';
 import { encryptJSON, decryptJSON, generateSecureNonce } from './crypto';
+import { PEER_ID_REGEX } from '../utils/invite';
 import db from '../db';
 
-const PEER_ID_REGEX = /^[a-zA-Z0-9_-]{4,64}$/;
 const MAX_CIPHERTEXT_LENGTH = 30 * 1024 * 1024; // 30 MB max payload limit
 const AUTH_TIMEOUT_MS = 30000; // 30s timeout
+const LOCAL_PEER_ID_KEY = 'sweetheart_device_peer_id';
+
+function getStoredDevicePeerId() {
+  try {
+    if (typeof localStorage === 'undefined') return null;
+    const id = localStorage.getItem(LOCAL_PEER_ID_KEY);
+    if (id && PEER_ID_REGEX.test(id)) return id;
+  } catch {}
+  return null;
+}
+
+function setStoredDevicePeerId(id) {
+  try {
+    if (typeof localStorage === 'undefined') return;
+    if (id && PEER_ID_REGEX.test(id)) {
+      localStorage.setItem(LOCAL_PEER_ID_KEY, id);
+    }
+  } catch {}
+}
 
 const ALLOWED_TABLES = new Set([
   'memories',
@@ -83,8 +102,14 @@ export class PeerSyncManager {
     ];
 
     return new Promise((resolve, reject) => {
-      // Generate clean cryptographically random 12-char peer ID
-      const peerId = customId || 'love-' + generateSecureNonce(6).toLowerCase().replace(/[^a-z0-9]/g, 'x');
+      // Check stored device ID or generate clean cryptographically random 12-char peer ID
+      let peerId = customId;
+      if (!peerId) {
+        peerId = getStoredDevicePeerId();
+      }
+      if (!peerId) {
+        peerId = 'love-' + generateSecureNonce(6).toLowerCase().replace(/[^a-z0-9]/g, 'x');
+      }
 
       try {
         this.peer = new Peer(peerId, {
@@ -97,6 +122,7 @@ export class PeerSyncManager {
 
       this.peer.on('open', (id) => {
         this.myPeerId = id;
+        setStoredDevicePeerId(id);
         this.emit('status', { state: 'ready', peerId: id });
         resolve(id);
       });
@@ -105,8 +131,22 @@ export class PeerSyncManager {
         this._handleIncomingConnection(conn);
       });
 
-      this.peer.on('error', () => {
-        this.emit('status', { state: 'error', error: 'WebRTC peer connection error' });
+      this.peer.on('error', (err) => {
+        // If previous socket didn't close cleanly on reload, roll a fresh ID
+        if (err?.type === 'unavailable-id') {
+          const freshId = 'love-' + generateSecureNonce(6).toLowerCase().replace(/[^a-z0-9]/g, 'x');
+          setStoredDevicePeerId(freshId);
+          this.init(cryptoKey, freshId).then(resolve).catch(reject);
+          return;
+        }
+
+        let msg = 'WebRTC peer connection error';
+        if (err?.type === 'peer-unavailable') {
+          msg = 'Partner device not found or offline. Ensure your partner has the app open on their screen.';
+        } else if (err?.type === 'network') {
+          msg = 'Network connection issue with signalling server.';
+        }
+        this.emit('status', { state: 'error', error: msg, errorType: err?.type });
       });
 
       this.peer.on('disconnected', () => {
@@ -158,7 +198,7 @@ export class PeerSyncManager {
     this._resetAuthState();
     this.activeConnection = conn;
 
-    conn.on('open', async () => {
+    const handleOpen = async () => {
       this.isConnected = true;
       this.emit('status', { state: 'connected', partnerId: conn.peer });
 
@@ -168,7 +208,13 @@ export class PeerSyncManager {
       if (isInitiator) {
         await this._sendAuthChallenge();
       }
-    });
+    };
+
+    if (conn.open) {
+      handleOpen();
+    } else {
+      conn.on('open', handleOpen);
+    }
 
     conn.on('data', async (data) => {
       try {

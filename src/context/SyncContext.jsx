@@ -5,6 +5,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import peerSync from '../services/peerSync';
 import { useVault } from './VaultContext';
+import { parseInvite } from '../utils/invite';
 
 const SyncContext = createContext(null);
 
@@ -46,25 +47,37 @@ export function SyncProvider({ children }) {
       setTimeout(() => setLastSyncNotice(null), 4000);
     });
 
-const PEER_ID_REGEX = /^[a-zA-Z0-9_-]{4,64}$/;
-
     // Start peer
     peerSync.init(cryptoKey).then((id) => {
       if (!isMounted) return;
       setMyPeerId(id);
 
-      // Auto-connect if URL hash has #connect=PEER_ID (e.g. from WhatsApp invite link)
-      const hash = window.location.hash;
-      if (hash && hash.startsWith('#connect=')) {
-        const targetPeerId = hash.replace('#connect=', '').trim();
-        // Clear hash immediately so URL is sanitized
-        history.replaceState(null, document.title, window.location.pathname);
-
-        if (targetPeerId && targetPeerId !== id && PEER_ID_REGEX.test(targetPeerId)) {
-          setTimeout(() => {
-            peerSync.connectToPartner(targetPeerId);
-          }, 800);
+      // Check for pending partner connect from LockScreen invite or URL hash
+      let targetPeerId = null;
+      try {
+        const pending = sessionStorage.getItem('pending_partner_connect');
+        if (pending) {
+          sessionStorage.removeItem('pending_partner_connect');
+          targetPeerId = pending.trim();
         }
+      } catch {}
+
+      const hash = window.location.hash;
+      if (hash) {
+        const parsed = parseInvite(hash);
+        if (parsed && parsed.partnerPeerId) {
+          targetPeerId = parsed.partnerPeerId;
+        }
+        // Sanitize URL by clearing hash
+        try {
+          history.replaceState(null, document.title, window.location.pathname);
+        } catch {}
+      }
+
+      if (targetPeerId && targetPeerId !== id) {
+        setTimeout(() => {
+          peerSync.connectToPartner(targetPeerId);
+        }, 800);
       }
     }).catch(() => {
       // safe fail
