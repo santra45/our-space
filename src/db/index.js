@@ -5,6 +5,15 @@
  */
 import Dexie from 'dexie';
 
+const ALLOWED_DB_TABLES = new Set([
+  'vaultMeta',
+  'memories',
+  'milestones',
+  'dateIdeas',
+  'letters',
+  'bucketList',
+]);
+
 export class SweetheartDatabase extends Dexie {
   constructor() {
     super('SweetheartVaultDB');
@@ -41,21 +50,19 @@ export class SweetheartDatabase extends Dexie {
   }
 
   /**
-   * Exports all encrypted records as a single JSON object for backup
+   * Serializes all encrypted records for single-container backup packaging
    */
-  async exportEncryptedVault() {
+  async exportRawDataForBackup() {
     const tables = ['vaultMeta', 'memories', 'milestones', 'dateIdeas', 'letters', 'bucketList'];
-    const backup = {
+    const data = {
       version: 1,
-      exportedAt: new Date().toISOString(),
       tables: {},
     };
 
     for (const tableName of tables) {
       const records = await this.table(tableName).toArray();
-      // For memories, convert Uint8Array binary imageBlobs to base64 strings
       if (tableName === 'memories') {
-        backup.tables[tableName] = records.map((r) => {
+        data.tables[tableName] = records.map((r) => {
           const clone = { ...r };
           if (clone.imageBlob) {
             let binary = '';
@@ -63,39 +70,51 @@ export class SweetheartDatabase extends Dexie {
             for (let i = 0; i < bytes.byteLength; i++) {
               binary += String.fromCharCode(bytes[i]);
             }
-            clone.imageBlobBase64 = window.btoa(binary);
+            clone.imageBlobBase64 = (typeof window !== 'undefined' ? window.btoa : globalThis.btoa)(binary);
             delete clone.imageBlob;
           }
           return clone;
         });
       } else {
-        backup.tables[tableName] = records;
+        data.tables[tableName] = records;
       }
     }
 
-    return backup;
+    return data;
   }
 
   /**
-   * Imports an exported backup into the local database
+   * Imports validated decrypted tables into local IndexedDB
    */
-  async importEncryptedVault(backup) {
-    if (!backup || !backup.tables) {
-      throw new Error('Invalid vault backup file format');
+  async importRawDataFromBackup(tables) {
+    if (!tables || typeof tables !== 'object') {
+      throw new Error('Invalid backup table payload');
     }
 
     await this.transaction('rw', this.tables, async () => {
-      for (const [tableName, records] of Object.entries(backup.tables)) {
+      for (const [tableName, records] of Object.entries(tables)) {
+        if (!ALLOWED_DB_TABLES.has(tableName) || !Array.isArray(records)) {
+          continue;
+        }
+
         const table = this.table(tableName);
         for (const record of records) {
-          if (tableName === 'memories' && record.imageBlobBase64) {
-            const binary = window.atob(record.imageBlobBase64);
-            const bytes = new Uint8Array(binary.length);
-            for (let i = 0; i < binary.length; i++) {
-              bytes[i] = binary.charCodeAt(i);
+          if (!record || typeof record !== 'object' || !record.id) {
+            continue;
+          }
+
+          if (tableName === 'memories' && typeof record.imageBlobBase64 === 'string') {
+            try {
+              const binary = (typeof window !== 'undefined' ? window.atob : globalThis.atob)(record.imageBlobBase64);
+              const bytes = new Uint8Array(binary.length);
+              for (let i = 0; i < binary.length; i++) {
+                bytes[i] = binary.charCodeAt(i);
+              }
+              record.imageBlob = bytes;
+              delete record.imageBlobBase64;
+            } catch {
+              continue;
             }
-            record.imageBlob = bytes;
-            delete record.imageBlobBase64;
           }
           await table.put(record);
         }

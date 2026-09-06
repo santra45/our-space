@@ -78,9 +78,8 @@ export function AddMemoryModal({ isOpen, onClose, cryptoKey }) {
       celebration();
       fireHeartConfetti();
       handleClose();
-    } catch (err) {
-      console.error('Failed to save memory:', err);
-      alert('Error saving memory: ' + err.message);
+    } catch {
+      alert('Error saving memory. Please try again.');
     } finally {
       setSaving(false);
       setStatusText('');

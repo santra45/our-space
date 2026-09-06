@@ -24,6 +24,13 @@ import BouncyButton from '../common/BouncyButton';
 import QRScannerModal from './QRScannerModal';
 import { useHaptics } from '../../hooks/useHaptics';
 import db from '../../db';
+import {
+  createEncryptedBackup,
+  decryptBackupContainer,
+  MIN_PASSPHRASE_LENGTH,
+} from '../../services/crypto';
+
+const PEER_ID_REGEX = /^[a-zA-Z0-9_-]{4,64}$/;
 
 export function SyncHubModal({ isOpen, onClose }) {
   const { myPeerId, partnerId, syncStatus, isPartnerConnected, connectToPartner, syncNow } = useSync();
@@ -90,44 +97,65 @@ export function SyncHubModal({ isOpen, onClose }) {
 
   const handleManualConnect = (e) => {
     e.preventDefault();
-    if (!partnerInputId.trim()) return;
-    tap();
     let target = partnerInputId.trim();
+    if (!target) return;
     if (target.includes('#connect=')) {
-      target = target.split('#connect=')[1];
+      target = target.split('#connect=')[1].trim();
     }
+    if (!PEER_ID_REGEX.test(target)) {
+      alert('Invalid Partner Peer ID format. Must be alphanumeric (4-64 chars).');
+      return;
+    }
+    tap();
     connectToPartner(target);
   };
 
   const handleScanSuccess = (detectedId) => {
     setIsScannerOpen(false);
+    let target = (detectedId || '').trim();
+    if (target.includes('#connect=')) {
+      target = target.split('#connect=')[1].trim();
+    }
+    if (!PEER_ID_REGEX.test(target)) {
+      alert('Invalid QR code: incorrect Peer ID format.');
+      return;
+    }
     celebration();
-    connectToPartner(detectedId);
+    connectToPartner(target);
   };
 
-  // Encrypted Backup Export
+  // Encrypted Backup Export: Encrypts the entire backup with user's passphrase as a single AES-GCM container
   const handleExportBackup = async () => {
     try {
       tap();
-      const backup = await db.exportEncryptedVault();
-      const json = JSON.stringify(backup, null, 2);
+      const passphrase = window.prompt(`Enter your secret passphrase to encrypt this backup (min ${MIN_PASSPHRASE_LENGTH} chars):`);
+      if (!passphrase) return;
+      if (passphrase.length < MIN_PASSPHRASE_LENGTH) {
+        alert(`Passphrase must be at least ${MIN_PASSPHRASE_LENGTH} characters.`);
+        return;
+      }
+
+      const rawData = await db.exportRawDataForBackup();
+      const encryptedContainer = await createEncryptedBackup(rawData, passphrase);
+
+      const json = JSON.stringify(encryptedContainer, null, 2);
       const blob = new Blob([json], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
 
       const a = document.createElement('a');
       a.href = url;
-      a.download = `OurSpace-Vault-${new Date().toISOString().split('T')[0]}.vault`;
+      a.download = `OurSpace-Encrypted-${new Date().toISOString().split('T')[0]}.vault`;
       a.click();
       URL.revokeObjectURL(url);
 
-      setBackupNotice('Encrypted backup exported! You can safely send this file via WhatsApp.');
+      setBackupNotice('Encrypted .vault backup created! Only your passphrase can decrypt it.');
       celebration();
-    } catch (err) {
-      alert('Failed to export backup: ' + err.message);
+    } catch {
+      alert('Failed to create encrypted backup.');
     }
   };
 
-  // Encrypted Backup Import
+  // Encrypted Backup Import: Genuinely decrypts and verifies container before modifying IndexedDB
   const handleImportBackup = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -136,15 +164,29 @@ export function SyncHubModal({ isOpen, onClose }) {
     reader.onload = async (event) => {
       try {
         tap();
-        const data = JSON.parse(event.target.result);
-        await db.importEncryptedVault(data);
-        setBackupNotice('Backup imported successfully! Memories restored 💕');
+        let container;
+        try {
+          container = JSON.parse(event.target.result);
+        } catch {
+          alert('Invalid file: not valid JSON.');
+          return;
+        }
+
+        const passphrase = window.prompt('Enter the passphrase used to encrypt this .vault backup:');
+        if (!passphrase) return;
+
+        // Decrypt and verify 128-bit GCM authentication tag. If tampered or wrong key, throws error!
+        const decryptedData = await decryptBackupContainer(container, passphrase);
+        await db.importRawDataFromBackup(decryptedData.tables);
+
+        setBackupNotice('Backup verified & restored successfully! 💕');
         celebration();
       } catch (err) {
-        alert('Invalid backup file: ' + err.message);
+        alert('Backup import rejected: ' + (err.message || 'Incorrect passphrase or corrupted backup file'));
       }
     };
     reader.readAsText(file);
+    e.target.value = '';
   };
 
   if (!isOpen) return null;

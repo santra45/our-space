@@ -1,10 +1,37 @@
 /**
  * src/services/peerSync.js
- * Mobile-First P2P WebRTC Data Replication Manager using PeerJS
+ * Security-Hardened P2P WebRTC Data Replication Manager using PeerJS
+ * - Zero-knowledge mutual challenge-response with cryptographic nonces
+ * - 30-second authentication timeout and state reset
+ * - Strict message type and database table allowlists
+ * - Strict record schema validation and payload size limits
+ * - No plaintext or sensitive data logging
  */
 import Peer from 'peerjs';
-import { encryptJSON, decryptJSON } from './crypto';
+import { encryptJSON, decryptJSON, generateSecureNonce } from './crypto';
 import db from '../db';
+
+const PEER_ID_REGEX = /^[a-zA-Z0-9_-]{4,64}$/;
+const MAX_CIPHERTEXT_LENGTH = 30 * 1024 * 1024; // 30 MB max payload limit
+const AUTH_TIMEOUT_MS = 30000; // 30s timeout
+
+const ALLOWED_TABLES = new Set([
+  'memories',
+  'milestones',
+  'dateIdeas',
+  'letters',
+  'bucketList',
+]);
+
+const ALLOWED_MESSAGE_TYPES = new Set([
+  'CHALLENGE',
+  'CHALLENGE_RESPONSE',
+  'CHALLENGE_ACK',
+  'SYNC_MANIFEST',
+  'SYNC_REQUEST_RECORDS',
+  'SYNC_RECORDS_BATCH',
+  'LIVE_RECORD_BROADCAST',
+]);
 
 export class PeerSyncManager {
   constructor() {
@@ -16,6 +43,8 @@ export class PeerSyncManager {
     this.isConnected = false;
     this.isAuthorized = false;
     this.isSyncing = false;
+    this.pendingChallengeNonce = null;
+    this.authTimeoutTimer = null;
   }
 
   on(event, callback) {
@@ -31,7 +60,7 @@ export class PeerSyncManager {
   }
 
   /**
-   * Initialize local WebRTC Peer on Android
+   * Initialize local WebRTC Peer
    * @param {CryptoKey} cryptoKey - The derived vault key for auth & encryption
    * @param {string} [customId] - Optional custom Peer ID
    */
@@ -42,6 +71,10 @@ export class PeerSyncManager {
       return this.myPeerId;
     }
 
+    if (customId && !PEER_ID_REGEX.test(customId)) {
+      throw new Error('Invalid custom Peer ID format');
+    }
+
     const iceServers = [
       { urls: 'stun:stun.l.google.com:19302' },
       { urls: 'stun:stun1.l.google.com:19302' },
@@ -49,16 +82,16 @@ export class PeerSyncManager {
     ];
 
     return new Promise((resolve, reject) => {
-      // Create clean 8-character alphanumeric peer ID (e.g. "love-8f2a1b9c")
-      const peerId = customId || 'love-' + Math.random().toString(36).substring(2, 8);
-      
+      // Generate clean cryptographically random 12-char peer ID
+      const peerId = customId || 'love-' + generateSecureNonce(6).toLowerCase().replace(/[^a-z0-9]/g, 'x');
+
       try {
         this.peer = new Peer(peerId, {
           config: { iceServers },
-          debug: 1,
+          debug: 0, // Disable internal PeerJS logging
         });
       } catch (err) {
-        return reject(err);
+        return reject(new Error('Failed to create WebRTC peer instance'));
       }
 
       this.peer.on('open', (id) => {
@@ -71,33 +104,32 @@ export class PeerSyncManager {
         this._handleIncomingConnection(conn);
       });
 
-      this.peer.on('error', (err) => {
-        console.error('[WebRTC Peer Error]', err);
-        this.emit('status', { state: 'error', error: err.message });
+      this.peer.on('error', () => {
+        this.emit('status', { state: 'error', error: 'WebRTC peer connection error' });
       });
 
       this.peer.on('disconnected', () => {
-        // Mobile reconnect handler when switching between Wi-Fi & 4G/5G
+        this._resetAuthState();
         try {
-          this.peer.reconnect();
-        } catch (e) {
-          console.warn('Peer reconnect attempted', e);
+          this.peer?.reconnect();
+        } catch {
+          // safe fail
         }
       });
     });
   }
 
   /**
-   * Connect to partner's Peer ID
+   * Connect to partner's Peer ID with strict input validation
    */
   connectToPartner(partnerPeerId) {
     if (!this.peer || this.peer.destroyed) {
       throw new Error('Peer not initialized');
     }
 
-    const cleanId = partnerPeerId.trim();
-    if (!cleanId || cleanId === this.myPeerId) {
-      throw new Error('Invalid Partner Peer ID');
+    const cleanId = (partnerPeerId || '').trim();
+    if (!cleanId || !PEER_ID_REGEX.test(cleanId) || cleanId === this.myPeerId) {
+      throw new Error('Invalid Partner Peer ID format');
     }
 
     this.emit('status', { state: 'connecting', partnerId: cleanId });
@@ -117,19 +149,22 @@ export class PeerSyncManager {
     if (this.activeConnection) {
       try {
         this.activeConnection.close();
-      } catch (e) {
+      } catch {
         // ignore
       }
     }
 
+    this._resetAuthState();
     this.activeConnection = conn;
 
     conn.on('open', async () => {
       this.isConnected = true;
       this.emit('status', { state: 'connected', partnerId: conn.peer });
 
+      // Start strict 30-second authentication timeout
+      this._startAuthTimeout();
+
       if (isInitiator) {
-        // Send Zero-Knowledge Auth Challenge to partner
         await this._sendAuthChallenge();
       }
     });
@@ -137,97 +172,214 @@ export class PeerSyncManager {
     conn.on('data', async (data) => {
       try {
         await this._handleMessage(data);
-      } catch (err) {
-        console.error('[WebRTC Message Handle Error]', err);
+      } catch {
+        // Suppress and drop malformed/untrusted frames
       }
     });
 
     conn.on('close', () => {
+      this._resetAuthState();
       this.isConnected = false;
-      this.isAuthorized = false;
-      this.isSyncing = false;
       this.emit('status', { state: 'disconnected' });
     });
 
-    conn.on('error', (err) => {
-      console.error('[WebRTC Conn Error]', err);
-      this.emit('status', { state: 'error', error: err.message });
+    conn.on('error', () => {
+      this._resetAuthState();
+      this.emit('status', { state: 'error', error: 'Data channel error' });
     });
   }
 
+  _startAuthTimeout() {
+    this._clearAuthTimeout();
+    this.authTimeoutTimer = setTimeout(() => {
+      if (!this.isAuthorized) {
+        this.emit('status', { state: 'auth_failed', error: 'Authentication timed out after 30 seconds' });
+        this.disconnect();
+      }
+    }, AUTH_TIMEOUT_MS);
+  }
+
+  _clearAuthTimeout() {
+    if (this.authTimeoutTimer) {
+      clearTimeout(this.authTimeoutTimer);
+      this.authTimeoutTimer = null;
+    }
+  }
+
+  _resetAuthState() {
+    this._clearAuthTimeout();
+    this.pendingChallengeNonce = null;
+    this.isAuthorized = false;
+    this.isSyncing = false;
+  }
+
   /**
-   * Zero-Knowledge Challenge: send encrypted timestamp nonce
+   * Initiator step: Send cryptographically secure random challenge nonce
    */
   async _sendAuthChallenge() {
     if (!this.activeConnection || !this.cryptoKey) return;
-    const nonce = 'auth-' + Date.now() + '-' + Math.random();
+    const nonce = generateSecureNonce(16);
+    this.pendingChallengeNonce = nonce;
     const challenge = await encryptJSON({ type: 'CHALLENGE', nonce }, this.cryptoKey);
     this.activeConnection.send({ protocol: 'SWEETHEART_V1', payload: challenge });
   }
 
   async _handleMessage(msg) {
-    if (!msg || msg.protocol !== 'SWEETHEART_V1' || !msg.payload) return;
+    if (
+      !msg ||
+      typeof msg !== 'object' ||
+      msg.protocol !== 'SWEETHEART_V1' ||
+      !msg.payload ||
+      typeof msg.payload !== 'object'
+    ) {
+      return;
+    }
+
+    const { ciphertext, iv } = msg.payload;
+    if (
+      typeof ciphertext !== 'string' ||
+      typeof iv !== 'string' ||
+      ciphertext.length > MAX_CIPHERTEXT_LENGTH
+    ) {
+      return; // Drop oversized or invalid payloads
+    }
 
     let decrypted;
     try {
-      decrypted = await decryptJSON(msg.payload.ciphertext, msg.payload.iv, this.cryptoKey);
+      decrypted = await decryptJSON(ciphertext, iv, this.cryptoKey);
     } catch {
-      // Decryption failed -> partner has mismatched passphrase
-      this.emit('status', { 
-        state: 'auth_failed', 
-        error: 'Passphrase mismatch! Please make sure you both typed the exact same secret passphrase.' 
+      // Decryption failed -> Mismatched passphrase or corrupted payload
+      this.emit('status', {
+        state: 'auth_failed',
+        error: 'Passphrase mismatch! Please verify you both entered the exact same secret passphrase.',
       });
-      this.activeConnection?.close();
+      this.disconnect();
+      return;
+    }
+
+    if (!decrypted || typeof decrypted !== 'object' || !ALLOWED_MESSAGE_TYPES.has(decrypted.type)) {
+      return; // Reject unallowed message types
+    }
+
+    // Gate: Drop non-auth messages if connection is not yet authorized
+    const isAuthMsg =
+      decrypted.type === 'CHALLENGE' ||
+      decrypted.type === 'CHALLENGE_RESPONSE' ||
+      decrypted.type === 'CHALLENGE_ACK';
+
+    if (!this.isAuthorized && !isAuthMsg) {
       return;
     }
 
     switch (decrypted.type) {
       case 'CHALLENGE': {
+        // Receiver receives challenge: generate counter-challenge nonce for mutual authentication
+        if (typeof decrypted.nonce !== 'string' || decrypted.nonce.length < 16) {
+          this.disconnect();
+          return;
+        }
+
+        const counterNonce = generateSecureNonce(16);
+        this.pendingChallengeNonce = counterNonce;
+
         const response = await encryptJSON(
-          { type: 'CHALLENGE_RESPONSE', echo: decrypted.nonce },
+          {
+            type: 'CHALLENGE_RESPONSE',
+            echo: decrypted.nonce,
+            counterNonce,
+          },
           this.cryptoKey
         );
-        this.activeConnection.send({ protocol: 'SWEETHEART_V1', payload: response });
+        this.activeConnection?.send({ protocol: 'SWEETHEART_V1', payload: response });
         break;
       }
 
       case 'CHALLENGE_RESPONSE': {
+        // Initiator verifies receiver's echo matches pending challenge
+        if (
+          !this.pendingChallengeNonce ||
+          typeof decrypted.echo !== 'string' ||
+          decrypted.echo !== this.pendingChallengeNonce ||
+          typeof decrypted.counterNonce !== 'string'
+        ) {
+          // Replay or mismatch detected
+          this.disconnect();
+          return;
+        }
+
+        // Invalidate used nonce
+        this.pendingChallengeNonce = null;
+
+        // Respond to receiver's counter-challenge
+        const ack = await encryptJSON(
+          {
+            type: 'CHALLENGE_ACK',
+            echo: decrypted.counterNonce,
+          },
+          this.cryptoKey
+        );
+        this.activeConnection?.send({ protocol: 'SWEETHEART_V1', payload: ack });
+
+        // Initiator is authenticated!
+        this._clearAuthTimeout();
         this.isAuthorized = true;
         this.emit('status', { state: 'authorized' });
-        // Trigger bidirectional differential sync
         await this.syncNow();
         break;
       }
 
-      case 'SYNC_MANIFEST': {
+      case 'CHALLENGE_ACK': {
+        // Receiver verifies initiator's echo
+        if (
+          !this.pendingChallengeNonce ||
+          typeof decrypted.echo !== 'string' ||
+          decrypted.echo !== this.pendingChallengeNonce
+        ) {
+          this.disconnect();
+          return;
+        }
+
+        // Invalidate used nonce
+        this.pendingChallengeNonce = null;
+
+        // Receiver is authenticated!
+        this._clearAuthTimeout();
         this.isAuthorized = true;
         this.emit('status', { state: 'authorized' });
+        break;
+      }
+
+      case 'SYNC_MANIFEST': {
+        if (!this.isAuthorized) return;
         await this._processRemoteManifest(decrypted.manifest);
         break;
       }
 
       case 'SYNC_REQUEST_RECORDS': {
+        if (!this.isAuthorized) return;
         await this._sendRequestedRecords(decrypted.requests);
         break;
       }
 
       case 'SYNC_RECORDS_BATCH': {
+        if (!this.isAuthorized) return;
         await this._applyRemoteRecords(decrypted.records);
         break;
       }
 
       case 'LIVE_RECORD_BROADCAST': {
+        if (!this.isAuthorized) return;
         await this._applySingleLiveRecord(decrypted.record);
         break;
       }
 
       default:
-        console.warn('Unknown message type:', decrypted.type);
+        break;
     }
   }
 
   /**
-   * Triggers a sync by sending our local manifest to partner
+   * Sends local database manifest of record IDs and timestamps
    */
   async syncNow() {
     if (!this.isConnected || !this.isAuthorized) return;
@@ -236,18 +388,22 @@ export class PeerSyncManager {
 
     const manifest = await db.getManifest();
     const payload = await encryptJSON({ type: 'SYNC_MANIFEST', manifest }, this.cryptoKey);
-    this.activeConnection.send({ protocol: 'SWEETHEART_V1', payload });
+    this.activeConnection?.send({ protocol: 'SWEETHEART_V1', payload });
   }
 
   async _processRemoteManifest(remoteManifest) {
+    if (!this.isAuthorized || !remoteManifest || typeof remoteManifest !== 'object') return;
+
     const localManifest = await db.getManifest();
     const requests = [];
 
-    // Find items that remote has newer or that local doesn't have
     for (const [table, remoteItems] of Object.entries(remoteManifest)) {
+      if (!ALLOWED_TABLES.has(table) || !Array.isArray(remoteItems)) continue;
+
       const localMap = new Map((localManifest[table] || []).map((i) => [i.id, i.updatedAt]));
 
       for (const rItem of remoteItems) {
+        if (!rItem || typeof rItem.id !== 'string' || typeof rItem.updatedAt !== 'number') continue;
         const localUpdatedAt = localMap.get(rItem.id);
         if (!localUpdatedAt || rItem.updatedAt > localUpdatedAt) {
           requests.push({ table, id: rItem.id });
@@ -257,7 +413,7 @@ export class PeerSyncManager {
 
     if (requests.length > 0) {
       const payload = await encryptJSON({ type: 'SYNC_REQUEST_RECORDS', requests }, this.cryptoKey);
-      this.activeConnection.send({ protocol: 'SWEETHEART_V1', payload });
+      this.activeConnection?.send({ protocol: 'SWEETHEART_V1', payload });
     } else {
       this.isSyncing = false;
       this.emit('status', { state: 'synced', message: 'All memories up to date!' });
@@ -265,11 +421,17 @@ export class PeerSyncManager {
   }
 
   async _sendRequestedRecords(requests) {
+    // Unauthenticated peers must NEVER receive records
+    if (!this.isConnected || !this.isAuthorized || !Array.isArray(requests)) return;
+
     const records = [];
     for (const req of requests) {
+      if (!req || typeof req !== 'object' || !ALLOWED_TABLES.has(req.table) || typeof req.id !== 'string') {
+        continue;
+      }
+
       const item = await db.table(req.table).get(req.id);
       if (item) {
-        // Convert Uint8Array to base64 for JSON serialization if memory item
         if (req.table === 'memories' && item.imageBlob) {
           const clone = { ...item };
           let binary = '';
@@ -287,36 +449,50 @@ export class PeerSyncManager {
     }
 
     const payload = await encryptJSON({ type: 'SYNC_RECORDS_BATCH', records }, this.cryptoKey);
-    this.activeConnection.send({ protocol: 'SWEETHEART_V1', payload });
+    this.activeConnection?.send({ protocol: 'SWEETHEART_V1', payload });
   }
 
   async _applyRemoteRecords(records) {
+    if (!this.isAuthorized || !Array.isArray(records)) return;
+
+    const validRecords = [];
+    for (const item of records) {
+      if (!item || !ALLOWED_TABLES.has(item.table) || !this._isValidRecordSchema(item.data)) {
+        continue;
+      }
+      validRecords.push(item);
+    }
+
     await db.transaction('rw', db.tables, async () => {
-      for (const item of records) {
+      for (const item of validRecords) {
         const data = item.data;
-        if (item.table === 'memories' && data.imageBlobBase64) {
-          const binary = window.atob(data.imageBlobBase64);
-          const bytes = new Uint8Array(binary.length);
-          for (let i = 0; i < binary.length; i++) {
-            bytes[i] = binary.charCodeAt(i);
+        if (item.table === 'memories' && typeof data.imageBlobBase64 === 'string') {
+          try {
+            const binary = window.atob(data.imageBlobBase64);
+            const bytes = new Uint8Array(binary.length);
+            for (let i = 0; i < binary.length; i++) {
+              bytes[i] = binary.charCodeAt(i);
+            }
+            data.imageBlob = bytes;
+            delete data.imageBlobBase64;
+          } catch {
+            continue;
           }
-          data.imageBlob = bytes;
-          delete data.imageBlobBase64;
         }
         await db.table(item.table).put(data);
       }
     });
 
     this.isSyncing = false;
-    this.emit('status', { state: 'synced', message: `Synced ${records.length} updates from partner!` });
-    this.emit('data-updated', { count: records.length });
+    this.emit('status', { state: 'synced', message: `Synced ${validRecords.length} updates from partner!` });
+    this.emit('data-updated', { count: validRecords.length });
   }
 
   /**
    * Real-time broadcast: push single item when partner is online
    */
   async broadcastLiveRecord(table, record) {
-    if (!this.isConnected || !this.isAuthorized) return;
+    if (!this.isConnected || !this.isAuthorized || !ALLOWED_TABLES.has(table)) return;
 
     let payloadData = record;
     if (table === 'memories' && record.imageBlob) {
@@ -335,32 +511,67 @@ export class PeerSyncManager {
       { type: 'LIVE_RECORD_BROADCAST', record: { table, data: payloadData } },
       this.cryptoKey
     );
-    this.activeConnection.send({ protocol: 'SWEETHEART_V1', payload });
+    this.activeConnection?.send({ protocol: 'SWEETHEART_V1', payload });
   }
 
-  async _applySingleLiveRecord({ table, data }) {
-    if (table === 'memories' && data.imageBlobBase64) {
-      const binary = window.atob(data.imageBlobBase64);
-      const bytes = new Uint8Array(binary.length);
-      for (let i = 0; i < binary.length; i++) {
-        bytes[i] = binary.charCodeAt(i);
+  async _applySingleLiveRecord(record) {
+    if (
+      !this.isAuthorized ||
+      !record ||
+      !ALLOWED_TABLES.has(record.table) ||
+      !this._isValidRecordSchema(record.data)
+    ) {
+      return;
+    }
+
+    const { table, data } = record;
+    if (table === 'memories' && typeof data.imageBlobBase64 === 'string') {
+      try {
+        const binary = window.atob(data.imageBlobBase64);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) {
+          bytes[i] = binary.charCodeAt(i);
+        }
+        data.imageBlob = bytes;
+        delete data.imageBlobBase64;
+      } catch {
+        return;
       }
-      data.imageBlob = bytes;
-      delete data.imageBlobBase64;
     }
 
     await db.table(table).put(data);
     this.emit('data-updated', { single: true, table });
   }
 
+  /**
+   * Validate record structure before writing into IndexedDB
+   */
+  _isValidRecordSchema(data) {
+    if (!data || typeof data !== 'object') return false;
+    if (typeof data.id !== 'string' || data.id.length < 1 || data.id.length > 128) return false;
+    if (typeof data.updatedAt !== 'number') return false;
+    if (typeof data.deleted !== 'boolean') return false;
+    return true;
+  }
+
+  /**
+   * Full disconnect and state teardown
+   */
   disconnect() {
-    this.activeConnection?.close();
-    this.peer?.destroy();
+    this._resetAuthState();
+    try {
+      this.activeConnection?.close();
+    } catch {
+      // ignore
+    }
+    try {
+      this.peer?.destroy();
+    } catch {
+      // ignore
+    }
     this.peer = null;
     this.activeConnection = null;
     this.isConnected = false;
-    this.isAuthorized = false;
-    this.isSyncing = false;
     this.emit('status', { state: 'disconnected' });
   }
 }

@@ -34,11 +34,12 @@ export function QRScannerModal({ isOpen, onClose, onScanSuccess }) {
           await videoRef.current.play();
           requestAnimationFrame(scanQRCode);
         }
-      } catch (err) {
-        console.error('Camera access error:', err);
+      } catch {
         setCameraError('Camera permission denied or camera not available.');
       }
     }
+
+    const PEER_ID_REGEX = /^[a-zA-Z0-9_-]{4,64}$/;
 
     function scanQRCode() {
       if (!isScanning) return;
@@ -58,15 +59,18 @@ export function QRScannerModal({ isOpen, onClose, onScanSuccess }) {
         });
 
         if (code && code.data) {
-          isScanning = false;
-          celebration();
           // Extract peer ID if it's a URL
-          let detectedId = code.data;
+          let detectedId = (code.data || '').trim();
           if (detectedId.includes('#connect=')) {
-            detectedId = detectedId.split('#connect=')[1];
+            detectedId = detectedId.split('#connect=')[1].trim();
           }
-          onScanSuccess(detectedId.trim());
-          return;
+
+          if (PEER_ID_REGEX.test(detectedId)) {
+            isScanning = false;
+            celebration();
+            onScanSuccess(detectedId);
+            return;
+          }
         }
       }
 

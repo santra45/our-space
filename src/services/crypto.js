@@ -10,10 +10,20 @@ const PBKDF2_ITERATIONS = 250000;
 const AES_KEY_LENGTH = 256;
 const IV_LENGTH_BYTES = 12; // 96 bits recommended for AES-GCM
 const SALT_LENGTH_BYTES = 16;
+export const MIN_PASSPHRASE_LENGTH = 16;
 
 const getCrypto = () => (typeof window !== 'undefined' ? window.crypto : globalThis.crypto);
 const getBtoa = (str) => (typeof window !== 'undefined' ? window.btoa(str) : globalThis.btoa(str));
 const getAtob = (str) => (typeof window !== 'undefined' ? window.atob(str) : globalThis.atob(str));
+
+/**
+ * Generates a cryptographically secure random nonce string (base64)
+ */
+export function generateSecureNonce(byteLength = 16) {
+  const bytes = new Uint8Array(byteLength);
+  getCrypto().getRandomValues(bytes);
+  return bufferToBase64(bytes);
+}
 
 /**
  * Utility: Convert ArrayBuffer to Base64 string
@@ -50,11 +60,16 @@ export function generateSalt() {
 
 /**
  * Derives an AES-GCM 256-bit CryptoKey from a user passphrase and salt using PBKDF2.
+ * Enforces a strict minimum passphrase length of 16 characters.
  * @param {string} passphrase - The shared secret passphrase
  * @param {string} saltBase64 - The base64-encoded salt
  * @returns {Promise<CryptoKey>} - AES-GCM CryptoKey ready for encryption/decryption
  */
 export async function deriveKeyFromPassphrase(passphrase, saltBase64) {
+  if (typeof passphrase !== 'string' || passphrase.length < MIN_PASSPHRASE_LENGTH) {
+    throw new Error(`Passphrase must be at least ${MIN_PASSPHRASE_LENGTH} characters long`);
+  }
+
   const encoder = new TextEncoder();
   const passphraseKey = await getCrypto().subtle.importKey(
     'raw',
@@ -202,4 +217,64 @@ export async function decryptBlob(packedData, key, mimeType = 'image/webp') {
  */
 export function blobToUrl(blob) {
   return URL.createObjectURL(blob);
+}
+
+const BACKUP_MAGIC = 'OUR_SPACE_ENCRYPTED_VAULT_V1';
+
+/**
+ * Packs database export into a single AES-GCM 256 encrypted container with fresh salt and IV.
+ * @param {Object} rawVaultData
+ * @param {string} passphrase
+ * @returns {Promise<Object>}
+ */
+export async function createEncryptedBackup(rawVaultData, passphrase) {
+  if (typeof passphrase !== 'string' || passphrase.length < MIN_PASSPHRASE_LENGTH) {
+    throw new Error(`Passphrase must be at least ${MIN_PASSPHRASE_LENGTH} characters long`);
+  }
+
+  const salt = generateSalt();
+  const backupKey = await deriveKeyFromPassphrase(passphrase, salt);
+  const jsonPayload = JSON.stringify(rawVaultData);
+  const encrypted = await encryptText(jsonPayload, backupKey);
+
+  return {
+    magic: BACKUP_MAGIC,
+    version: 1,
+    salt,
+    iv: encrypted.iv,
+    ciphertext: encrypted.ciphertext,
+    exportedAt: new Date().toISOString(),
+  };
+}
+
+/**
+ * Decrypts and verifies a single AES-GCM 256 encrypted backup container.
+ * Completely fails if tampered, corrupted, or if passphrase is incorrect.
+ * @param {Object} container
+ * @param {string} passphrase
+ * @returns {Promise<Object>}
+ */
+export async function decryptBackupContainer(container, passphrase) {
+  if (!container || typeof container !== 'object') {
+    throw new Error('Invalid backup: not a valid object');
+  }
+
+  if (container.magic !== BACKUP_MAGIC) {
+    throw new Error('Invalid backup: unrecognized container header or format');
+  }
+
+  if (!container.salt || !container.iv || !container.ciphertext) {
+    throw new Error('Invalid backup: missing cryptographic components');
+  }
+
+  const backupKey = await deriveKeyFromPassphrase(passphrase, container.salt);
+  // AES-GCM 256 decryption verifies the 128-bit authentication tag
+  const decryptedJson = await decryptText(container.ciphertext, container.iv, backupKey);
+  
+  const parsed = JSON.parse(decryptedJson);
+  if (!parsed || typeof parsed !== 'object' || !parsed.tables) {
+    throw new Error('Invalid backup: malformed payload inside container');
+  }
+
+  return parsed;
 }

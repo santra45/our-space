@@ -6,6 +6,7 @@ import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Heart, Lock, KeyRound, Sparkles, Eye, EyeOff, ShieldCheck } from 'lucide-react';
 import { useVault } from '../../context/VaultContext';
+import { MIN_PASSPHRASE_LENGTH } from '../../services/crypto';
 import GlassCard from '../common/GlassCard';
 import BouncyButton from '../common/BouncyButton';
 import { fireHeartConfetti } from '../common/ConfettiBurst';
@@ -23,13 +24,17 @@ export function LockScreen() {
 
   const handleUnlock = async (e) => {
     e.preventDefault();
-    if (!passphrase.trim()) return;
+    if (!passphrase.trim() || passphrase.length < MIN_PASSPHRASE_LENGTH) {
+      alert(`Passphrase must be at least ${MIN_PASSPHRASE_LENGTH} characters.`);
+      return;
+    }
     setLoading(true);
     tap();
 
     const success = await unlockVault(passphrase);
     setLoading(false);
     if (success) {
+      setPassphrase('');
       celebration();
       fireHeartConfetti();
     }
@@ -37,8 +42,8 @@ export function LockScreen() {
 
   const handleSetup = async (e) => {
     e.preventDefault();
-    if (!passphrase.trim() || passphrase.length < 4) {
-      alert('Please choose a memorable secret passphrase of at least 4 characters.');
+    if (!passphrase.trim() || passphrase.length < MIN_PASSPHRASE_LENGTH) {
+      alert(`Please choose a memorable secret passphrase of at least ${MIN_PASSPHRASE_LENGTH} characters.`);
       return;
     }
     setLoading(true);
@@ -50,6 +55,7 @@ export function LockScreen() {
     });
     setLoading(false);
     if (success) {
+      setPassphrase('');
       celebration();
       fireHeartConfetti();
     }
@@ -110,8 +116,9 @@ export function LockScreen() {
                     type={showPassword ? 'text' : 'password'}
                     value={passphrase}
                     onChange={(e) => setPassphrase(e.target.value)}
-                    placeholder="Enter your shared passphrase..."
+                    placeholder="Enter your secret passphrase (min 16 chars)..."
                     required
+                    minLength={16}
                     autoFocus
                     className="w-full px-4 py-3 pl-10 pr-11 bg-white/70 border border-blush-200 rounded-2xl text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-blush-400 placeholder:text-slate-400 transition"
                   />
@@ -197,9 +204,9 @@ export function LockScreen() {
                     type={showPassword ? 'text' : 'password'}
                     value={passphrase}
                     onChange={(e) => setPassphrase(e.target.value)}
-                    placeholder="Shared secret between the two of you..."
+                    placeholder="Create a shared secret phrase (min 16 chars)..."
                     required
-                    minLength={4}
+                    minLength={16}
                     className="w-full px-4 py-2.5 pl-10 pr-11 bg-white/70 border border-blush-200 rounded-2xl text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-blush-400 placeholder:text-slate-400 transition"
                   />
                   <KeyRound className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
@@ -212,7 +219,7 @@ export function LockScreen() {
                   </button>
                 </div>
                 <p className="text-[11px] text-slate-400 mt-1">
-                  Give this exact same passphrase to your partner so she can unlock or pair.
+                  Must be at least 16 characters (e.g. a memorable secret sentence only you two know).
                 </p>
               </div>
 

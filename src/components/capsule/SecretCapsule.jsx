@@ -100,9 +100,8 @@ export function SecretCapsule() {
       setContent('');
       setUnlockDate('');
       setIsWriteModalOpen(false);
-    } catch (err) {
-      console.error('Failed to encrypt letter:', err);
-      alert('Error saving letter: ' + err.message);
+    } catch {
+      alert('Error saving letter. Please try again.');
     } finally {
       setSaving(false);
     }

@@ -47,8 +47,8 @@ export default {
         '5xl': '2.5rem',
       },
       fontFamily: {
-        sans: ['"Plus Jakarta Sans"', 'Nunito', 'sans-serif'],
-        handwriting: ['"Caveat"', '"Indie Flower"', 'cursive'],
+        sans: ['system-ui', '-apple-system', 'BlinkMacSystemFont', '"Segoe UI"', 'Roboto', '"Plus Jakarta Sans"', 'Nunito', 'sans-serif'],
+        handwriting: ['"Caveat"', '"Segoe Print"', '"Bradley Hand"', '"Comic Sans MS"', 'cursive', 'sans-serif'],
       },
       boxShadow: {
         'cozy': '0 8px 30px rgba(255, 182, 193, 0.25)',

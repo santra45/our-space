@@ -42,6 +42,8 @@ export function SyncProvider({ children }) {
       setTimeout(() => setLastSyncNotice(null), 4000);
     });
 
+const PEER_ID_REGEX = /^[a-zA-Z0-9_-]{4,64}$/;
+
     // Start peer
     peerSync.init(cryptoKey).then((id) => {
       if (!isMounted) return;
@@ -51,16 +53,17 @@ export function SyncProvider({ children }) {
       const hash = window.location.hash;
       if (hash && hash.startsWith('#connect=')) {
         const targetPeerId = hash.replace('#connect=', '').trim();
-        if (targetPeerId && targetPeerId !== id) {
+        // Clear hash immediately so URL is sanitized
+        history.replaceState(null, document.title, window.location.pathname);
+
+        if (targetPeerId && targetPeerId !== id && PEER_ID_REGEX.test(targetPeerId)) {
           setTimeout(() => {
             peerSync.connectToPartner(targetPeerId);
-            // Clear hash so refresh doesn't keep reconnecting
-            history.replaceState(null, document.title, window.location.pathname);
           }, 800);
         }
       }
-    }).catch((err) => {
-      console.error('Peer init failed', err);
+    }).catch(() => {
+      // safe fail
     });
 
     return () => {

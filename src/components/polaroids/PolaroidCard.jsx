@@ -43,8 +43,8 @@ export function PolaroidCard({ memory, cryptoKey, onSelect }) {
           url = URL.createObjectURL(blob);
           if (active) setImageUrl(url);
         }
-      } catch (err) {
-        console.error('Failed to decrypt polaroid:', err);
+      } catch {
+        // Suppress decryption failure error details
       } finally {
         if (active) setLoading(false);
       }

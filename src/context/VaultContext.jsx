@@ -1,8 +1,3 @@
-/**
- * src/context/VaultContext.jsx
- * Manages zero-knowledge vault state, PBKDF2 key derivation, and master key lifecycle.
- * The master CryptoKey is held ONLY in active React memory and never written to disk or localStorage.
- */
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import db from '../db';
 import {
@@ -10,7 +5,9 @@ import {
   deriveKeyFromPassphrase,
   encryptJSON,
   decryptJSON,
+  MIN_PASSPHRASE_LENGTH,
 } from '../services/crypto';
+import peerSync from '../services/peerSync';
 
 const VaultContext = createContext(null);
 
@@ -33,8 +30,7 @@ export function VaultProvider({ children }) {
         } else {
           setIsVaultInitialized(false);
         }
-      } catch (err) {
-        console.error('Error checking vault meta:', err);
+      } catch {
         setIsVaultInitialized(false);
       }
     }
@@ -47,6 +43,10 @@ export function VaultProvider({ children }) {
   const initializeVault = async (passphrase, initialSettings = {}) => {
     try {
       setError(null);
+      if (!passphrase || passphrase.length < MIN_PASSPHRASE_LENGTH) {
+        setError(`Passphrase must be at least ${MIN_PASSPHRASE_LENGTH} characters long.`);
+        return false;
+      }
       const salt = generateSalt();
       const key = await deriveKeyFromPassphrase(passphrase, salt);
 
@@ -92,6 +92,10 @@ export function VaultProvider({ children }) {
   const unlockVault = async (passphrase) => {
     try {
       setError(null);
+      if (!passphrase || passphrase.length < MIN_PASSPHRASE_LENGTH) {
+        setError(`Passphrase must be at least ${MIN_PASSPHRASE_LENGTH} characters long.`);
+        return false;
+      }
       const meta = await db.vaultMeta.get('config');
       if (!meta || !meta.salt) {
         throw new Error('Vault is not yet initialized.');
@@ -118,7 +122,7 @@ export function VaultProvider({ children }) {
         return false;
       }
     } catch (err) {
-      setError(err.message);
+      setError(err.message || 'Unlock failed');
       return false;
     }
   };
@@ -149,17 +153,24 @@ export function VaultProvider({ children }) {
       });
 
       setVaultConfig(updatedConfig);
-    } catch (err) {
-      console.error('Failed to update settings:', err);
+    } catch {
+      // safe fail
     }
   };
 
   /**
-   * Lock vault and clear key from active memory
+   * Lock vault, immediately terminate P2P connections, and clear sensitive memory state
    */
   const lockVault = () => {
+    try {
+      peerSync.disconnect();
+    } catch {
+      // safe fail
+    }
     setCryptoKey(null);
+    setVaultConfig(null);
     setIsUnlocked(false);
+    setError(null);
   };
 
   return (
