@@ -1,6 +1,6 @@
 # Our Space 💕 (Private Couple's Sanctuary)
 
-A private, local-first couple's web application designed from scratch for two partners. Built with modern web standards (React 18, Vite, Tailwind CSS, Framer Motion, Dexie.js, Web Crypto API, and WebRTC PeerJS).
+A private, **zero-knowledge**, local-first couple's web application designed from scratch for two partners. Built with modern web standards (React 18, Vite, Tailwind CSS, Framer Motion, Dexie.js, Web Crypto API, and WebRTC PeerJS).
 
 ---
 
