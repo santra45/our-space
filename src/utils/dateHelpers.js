@@ -3,10 +3,31 @@
  * Date calculations for anniversary countdowns and time-locked letters
  */
 
+/**
+ * Accurately parses a date string into local timezone midnight (00:00:00.000)
+ * Avoids ECMAScript's default UTC-midnight conversion for 'YYYY-MM-DD' strings
+ * which introduces timezone offsets (e.g. 5h30m in IST, -5h in EST).
+ */
+export function parseLocalDate(dateStr) {
+  if (!dateStr) return new Date();
+  if (typeof dateStr === 'string') {
+    const trimmed = dateStr.trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+      const [year, month, day] = trimmed.split('-').map(Number);
+      return new Date(year, month - 1, day, 0, 0, 0, 0);
+    }
+    if (trimmed.includes('T')) {
+      const d = new Date(trimmed);
+      if (!isNaN(d.getTime())) return d;
+    }
+  }
+  return new Date(dateStr);
+}
+
 export function calculateLoveDuration(startDateStr) {
   if (!startDateStr) return { days: 0, hours: 0, minutes: 0, seconds: 0, totalDays: 0 };
 
-  const start = new Date(startDateStr).getTime();
+  const start = parseLocalDate(startDateStr).getTime();
   const now = Date.now();
   const diff = Math.max(0, now - start);
 
@@ -20,11 +41,11 @@ export function calculateLoveDuration(startDateStr) {
 
 export function calculateNextMilestone(startDateStr) {
   if (!startDateStr) return null;
-  const start = new Date(startDateStr);
+  const start = parseLocalDate(startDateStr);
   const now = new Date();
 
   // Next yearly anniversary
-  let nextAnniversary = new Date(now.getFullYear(), start.getMonth(), start.getDate());
+  let nextAnniversary = new Date(now.getFullYear(), start.getMonth(), start.getDate(), 0, 0, 0, 0);
   if (nextAnniversary.getTime() < now.getTime()) {
     nextAnniversary.setFullYear(now.getFullYear() + 1);
   }
@@ -54,13 +75,13 @@ export function calculateNextMilestone(startDateStr) {
 
 export function isDateLocked(unlockDateStr) {
   if (!unlockDateStr) return false;
-  const target = new Date(unlockDateStr).getTime();
+  const target = parseLocalDate(unlockDateStr).getTime();
   return Date.now() < target;
 }
 
 export function formatTimeRemaining(targetDateStr) {
   if (!targetDateStr) return '';
-  const diff = new Date(targetDateStr).getTime() - Date.now();
+  const diff = parseLocalDate(targetDateStr).getTime() - Date.now();
   if (diff <= 0) return 'Unlocked';
 
   const days = Math.floor(diff / (1000 * 60 * 60 * 24));
@@ -74,7 +95,7 @@ export function formatTimeRemaining(targetDateStr) {
 
 export function formatDatePretty(dateStr) {
   if (!dateStr) return '';
-  const d = new Date(dateStr);
+  const d = parseLocalDate(dateStr);
   return d.toLocaleDateString('en-US', {
     month: 'short',
     day: 'numeric',

@@ -200,12 +200,7 @@ export class PeerSyncManager {
   }
 
   _setupConnection(conn, isInitiator) {
-    if (this.activeConnection) {
-      if (this.isConnected && this.isAuthorized && this.activeConnection.peer === conn.peer) {
-        // Redundant incoming connection from already connected/authorized partner: safely ignore
-        try { conn.close(); } catch {}
-        return;
-      }
+    if (this.activeConnection && this.activeConnection !== conn) {
       try {
         this.activeConnection.close();
       } catch {
@@ -243,14 +238,21 @@ export class PeerSyncManager {
     });
 
     conn.on('close', () => {
-      this._resetAuthState();
-      this.isConnected = false;
-      this.emit('status', { state: 'disconnected' });
+      if (this.activeConnection === conn) {
+        this._resetAuthState();
+        this.isConnected = false;
+        this.activeConnection = null;
+        this.emit('status', { state: 'disconnected' });
+      }
     });
 
     conn.on('error', () => {
-      this._resetAuthState();
-      this.emit('status', { state: 'error', error: 'Data channel error' });
+      if (this.activeConnection === conn) {
+        this._resetAuthState();
+        this.isConnected = false;
+        this.activeConnection = null;
+        this.emit('status', { state: 'error', error: 'Data channel error' });
+      }
     });
   }
 

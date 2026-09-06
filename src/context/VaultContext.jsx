@@ -21,7 +21,54 @@ export function VaultProvider({ children }) {
   const [vaultConfig, setVaultConfig] = useState(null);
   const [error, setError] = useState(null);
 
-  // Check if vault has already been set up in this browser's IndexedDB
+  /**
+   * Unlock existing vault with passphrase
+   */
+  const unlockVault = async (passphrase) => {
+    try {
+      setError(null);
+      if (!passphrase || passphrase.length < MIN_PASSPHRASE_LENGTH) {
+        setError(`Passphrase must be at least ${MIN_PASSPHRASE_LENGTH} characters long.`);
+        return false;
+      }
+      const meta = await db.vaultMeta.get('config');
+      if (!meta || !meta.salt) {
+        throw new Error('Vault is not yet initialized.');
+      }
+
+      const key = await deriveKeyFromPassphrase(passphrase, meta.salt);
+
+      // Verify passphrase by attempting to decrypt the canary token
+      try {
+        const decrypted = await decryptJSON(meta.canary, meta.canaryIv, key);
+        if (decrypted.token !== CANARY_SECRET) {
+          throw new Error('Canary mismatch');
+        }
+
+        try {
+          sessionStorage.setItem('sweetheart_session_key', passphrase);
+        } catch {}
+
+        setVaultSalt(meta.salt);
+        setCryptoKey(key);
+        setVaultConfig({
+          coupleNames: decrypted.coupleNames || 'Us',
+          startDate: decrypted.startDate || '',
+          updatedAt: decrypted.updatedAt || meta.updatedAt || 0,
+        });
+        setIsUnlocked(true);
+        return true;
+      } catch {
+        setError('Incorrect passphrase! Please double-check and try again.');
+        return false;
+      }
+    } catch (err) {
+      setError(err.message || 'Unlock failed');
+      return false;
+    }
+  };
+
+  // Check if vault has already been set up in this browser's IndexedDB and auto-unlock if active session
   useEffect(() => {
     async function checkVault() {
       try {
@@ -29,6 +76,14 @@ export function VaultProvider({ children }) {
         if (meta && meta.salt) {
           setVaultSalt(meta.salt);
           setIsVaultInitialized(true);
+
+          // If browser tab refreshed within same session, auto-unlock!
+          try {
+            const savedSessionKey = sessionStorage.getItem('sweetheart_session_key');
+            if (savedSessionKey) {
+              await unlockVault(savedSessionKey);
+            }
+          } catch {}
         } else {
           setIsVaultInitialized(false);
         }
@@ -72,6 +127,10 @@ export function VaultProvider({ children }) {
       };
 
       await db.vaultMeta.put(meta);
+
+      try {
+        sessionStorage.setItem('sweetheart_session_key', passphrase);
+      } catch {}
 
       setVaultSalt(salt);
       setCryptoKey(key);
@@ -131,6 +190,10 @@ export function VaultProvider({ children }) {
 
       await db.vaultMeta.put(meta);
 
+      try {
+        sessionStorage.setItem('sweetheart_session_key', passphrase);
+      } catch {}
+
       setVaultSalt(salt);
       setCryptoKey(key);
       setVaultConfig({
@@ -144,49 +207,6 @@ export function VaultProvider({ children }) {
     } catch (err) {
       console.error('Failed to initialize from partner invite:', err);
       setError('Could not pair with partner: ' + (err.message || 'Unknown error'));
-      return false;
-    }
-  };
-
-  /**
-   * Unlock existing vault with passphrase
-   */
-  const unlockVault = async (passphrase) => {
-    try {
-      setError(null);
-      if (!passphrase || passphrase.length < MIN_PASSPHRASE_LENGTH) {
-        setError(`Passphrase must be at least ${MIN_PASSPHRASE_LENGTH} characters long.`);
-        return false;
-      }
-      const meta = await db.vaultMeta.get('config');
-      if (!meta || !meta.salt) {
-        throw new Error('Vault is not yet initialized.');
-      }
-
-      const key = await deriveKeyFromPassphrase(passphrase, meta.salt);
-
-      // Verify passphrase by attempting to decrypt the canary token
-      try {
-        const decrypted = await decryptJSON(meta.canary, meta.canaryIv, key);
-        if (decrypted.token !== CANARY_SECRET) {
-          throw new Error('Canary mismatch');
-        }
-
-        setVaultSalt(meta.salt);
-        setCryptoKey(key);
-        setVaultConfig({
-          coupleNames: decrypted.coupleNames || 'Us',
-          startDate: decrypted.startDate || '',
-          updatedAt: decrypted.updatedAt || meta.updatedAt || 0,
-        });
-        setIsUnlocked(true);
-        return true;
-      } catch {
-        setError('Incorrect passphrase! Please double-check and try again.');
-        return false;
-      }
-    } catch (err) {
-      setError(err.message || 'Unlock failed');
       return false;
     }
   };
@@ -277,6 +297,9 @@ export function VaultProvider({ children }) {
    * Lock vault, immediately terminate P2P connections, and clear sensitive memory state
    */
   const lockVault = () => {
+    try {
+      sessionStorage.removeItem('sweetheart_session_key');
+    } catch {}
     try {
       peerSync.disconnect();
     } catch {

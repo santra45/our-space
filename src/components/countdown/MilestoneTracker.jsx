@@ -30,6 +30,10 @@ export function MilestoneTracker() {
   const [milestoneTitle, setMilestoneTitle] = useState('');
   const [milestoneDate, setMilestoneDate] = useState(new Date().toISOString().split('T')[0]);
 
+  React.useEffect(() => {
+    if (startDate) setNewDate(startDate);
+  }, [startDate]);
+
   // Read custom encrypted milestones from Dexie
   const storedMilestones = useLiveQuery(
     () => db.milestones.filter((m) => !m.deleted).toArray(),
