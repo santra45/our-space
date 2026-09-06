@@ -3,23 +3,24 @@
  * Mobile top bar with partner sync status indicator and vault lock button
  */
 import React from 'react';
-import { Heart, Wifi, WifiOff, Lock, RefreshCw, Share2 } from 'lucide-react';
+import { Heart, Wifi, WifiOff, Lock, RefreshCw, Share2, Zap } from 'lucide-react';
 import { useVault } from '../../context/VaultContext';
 import { useSync } from '../../context/SyncContext';
 import { useHaptics } from '../../hooks/useHaptics';
 
 export function Header({ onOpenSync, onOpenBackup }) {
   const { vaultConfig, lockVault } = useVault();
-  const { isPartnerConnected, syncStatus, lastSyncNotice } = useSync();
+  const { isPartnerConnected, syncStatus, lastSyncNotice, isDirectP2P, connectionType } = useSync();
   const { tick } = useHaptics();
 
   const getStatusDisplay = () => {
     if (isPartnerConnected) {
+      const isDirect = isDirectP2P || connectionType === 'direct';
       return {
-        label: 'Partner Connected',
+        label: isDirect ? 'Direct P2P ⚡' : 'Relayed 🛡️',
         color: 'bg-emerald-100 text-emerald-700 border-emerald-200',
         dot: 'bg-emerald-500 animate-pulse',
-        icon: Wifi,
+        icon: isDirect ? Zap : Wifi,
       };
     }
     if (syncStatus.state === 'connecting') {

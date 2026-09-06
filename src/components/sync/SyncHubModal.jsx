@@ -16,6 +16,7 @@ import {
   Download,
   Upload,
   ShieldCheck,
+  Zap,
 } from 'lucide-react';
 import QRCode from 'qrcode';
 import { useSync } from '../../context/SyncContext';
@@ -33,7 +34,16 @@ import {
 const PEER_ID_REGEX = /^[a-zA-Z0-9_-]{4,64}$/;
 
 export function SyncHubModal({ isOpen, onClose }) {
-  const { myPeerId, partnerId, syncStatus, isPartnerConnected, connectToPartner, syncNow } = useSync();
+  const {
+    myPeerId,
+    partnerId,
+    syncStatus,
+    isPartnerConnected,
+    connectToPartner,
+    syncNow,
+    isDirectP2P,
+    connectionType,
+  } = useSync();
   const [partnerInputId, setPartnerInputId] = useState('');
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [copySuccess, setCopySuccess] = useState(false);
@@ -215,29 +225,49 @@ export function SyncHubModal({ isOpen, onClose }) {
         </div>
 
         {/* Live Status */}
-        <div className="mb-4 p-3 rounded-2xl bg-blush-50/60 border border-blush-100 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <span
-              className={`w-2.5 h-2.5 rounded-full ${
-                isPartnerConnected ? 'bg-emerald-500 animate-pulse' : 'bg-amber-400'
-              }`}
-            />
-            <span className="text-xs font-bold text-slate-700">
-              {isPartnerConnected ? 'Connected to Partner' : 'Awaiting Connection'}
-            </span>
+        <div className="mb-4 p-3.5 rounded-2xl bg-blush-50/60 border border-blush-100 space-y-2.5">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span
+                className={`w-2.5 h-2.5 rounded-full ${
+                  isPartnerConnected ? 'bg-emerald-500 animate-pulse' : 'bg-amber-400'
+                }`}
+              />
+              <span className="text-xs font-bold text-slate-700">
+                {isPartnerConnected ? 'Connected to Partner' : 'Awaiting Connection'}
+              </span>
+            </div>
+
+            {isPartnerConnected && (
+              <button
+                onClick={() => {
+                  tap();
+                  syncNow();
+                }}
+                className="text-xs font-semibold text-blush-600 inline-flex items-center gap-1 hover:underline"
+              >
+                <RefreshCw className="w-3 h-3" />
+                <span>Sync Now</span>
+              </button>
+            )}
           </div>
 
+          {/* Direct P2P vs Relayed Indicator Badge */}
           {isPartnerConnected && (
-            <button
-              onClick={() => {
-                tap();
-                syncNow();
-              }}
-              className="text-xs font-semibold text-blush-600 inline-flex items-center gap-1 hover:underline"
-            >
-              <RefreshCw className="w-3 h-3" />
-              <span>Sync Now</span>
-            </button>
+            <div className="flex items-center justify-between pt-2 border-t border-blush-100/70 text-[11px]">
+              <span className="text-slate-500 font-medium">Connection Route:</span>
+              {isDirectP2P || connectionType === 'direct' ? (
+                <span className="inline-flex items-center gap-1 font-bold text-emerald-700 bg-emerald-100/80 px-2.5 py-0.5 rounded-full border border-emerald-200 shadow-sm">
+                  <Zap className="w-3 h-3 text-amber-500 fill-amber-400" />
+                  <span>Direct P2P ⚡ (Phone-to-Phone)</span>
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1 font-semibold text-indigo-700 bg-indigo-50 px-2.5 py-0.5 rounded-full border border-indigo-200">
+                  <ShieldCheck className="w-3 h-3 text-indigo-500" />
+                  <span>Relayed 🛡️ (Encrypted E2EE)</span>
+                </span>
+              )}
+            </div>
           )}
         </div>
 

@@ -14,6 +14,7 @@ export function SyncProvider({ children }) {
   const [partnerId, setPartnerId] = useState(null);
   const [syncStatus, setSyncStatus] = useState({ state: 'disconnected' });
   const [lastSyncNotice, setLastSyncNotice] = useState(null);
+  const [connectionType, setConnectionType] = useState(null); // 'direct' | 'relayed' | null
 
   // Initialize peer when vault is unlocked
   useEffect(() => {
@@ -22,6 +23,7 @@ export function SyncProvider({ children }) {
       setMyPeerId(null);
       setPartnerId(null);
       setSyncStatus({ state: 'disconnected' });
+      setConnectionType(null);
       return;
     }
 
@@ -34,6 +36,8 @@ export function SyncProvider({ children }) {
       if (status.peerId) setMyPeerId(status.peerId);
       if (status.partnerId) setPartnerId(status.partnerId);
       if (status.message) setLastSyncNotice(status.message);
+      if (status.connectionType) setConnectionType(status.connectionType);
+      if (status.state === 'disconnected') setConnectionType(null);
     });
 
     peerSync.on('data-updated', (data) => {
@@ -93,6 +97,8 @@ const PEER_ID_REGEX = /^[a-zA-Z0-9_-]{4,64}$/;
         connectToPartner,
         syncNow,
         disconnect,
+        connectionType,
+        isDirectP2P: connectionType === 'direct',
         isPartnerConnected: syncStatus.state === 'connected' || syncStatus.state === 'authorized' || syncStatus.state === 'synced' || syncStatus.state === 'syncing',
         isAuthorized: syncStatus.state === 'authorized' || syncStatus.state === 'synced' || syncStatus.state === 'syncing',
       }}

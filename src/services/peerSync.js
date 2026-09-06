@@ -45,6 +45,7 @@ export class PeerSyncManager {
     this.isSyncing = false;
     this.pendingChallengeNonce = null;
     this.authTimeoutTimer = null;
+    this.connectionType = null; // 'direct' | 'relayed' | null
   }
 
   on(event, callback) {
@@ -211,6 +212,45 @@ export class PeerSyncManager {
     this.pendingChallengeNonce = null;
     this.isAuthorized = false;
     this.isSyncing = false;
+    this.connectionType = null;
+  }
+
+  /**
+   * Inspects WebRTC active candidate pair to determine if connection is direct P2P or relayed
+   * @returns {Promise<'direct' | 'relayed' | null>}
+   */
+  async checkConnectionType() {
+    const pc = this.activeConnection?.peerConnection;
+    if (!pc || typeof pc.getStats !== 'function') {
+      return this.isConnected ? 'direct' : null;
+    }
+
+    try {
+      const stats = await pc.getStats();
+      let isRelayed = false;
+      let hasPair = false;
+
+      stats.forEach((report) => {
+        if (
+          report.type === 'candidate-pair' &&
+          (report.selected || report.nominated || (report.state === 'succeeded' && report.bytesSent > 0))
+        ) {
+          hasPair = true;
+          const local = stats.get(report.localCandidateId);
+          const remote = stats.get(report.remoteCandidateId);
+          if (local?.candidateType === 'relay' || remote?.candidateType === 'relay') {
+            isRelayed = true;
+          }
+        }
+      });
+
+      if (hasPair) {
+        return isRelayed ? 'relayed' : 'direct';
+      }
+      return 'direct';
+    } catch {
+      return 'direct';
+    }
   }
 
   /**
@@ -323,7 +363,12 @@ export class PeerSyncManager {
         // Initiator is authenticated!
         this._clearAuthTimeout();
         this.isAuthorized = true;
-        this.emit('status', { state: 'authorized' });
+        this.connectionType = await this.checkConnectionType();
+        this.emit('status', {
+          state: 'authorized',
+          connectionType: this.connectionType,
+          isDirect: this.connectionType === 'direct',
+        });
         await this.syncNow();
         break;
       }
@@ -345,7 +390,12 @@ export class PeerSyncManager {
         // Receiver is authenticated!
         this._clearAuthTimeout();
         this.isAuthorized = true;
-        this.emit('status', { state: 'authorized' });
+        this.connectionType = await this.checkConnectionType();
+        this.emit('status', {
+          state: 'authorized',
+          connectionType: this.connectionType,
+          isDirect: this.connectionType === 'direct',
+        });
         break;
       }
 
