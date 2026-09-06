@@ -1,0 +1,18 @@
+{
+  "short_name": "Our Space",
+  "name": "Our Space 💕 Private Couple's Sanctuary",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "start_url": "/",
+  "background_color": "#fff5f7",
+  "theme_color": "#ffe8ed",
+  "display": "standalone",
+  "orientation": "portrait",
+  "scope": "/"
+}
