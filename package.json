@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "vite --host",
     "build": "vite build",
-    "preview": "vite preview --host"
+    "preview": "vite preview --host",
+    "test": "node test-crypto.mjs",
+    "test:crypto": "node test-crypto.mjs"
   },
   "dependencies": {
     "canvas-confetti": "^1.9.4",

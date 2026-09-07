@@ -2,13 +2,30 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; media-src 'self' blob:; connect-src 'self' wss://*.peerjs.com https://*.peerjs.com stun:*.google.com:* stun:*.twilio.com:*; font-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self';" />
+    <!--
+      DEFENCE IN DEPTH ONLY. The authoritative Content-Security-Policy is the
+      HTTP response header set in vercel.json. This meta tag repeats it so the
+      policy still applies when the build is opened from static hosting that
+      sends no headers at all (a dragged-and-dropped dist/ folder, file://,
+      `vite preview`). `frame-ancestors` is deliberately absent here: a meta-tag
+      CSP cannot express it and browsers log a warning when it tries. Clickjacking
+      is stopped by the header plus X-Frame-Options: DENY, both in vercel.json.
+      If you change one policy, change the other.
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; base-uri 'self'; object-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; media-src 'self' blob:; font-src 'self'; manifest-src 'self'; worker-src 'self'; connect-src 'self' wss://*.peerjs.com https://*.peerjs.com stun: stuns:; form-action 'self';"
+    />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <!-- iOS ignores SVG icons; this PNG is referenced by manifest.json too. -->
+    <link rel="apple-touch-icon" href="/icons/icon-192.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <meta name="theme-color" content="#ffe8ed" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Our Space" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-    <meta name="description" content="Our private, zero-knowledge, encrypted space for two." />
+    <meta name="referrer" content="no-referrer" />
+    <meta name="description" content="Our private, end-to-end encrypted space for two." />
     <link rel="manifest" href="/manifest.json" />
 
     <title>Our Space 💕</title>
