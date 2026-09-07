@@ -1,12 +1,26 @@
 /**
  * src/components/sync/QRScannerModal.jsx
- * In-app camera QR code scanner for Android devices using jsQR
+ * In-app camera QR code scanner for Android devices using jsQR.
+ *
+ * Two things this file has to get right:
+ *  - Cost. jsQR runs on the main thread, so the frame it is handed is downscaled
+ *    to SCAN_MAX_DIMENSION and only sampled SCAN_INTERVAL_MS apart. Decoding a
+ *    12MP frame 60 times a second locks up a phone for no extra accuracy.
+ *  - Handing the payload over intact. The QR encodes a full invite URL with a
+ *    salt and other params; splitting it by hand mangles it. `parseInvite` is
+ *    the single parser and the raw scanned string is what gets forwarded on.
  */
 import React, { useRef, useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
-import { X, Camera, RefreshCw } from 'lucide-react';
+import { X } from 'lucide-react';
 import jsQR from 'jsqr';
+import { parseInvite } from '../../utils/invite';
 import { useHaptics } from '../../hooks/useHaptics';
+
+/** Longest edge of the buffer jsQR actually scans. QR codes decode fine here. */
+const SCAN_MAX_DIMENSION = 640;
+/** ~10fps. Anything faster just burns battery on the same frame. */
+const SCAN_INTERVAL_MS = 100;
 
 export function QRScannerModal({ isOpen, onClose, onScanSuccess }) {
   const videoRef = useRef(null);
@@ -20,56 +34,87 @@ export function QRScannerModal({ isOpen, onClose, onScanSuccess }) {
     let stream = null;
     let animationFrameId = null;
     let isScanning = true;
+    let lastScanAt = 0;
+    let scanWidth = 0;
+    let scanHeight = 0;
 
     async function startCamera() {
       try {
         setCameraError(null);
-        stream = await navigator.mediaDevices.getUserMedia({
+        const media = await navigator.mediaDevices.getUserMedia({
           video: { facingMode: 'environment' },
         });
+
+        // The modal can close (or a scan can succeed) while the permission
+        // prompt is still up. Cleanup already ran and saw a null stream, so the
+        // camera would stay live with its LED on until the tab died.
+        if (!isScanning) {
+          media.getTracks().forEach((track) => track.stop());
+          return;
+        }
+
+        stream = media;
 
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
           videoRef.current.setAttribute('playsinline', 'true');
           await videoRef.current.play();
-          requestAnimationFrame(scanQRCode);
+          animationFrameId = requestAnimationFrame(scanQRCode);
         }
       } catch {
         setCameraError('Camera permission denied or camera not available.');
       }
     }
 
-    const PEER_ID_REGEX = /^[a-zA-Z0-9_-]{4,64}$/;
+    /** Sizes the scan buffer once per resolution change, not once per frame. */
+    function syncCanvasSize(canvas, video) {
+      const sourceWidth = video.videoWidth;
+      const sourceHeight = video.videoHeight;
+      if (!sourceWidth || !sourceHeight) return false;
 
-    function scanQRCode() {
+      const scale = Math.min(1, SCAN_MAX_DIMENSION / Math.max(sourceWidth, sourceHeight));
+      const width = Math.max(1, Math.round(sourceWidth * scale));
+      const height = Math.max(1, Math.round(sourceHeight * scale));
+
+      if (width !== scanWidth || height !== scanHeight) {
+        scanWidth = width;
+        scanHeight = height;
+        // Assigning width/height clears the canvas, so only do it on a change.
+        canvas.width = width;
+        canvas.height = height;
+      }
+      return true;
+    }
+
+    function scanQRCode(timestamp) {
       if (!isScanning) return;
 
-      const video = videoRef.current;
-      const canvas = canvasRef.current;
+      const now = typeof timestamp === 'number' ? timestamp : performance.now();
+      if (now - lastScanAt >= SCAN_INTERVAL_MS) {
+        lastScanAt = now;
 
-      if (video && video.readyState === video.HAVE_ENOUGH_DATA && canvas) {
-        const ctx = canvas.getContext('2d');
-        canvas.width = video.videoWidth;
-        canvas.height = video.videoHeight;
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        const video = videoRef.current;
+        const canvas = canvasRef.current;
 
-        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        const code = jsQR(imageData.data, imageData.width, imageData.height, {
-          inversionAttempts: 'dontInvert',
-        });
+        if (video && canvas && video.readyState === video.HAVE_ENOUGH_DATA) {
+          if (syncCanvasSize(canvas, video)) {
+            const ctx = canvas.getContext('2d', { willReadFrequently: true });
+            ctx.drawImage(video, 0, 0, scanWidth, scanHeight);
 
-        if (code && code.data) {
-          // Extract peer ID if it's a URL
-          let detectedId = (code.data || '').trim();
-          if (detectedId.includes('#connect=')) {
-            detectedId = detectedId.split('#connect=')[1].trim();
-          }
+            const imageData = ctx.getImageData(0, 0, scanWidth, scanHeight);
+            const code = jsQR(imageData.data, imageData.width, imageData.height, {
+              inversionAttempts: 'dontInvert',
+            });
 
-          if (PEER_ID_REGEX.test(detectedId)) {
-            isScanning = false;
-            celebration();
-            onScanSuccess(detectedId);
-            return;
+            const payload = code && code.data ? code.data.trim() : '';
+            // Validate, but forward the ORIGINAL string: the invite carries the
+            // vault salt and pairing metadata alongside the peer id.
+            if (payload && parseInvite(payload)?.partnerPeerId) {
+              isScanning = false;
+              celebration();
+              onScanSuccess(payload);
+              return;
+            }
           }
         }
       }
@@ -84,6 +129,7 @@ export function QRScannerModal({ isOpen, onClose, onScanSuccess }) {
       if (animationFrameId) cancelAnimationFrame(animationFrameId);
       if (stream) {
         stream.getTracks().forEach((track) => track.stop());
+        stream = null;
       }
     };
   }, [isOpen]);
@@ -126,6 +172,10 @@ export function QRScannerModal({ isOpen, onClose, onScanSuccess }) {
             <div className="absolute inset-8 border-2 border-dashed border-white/60 rounded-2xl pointer-events-none animate-pulse" />
           </div>
         )}
+
+        <p className="mt-3 text-[10px] text-slate-500 text-center leading-relaxed">
+          Scanning stays on this device. Nothing is uploaded.
+        </p>
       </motion.div>
     </div>
   );
