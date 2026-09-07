@@ -1,14 +1,24 @@
 /**
  * src/components/bucketlist/BucketList.jsx
- * Shared couple's bucket list with progress bar, completion stamps, and confetti
+ * Shared couple's bucket list with progress bar, completion stamps, and confetti.
+ *
+ * Schema v2: only `id`, `updatedAt` and `deleted` remain in plaintext on disk.
+ * `text`, `category`, `completed` and `completedAt` all live inside the encrypted
+ * record envelope, so none of them are indexed any more - the live query reads raw
+ * rows purely for liveness and every filter, sort and count below happens in
+ * memory, after decryptRecord().
+ *
+ * The built-in starter items use STABLE, DERIVED ids (`bkt-default-1` ...). Both
+ * devices independently seed the same six ids, so the first sync merges them into
+ * six items instead of the twelve that `'bkt-' + Date.now()` used to guarantee.
  */
-import React, { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { CheckSquare, Square, Plus, Check, Sparkles, Trophy, X, Trash2 } from 'lucide-react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { motion } from 'framer-motion';
+import { Plus, Check, Trophy, Trash2, AlertTriangle } from 'lucide-react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import db from '../../db';
 import { useVault } from '../../context/VaultContext';
-import { encryptText, decryptText } from '../../services/crypto';
+import { encryptRecord, decryptRecord, generateUrlSafeNonce } from '../../services/crypto';
 import peerSync from '../../services/peerSync';
 import GlassCard from '../common/GlassCard';
 import BouncyButton from '../common/BouncyButton';
@@ -24,126 +34,321 @@ const DEFAULT_BUCKET_ITEMS = [
   { text: 'Get matching silly holiday pajamas', category: 'Silly' },
 ];
 
+/**
+ * The deterministic id of a built-in starter item.
+ *
+ * This is the whole S4 fix: the id is a function of the item's position in the
+ * list above and nothing else, so device A and device B produce byte-identical
+ * primary keys and sync reconciles them instead of appending a second set.
+ *
+ * @param {number} index
+ * @returns {string}
+ */
+export function defaultItemId(index) {
+  return `bkt-default-${index + 1}`;
+}
+
+/**
+ * Collision-resistant id for a user-created item.
+ *
+ * `'bkt-' + Date.now()` collides whenever both partners add something inside the
+ * same millisecond, and last-write-wins then silently destroys one of the two.
+ */
+function newItemId() {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return `bkt-${crypto.randomUUID()}`;
+  }
+  return `bkt-${generateUrlSafeNonce(12)}`;
+}
+
+/** Monotonic write stamp, so a skewed device clock cannot permanently win or lose. */
+function nextTimestamp() {
+  try {
+    return peerSync.getSyncSafeTimestamp();
+  } catch {
+    return Date.now();
+  }
+}
+
+/** Drops decryptRecord's `_`-prefixed diagnostics before writing a record back. */
+function stripInternalFields(record) {
+  const out = {};
+  for (const [field, value] of Object.entries(record)) {
+    if (field.startsWith('_')) continue;
+    out[field] = value;
+  }
+  return out;
+}
+
+/**
+ * Shared across every mount of this component so React StrictMode's deliberate
+ * double-invoke in development cannot start two concurrent seeds.
+ */
+let seedInFlight = null;
+
+/**
+ * Writes the six starter items, once.
+ *
+ * Encryption happens first and outside the transaction, because Web Crypto
+ * promises are not part of Dexie's transaction scope and awaiting them inside one
+ * makes it commit early. The emptiness check is then repeated INSIDE the
+ * read-write transaction, which is the point that actually excludes a racing
+ * seed or a batch of the partner's records that landed while we were encrypting.
+ *
+ * @param {CryptoKey} key
+ */
+export async function seedDefaultItems(key) {
+  const rows = [];
+  for (let index = 0; index < DEFAULT_BUCKET_ITEMS.length; index += 1) {
+    const item = DEFAULT_BUCKET_ITEMS[index];
+    rows.push(
+      await encryptRecord(
+        {
+          id: defaultItemId(index),
+          text: item.text,
+          category: item.category,
+          completed: false,
+          completedAt: null,
+          // Small integers, so the starter items always sort ahead of anything
+          // either partner adds later, in the order they are authored above.
+          createdAt: index,
+          updatedAt: nextTimestamp(),
+          deleted: false,
+        },
+        key
+      )
+    );
+  }
+
+  await db.transaction('rw', db.bucketList, async () => {
+    if ((await db.bucketList.count()) > 0) return;
+    await db.bucketList.bulkAdd(rows);
+  });
+}
+
 export function BucketList() {
   const { cryptoKey } = useVault();
   const [newItemText, setNewItemText] = useState('');
   const [category, setCategory] = useState('Romance');
   const [isAdding, setIsAdding] = useState(false);
+  const [items, setItems] = useState([]);
+  const [skippedCount, setSkippedCount] = useState(0);
+  const [error, setError] = useState('');
   const { tap, celebration } = useHaptics();
 
-  const storedItems = useLiveQuery(
-    () => db.bucketList.filter((b) => !b.deleted).toArray(),
-    []
-  );
+  // Raw rows only. Everything worth filtering on is encrypted, so the query
+  // cannot do it - see the decrypt pass below.
+  const storedItems = useLiveQuery(() => db.bucketList.toArray(), []);
 
-  const [decryptedItems, setDecryptedItems] = useState([]);
+  const decryptCache = useRef(new Map());
 
-  // Populate default bucket items if completely empty on first visit
+  /* --------------------------------------------------------------------- *
+   * Seeding
+   * --------------------------------------------------------------------- */
+
   useEffect(() => {
-    async function seedInitial() {
-      if (!cryptoKey) return;
-      const count = await db.bucketList.count();
-      if (count === 0) {
-        for (let i = 0; i < DEFAULT_BUCKET_ITEMS.length; i++) {
-          const item = DEFAULT_BUCKET_ITEMS[i];
-          const { ciphertext, iv } = await encryptText(item.text, cryptoKey);
-          await db.bucketList.put({
-            id: 'bkt-' + (Date.now() + i),
-            textCipher: ciphertext,
-            textIv: iv,
-            category: item.category,
-            completed: false,
-            completedAt: null,
-            updatedAt: Date.now(),
-            deleted: false,
+    if (!cryptoKey) return;
+
+    async function run() {
+      try {
+        // Cheap pre-check so the common case never allocates six AES operations.
+        if ((await db.bucketList.count()) > 0) return;
+        if (!seedInFlight) {
+          seedInFlight = seedDefaultItems(cryptoKey).finally(() => {
+            seedInFlight = null;
           });
         }
+        await seedInFlight;
+      } catch {
+        // Losing the seed race is the expected outcome of a race, not a fault:
+        // whoever won already wrote the same six deterministic ids.
       }
     }
-    seedInitial();
+
+    run();
   }, [cryptoKey]);
 
-  // Decrypt items
+  /* --------------------------------------------------------------------- *
+   * Decrypt pass
+   * --------------------------------------------------------------------- */
+
   useEffect(() => {
+    // A different key invalidates every cached plaintext.
+    decryptCache.current = new Map();
+  }, [cryptoKey]);
+
+  useEffect(() => {
+    let active = true;
+
     async function decryptAll() {
-      if (!storedItems || !cryptoKey) return;
-      const list = [];
-      for (const item of storedItems) {
-        try {
-          const text = await decryptText(item.textCipher, item.textIv, cryptoKey);
-          list.push({ ...item, text });
-        } catch {
-          list.push({ ...item, text: 'Encrypted Goal' });
-        }
+      if (!cryptoKey) {
+        setItems([]);
+        setSkippedCount(0);
+        return;
       }
-      setDecryptedItems(list.sort((a, b) => (a.completed === b.completed ? 0 : a.completed ? 1 : -1)));
+      if (!storedItems) return;
+
+      const cache = decryptCache.current;
+      const seen = new Set();
+      const next = [];
+      let skipped = 0;
+
+      for (const row of storedItems) {
+        if (!row || typeof row !== 'object') continue;
+        if (row.deleted === true) continue;
+
+        // useLiveQuery hands back fresh object identities on every write to the
+        // table, so without this every item would be re-decrypted whenever any
+        // one of them changed. The IV rotates on each re-encryption, which makes
+        // it a sound staleness marker.
+        const fingerprint = row.iv || row.textIv || '';
+        const cacheKey = `${row.id}::${row.updatedAt}::${fingerprint}`;
+        seen.add(cacheKey);
+
+        let record = cache.get(cacheKey);
+        if (!record) {
+          let decrypted;
+          try {
+            decrypted = await decryptRecord(row, cryptoKey);
+          } catch {
+            skipped += 1;
+            continue;
+          }
+          if (decrypted._headerTampered) {
+            // A peer rewrote the plaintext id/updatedAt/deleted header. Refuse it.
+            skipped += 1;
+            continue;
+          }
+          record = stripInternalFields(decrypted);
+          cache.set(cacheKey, record);
+        }
+
+        if (record.deleted === true) continue;
+        next.push(record);
+      }
+
+      for (const key of Array.from(cache.keys())) {
+        if (!seen.has(key)) cache.delete(key);
+      }
+
+      if (!active) return;
+
+      // Completed items sink to the bottom, then insertion order.
+      //
+      // `createdAt` is explicit rather than implied by the id: ids are random
+      // UUIDs now, so primary-key order would drop a newly added item into an
+      // arbitrary slot among the starter items. It travels inside the envelope
+      // with the record, so both devices sort the list identically.
+      next.sort((a, b) => {
+        if (a.completed !== b.completed) return a.completed ? 1 : -1;
+        const byCreated = (a.createdAt || 0) - (b.createdAt || 0);
+        if (byCreated !== 0) return byCreated;
+        return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+      });
+      setItems(next);
+      setSkippedCount(skipped);
     }
+
     decryptAll();
+    return () => {
+      active = false;
+    };
   }, [storedItems, cryptoKey]);
 
-  const toggleComplete = async (item) => {
-    tap();
-    const isNowCompleted = !item.completed;
-    const updated = {
-      ...item,
-      completed: isNowCompleted,
-      completedAt: isNowCompleted ? Date.now() : null,
-      updatedAt: Date.now(),
-    };
-    // remove decrypted plain field before storing
-    delete updated.text;
+  /* --------------------------------------------------------------------- *
+   * Mutations
+   * --------------------------------------------------------------------- */
 
-    await db.bucketList.put(updated);
-    peerSync.broadcastLiveRecord('bucketList', updated);
+  const toggleComplete = useCallback(
+    async (item) => {
+      if (!cryptoKey) return;
+      tap();
 
-    if (isNowCompleted) {
-      celebration();
-      fireCelebrationBurst();
-    }
-  };
+      const isNowCompleted = !item.completed;
+      try {
+        const row = await db.putEncrypted(
+          'bucketList',
+          {
+            ...stripInternalFields(item),
+            completed: isNowCompleted,
+            completedAt: isNowCompleted ? Date.now() : null,
+            updatedAt: nextTimestamp(),
+          },
+          cryptoKey
+        );
+        peerSync.broadcastLiveRecord('bucketList', row);
+        setError('');
 
-  const handleDeleteItem = async (e, id) => {
-    e.stopPropagation();
-    if (!window.confirm('Delete this dream from your bucket list?')) return;
-    tap();
-    const existing = await db.bucketList.get(id);
-    if (existing) {
-      const updated = { ...existing, deleted: true, updatedAt: Date.now() };
-      await db.bucketList.put(updated);
-      peerSync.broadcastLiveRecord('bucketList', updated);
-    }
-  };
+        if (isNowCompleted) {
+          celebration();
+          fireCelebrationBurst();
+        }
+      } catch {
+        setError('Could not save that change. Your vault may have locked.');
+      }
+    },
+    [cryptoKey, tap, celebration]
+  );
 
-  const handleAddItem = async (e) => {
-    e.preventDefault();
-    if (!newItemText.trim() || !cryptoKey) return;
+  const handleDeleteItem = useCallback(
+    async (e, id) => {
+      e.stopPropagation();
+      if (!window.confirm('Delete this dream from your bucket list?')) return;
+      tap();
 
-    tap();
-    const { ciphertext, iv } = await encryptText(newItemText.trim(), cryptoKey);
-    const newRecord = {
-      id: 'bkt-' + Date.now(),
-      textCipher: ciphertext,
-      textIv: iv,
-      category,
-      completed: false,
-      completedAt: null,
-      updatedAt: Date.now(),
-      deleted: false,
-    };
+      try {
+        // Tombstone rather than delete: the row keeps its id and a bumped
+        // updatedAt so the removal replicates, and drops its payload so the text
+        // is really gone.
+        const row = await db.softDelete('bucketList', id, cryptoKey);
+        if (row) peerSync.broadcastLiveRecord('bucketList', row);
+        setError('');
+      } catch {
+        setError('Could not delete that item. Your vault may have locked.');
+      }
+    },
+    [cryptoKey, tap]
+  );
 
-    await db.bucketList.put(newRecord);
-    peerSync.broadcastLiveRecord('bucketList', newRecord);
+  const handleAddItem = useCallback(
+    async (e) => {
+      e.preventDefault();
+      const text = newItemText.trim();
+      if (!text || !cryptoKey) return;
 
-    setNewItemText('');
-    setIsAdding(false);
-    celebration();
-    fireHeartConfetti();
-  };
+      tap();
+      try {
+        const row = await db.putEncrypted(
+          'bucketList',
+          {
+            id: newItemId(),
+            text,
+            category,
+            completed: false,
+            completedAt: null,
+            createdAt: Date.now(),
+            updatedAt: nextTimestamp(),
+            deleted: false,
+          },
+          cryptoKey
+        );
+        peerSync.broadcastLiveRecord('bucketList', row);
 
-  const completedCount = decryptedItems.filter((i) => i.completed).length;
-  const progressPercent = decryptedItems.length > 0
-    ? Math.round((completedCount / decryptedItems.length) * 100)
-    : 0;
+        setNewItemText('');
+        setIsAdding(false);
+        setError('');
+        celebration();
+        fireHeartConfetti();
+      } catch {
+        setError('Could not save that dream. Your vault may have locked.');
+      }
+    },
+    [newItemText, category, cryptoKey, tap, celebration]
+  );
+
+  const completedCount = items.filter((i) => i.completed).length;
+  const progressPercent =
+    items.length > 0 ? Math.round((completedCount / items.length) * 100) : 0;
 
   return (
     <div className="space-y-4">
@@ -155,7 +360,7 @@ export function BucketList() {
             <Trophy className="w-4 h-4 text-amber-500" />
           </h2>
           <p className="text-xs text-slate-500">
-            {completedCount} of {decryptedItems.length} adventures completed ({progressPercent}%)
+            {completedCount} of {items.length} adventures completed ({progressPercent}%)
           </p>
         </div>
 
@@ -170,6 +375,19 @@ export function BucketList() {
           <span>Add Dream</span>
         </BouncyButton>
       </div>
+
+      {/* Failure surface - previously these paths failed silently */}
+      {(error || skippedCount > 0) && (
+        <div className="flex items-start gap-2 p-3 rounded-2xl bg-amber-50 border border-amber-200 text-amber-800">
+          <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+          <p className="text-xs font-medium leading-snug">
+            {error ||
+              `${skippedCount} item${skippedCount === 1 ? '' : 's'} could not be decrypted and ${
+                skippedCount === 1 ? 'is' : 'are'
+              } hidden.`}
+          </p>
+        </div>
+      )}
 
       {/* Progress Bar Card */}
       <GlassCard className="p-4 bg-gradient-to-r from-blush-50 to-cream-50">
@@ -226,7 +444,7 @@ export function BucketList() {
 
       {/* Checklist items */}
       <div className="space-y-2.5">
-        {decryptedItems.map((item) => (
+        {items.map((item) => (
           <motion.div
             key={item.id}
             layout
