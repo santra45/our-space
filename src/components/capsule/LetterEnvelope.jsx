@@ -1,27 +1,40 @@
 /**
  * src/components/capsule/LetterEnvelope.jsx
- * Interactive envelope opening animation with wax seal and handwritten love letter
+ * Interactive envelope opening animation with wax seal and handwritten love letter.
+ *
+ * By the time a letter reaches this component its body has already been
+ * unsealed by SecretCapsule (crypto.unsealTimeLocked), which refuses before the
+ * unlock date. Nothing here gates access - breaking the wax seal is animation,
+ * not security - so the footer states plainly what the time lock did and did not
+ * guarantee rather than implying this modal enforced anything.
  */
-import React, { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { Heart, X, Sparkles, Calendar, Trash2 } from 'lucide-react';
+import React, { useRef, useState } from 'react';
+import { motion } from 'framer-motion';
+import { Heart, X, Sparkles, Trash2, Lock } from 'lucide-react';
 import { formatDatePretty } from '../../utils/dateHelpers';
 import { useHaptics } from '../../hooks/useHaptics';
 import { fireHeartConfetti } from '../common/ConfettiBurst';
 
-export function LetterEnvelope({ letter, onClose, onDelete }) {
+export function LetterEnvelope({ letter, onClose, onDelete, onOpened }) {
   const [isOpen, setIsOpen] = useState(false);
+  const hasReportedOpen = useRef(false);
   const { tap, celebration } = useHaptics();
 
+  const writtenAt = letter.writtenAt || letter.updatedAt;
+  const wasTimeLocked = Boolean(letter.lockDate);
+
   const handleOpenEnvelope = () => {
-    if (!isOpen) {
-      tap();
-      setIsOpen(true);
-      setTimeout(() => {
-        celebration();
-        fireHeartConfetti();
-      }, 400);
+    if (isOpen) return;
+    tap();
+    setIsOpen(true);
+    if (!hasReportedOpen.current) {
+      hasReportedOpen.current = true;
+      if (onOpened) onOpened();
     }
+    setTimeout(() => {
+      celebration();
+      fireHeartConfetti();
+    }, 400);
   };
 
   return (
@@ -29,10 +42,7 @@ export function LetterEnvelope({ letter, onClose, onDelete }) {
       onClick={onClose}
       className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm select-none"
     >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-sm relative"
-      >
+      <div onClick={(e) => e.stopPropagation()} className="w-full max-w-sm relative">
         {/* Close button */}
         <button
           onClick={onClose}
@@ -58,13 +68,18 @@ export function LetterEnvelope({ letter, onClose, onDelete }) {
               </div>
             </div>
 
-            <h3 className="text-xl font-black text-slate-800 tracking-tight">
-              {letter.title}
-            </h3>
+            <h3 className="text-xl font-black text-slate-800 tracking-tight">{letter.title}</h3>
 
             <p className="text-xs text-slate-500 mt-1 mb-5">
-              A private letter written on {formatDatePretty(letter.date || letter.updatedAt)}
+              A private letter written on {formatDatePretty(writtenAt)}
             </p>
+
+            {wasTimeLocked && (
+              <p className="text-[11px] text-slate-500 mb-4 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/70 border border-slate-200">
+                <Lock className="w-3 h-3" />
+                <span>Time lock lifted on {formatDatePretty(letter.lockDate)}</span>
+              </p>
+            )}
 
             <div className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full bg-blush-500 text-white text-xs font-bold shadow-md shadow-blush-300 animate-pulse">
               <Sparkles className="w-3.5 h-3.5" />
@@ -95,10 +110,19 @@ export function LetterEnvelope({ letter, onClose, onDelete }) {
               {letter.content}
             </div>
 
+            {wasTimeLocked && (
+              <p className="mt-5 text-[10px] leading-relaxed text-slate-400 bg-slate-50 border border-slate-200 rounded-2xl px-3 py-2">
+                This letter&apos;s body was key-wrapped until {formatDatePretty(letter.lockDate)} -
+                the app could not read it before that date, and altering the stored date would have
+                destroyed it rather than opened it. It was never proof against either of you: the
+                vault passphrase plus a device clock could always have opened it early.
+              </p>
+            )}
+
             <div className="mt-6 pt-4 border-t border-amber-200/50 flex justify-between items-center text-xs text-slate-400 font-sans">
               <span>With all my love forever 💕</span>
               <div className="flex items-center gap-3">
-                <span>{formatDatePretty(letter.date || letter.updatedAt)}</span>
+                <span>{formatDatePretty(writtenAt)}</span>
                 {onDelete && (
                   <button
                     type="button"

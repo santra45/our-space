@@ -1,21 +1,124 @@
 /**
  * src/components/capsule/SecretCapsule.jsx
- * Time-locked love letters and digital time capsule
+ * Time-locked love letters and digital time capsule.
+ *
+ * Schema v2: only `id`, `updatedAt` and `deleted` stay in plaintext on disk.
+ * `unlockDate`, `isOpened`, `title` and the body all live inside the encrypted
+ * record envelope, so none of them are indexed any more - every filter and sort
+ * in this file happens in memory, after decryptRecord().
+ *
+ * The time lock is a real key wrap, not a UI check. A sealed letter's body is
+ * encrypted under a random content key that is itself wrapped under a key
+ * derived from the vault key AND the unlock date (crypto.sealTimeLocked). The
+ * plaintext is never present in the record, so there is no `if (!locked)` branch
+ * left to skip - reaching the body requires unsealTimeLocked(), which refuses
+ * before the date, and editing the stored date breaks decryption outright rather
+ * than bypassing a check.
+ *
+ * The honest limit, stated the same way in the UI and the README: this is not a
+ * vault against its own owner. Everything needed to re-derive the wrapping key
+ * sits on the device from the moment the letter is written, so anyone holding
+ * the vault passphrase - either partner - can open a sealed letter early by
+ * moving their device clock forward. It defeats accidents, curiosity and
+ * tampering with the stored data. It does not defeat determination.
  */
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Mail, Lock, Unlock, Plus, Clock, Sparkles, X, Heart, Trash2 } from 'lucide-react';
+import {
+  Mail,
+  MailOpen,
+  Lock,
+  Plus,
+  Clock,
+  Sparkles,
+  X,
+  Heart,
+  Trash2,
+  ShieldAlert,
+  Info,
+} from 'lucide-react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import db from '../../db';
 import { useVault } from '../../context/VaultContext';
-import { encryptText, decryptText } from '../../services/crypto';
+import {
+  decryptRecord,
+  generateUrlSafeNonce,
+  isTimeLockOpen,
+  sealTimeLocked,
+  unsealTimeLocked,
+  TimeLockedError,
+} from '../../services/crypto';
 import peerSync from '../../services/peerSync';
-import { isDateLocked, formatTimeRemaining, formatDatePretty } from '../../utils/dateHelpers';
+import { formatTimeRemaining, formatDatePretty } from '../../utils/dateHelpers';
 import LetterEnvelope from './LetterEnvelope';
 import BouncyButton from '../common/BouncyButton';
 import GlassCard from '../common/GlassCard';
 import { fireHeartConfetti } from '../common/ConfettiBurst';
 import { useHaptics } from '../../hooks/useHaptics';
+
+/** How often the locked/unlocked split is recomputed while letters are pending. */
+const LOCK_TICK_MS = 30000;
+
+/** How long a transient banner stays on screen. */
+const NOTICE_TTL_MS = 7000;
+
+/**
+ * Today as the date input sees it: LOCAL calendar day, never toISOString().
+ * @returns {string} 'YYYY-MM-DD'
+ */
+function localTodayIso() {
+  const now = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+}
+
+/**
+ * Coerces any stored unlock date to the bare local calendar day it was meant to be.
+ *
+ * Letters written by older builds stored `new Date('YYYY-MM-DD').toISOString()`,
+ * i.e. UTC midnight of the day the writer picked on a LOCAL date input. Reading
+ * the UTC components back recovers exactly that calendar day; reading local ones
+ * would shift it by a day for most of the planet.
+ *
+ * @param {string|null|undefined} value
+ * @returns {string|null} 'YYYY-MM-DD', or null when there is no usable date.
+ */
+function normalizeUnlockDate(value) {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  if (trimmed.length === 0) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
+  const parsed = new Date(trimmed);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed.toISOString().slice(0, 10);
+}
+
+/**
+ * Collision-resistant record id. `'let-' + Date.now()` alone loses a letter when
+ * both devices write inside the same millisecond and sync picks one.
+ */
+function newLetterId() {
+  return `let-${Date.now().toString(36)}-${generateUrlSafeNonce(6)}`;
+}
+
+/** Drops decryptRecord's `_`-prefixed diagnostics before writing a record back. */
+function stripInternalFields(record) {
+  const out = {};
+  for (const [field, value] of Object.entries(record)) {
+    if (field.startsWith('_')) continue;
+    out[field] = value;
+  }
+  return out;
+}
+
+/** Monotonic write stamp, so a skewed device clock cannot permanently win or lose. */
+function nextTimestamp() {
+  try {
+    return peerSync.getSyncSafeTimestamp();
+  } catch {
+    return Date.now();
+  }
+}
 
 export function SecretCapsule() {
   const { cryptoKey } = useVault();
@@ -24,75 +127,302 @@ export function SecretCapsule() {
   const [content, setContent] = useState('');
   const [unlockDate, setUnlockDate] = useState('');
   const [activeReadingLetter, setActiveReadingLetter] = useState(null);
+  const [openingId, setOpeningId] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
+  const [notice, setNotice] = useState(null);
+  const [records, setRecords] = useState([]);
+  const [skippedCount, setSkippedCount] = useState(0);
+  const [nowTick, setNowTick] = useState(() => Date.now());
   const { tap, celebration } = useHaptics();
 
-  // Load letters from IndexedDB
-  const storedLetters = useLiveQuery(
-    () => db.letters.filter((l) => !l.deleted).toArray(),
-    []
-  );
+  // Raw rows only, purely for liveness. Everything meaningful is encrypted, so
+  // the query cannot filter or sort - that happens below, after decryption.
+  const storedLetters = useLiveQuery(() => db.letters.toArray(), []);
 
-  const [decryptedLetters, setDecryptedLetters] = useState([]);
+  const decryptCache = useRef(new Map());
+  const upgradeAttempts = useRef(new Set());
+
+  const today = useMemo(() => localTodayIso(), []);
+
+  /* --------------------------------------------------------------------- *
+   * Decrypt pass
+   * --------------------------------------------------------------------- */
 
   useEffect(() => {
-    async function decryptList() {
-      if (!storedLetters || !cryptoKey) return;
-      const list = [];
-      for (const item of storedLetters) {
-        const locked = isDateLocked(item.unlockDate);
-        try {
-          const decryptedTitle = await decryptText(item.titleCipher, item.titleIv, cryptoKey);
-          let decryptedContent = '';
-          // Only decrypt content if unlocked!
-          if (!locked) {
-            decryptedContent = await decryptText(item.contentCipher, item.contentIv, cryptoKey);
+    // A different key invalidates every cached plaintext.
+    decryptCache.current = new Map();
+    upgradeAttempts.current = new Set();
+  }, [cryptoKey]);
+
+  useEffect(() => {
+    let active = true;
+
+    async function decryptAll() {
+      if (!cryptoKey) {
+        setRecords([]);
+        setSkippedCount(0);
+        return;
+      }
+      if (!storedLetters) return;
+
+      const cache = decryptCache.current;
+      const seen = new Set();
+      const next = [];
+      let skipped = 0;
+
+      for (const row of storedLetters) {
+        if (!row || typeof row !== 'object') continue;
+        if (row.deleted === true) continue;
+
+        // The IV changes on every re-encryption, so this key is stable exactly
+        // as long as the stored bytes are - useLiveQuery hands back fresh object
+        // identities on every write, and without this every letter would be
+        // re-decrypted whenever any letter changed.
+        const fingerprint = row.iv || row.contentIv || row.titleIv || '';
+        const cacheKey = `${row.id}::${row.updatedAt}::${fingerprint}`;
+        seen.add(cacheKey);
+
+        let record = cache.get(cacheKey);
+        if (!record) {
+          let decrypted;
+          try {
+            decrypted = await decryptRecord(row, cryptoKey);
+          } catch {
+            skipped += 1;
+            continue;
           }
-          list.push({
-            ...item,
-            title: decryptedTitle,
-            content: decryptedContent,
-            isLocked: locked,
+          if (decrypted._headerTampered) {
+            // A peer rewrote the plaintext id/updatedAt/deleted header. Refuse it.
+            skipped += 1;
+            continue;
+          }
+          record = stripInternalFields(decrypted);
+          cache.set(cacheKey, record);
+        }
+
+        if (record.deleted === true) continue;
+        next.push(record);
+      }
+
+      for (const key of Array.from(cache.keys())) {
+        if (!seen.has(key)) cache.delete(key);
+      }
+
+      if (!active) return;
+      setRecords(next);
+      setSkippedCount(skipped);
+    }
+
+    decryptAll();
+    return () => {
+      active = false;
+    };
+  }, [storedLetters, cryptoKey]);
+
+  /* --------------------------------------------------------------------- *
+   * Retro-seal pass
+   * --------------------------------------------------------------------- */
+
+  /**
+   * Letters written before real time locks (and letters carried through the v1
+   * -> v2 migration, which cannot re-shape content it has no key for) hold their
+   * body as ordinary text inside the envelope, guarded only by a clock check.
+   * Any of those that are still pending get sealed properly here.
+   *
+   * The rewrite deliberately keeps the SAME id and the SAME updatedAt, so the
+   * sync manifest does not change and the partner device never sees an update -
+   * it performs the identical upgrade on its own copy. Ties are never requested
+   * over the wire, so the two differing-but-equivalent seals never fight.
+   */
+  useEffect(() => {
+    if (!cryptoKey || records.length === 0) return undefined;
+    let active = true;
+
+    async function upgradePendingLocks() {
+      for (const record of records) {
+        if (!active) return;
+        if (record.sealedContent) continue;
+        if (typeof record.content !== 'string' || record.content.length === 0) continue;
+
+        const lockDate = normalizeUnlockDate(record.unlockDate);
+        if (!lockDate) continue;
+        if (isTimeLockOpen(lockDate)) continue; // already readable, nothing left to protect
+        if (upgradeAttempts.current.has(record.id)) continue;
+        upgradeAttempts.current.add(record.id);
+
+        try {
+          const sealedContent = await sealTimeLocked(record.content, lockDate, cryptoKey, {
+            context: record.id,
           });
+          await db.putEncrypted(
+            'letters',
+            {
+              ...record,
+              unlockDate: lockDate,
+              sealedContent,
+              content: undefined,
+            },
+            cryptoKey
+          );
         } catch {
-          list.push({
-            ...item,
-            title: 'Encrypted Letter',
-            content: '',
-            isLocked: locked,
-          });
+          // Leave the record exactly as it was; it stays readable the old way.
         }
       }
-      setDecryptedLetters(list.sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt)));
     }
-    decryptList();
-  }, [storedLetters, cryptoKey]);
+
+    upgradePendingLocks();
+    return () => {
+      active = false;
+    };
+  }, [records, cryptoKey]);
+
+  /* --------------------------------------------------------------------- *
+   * In-memory filter / sort
+   * --------------------------------------------------------------------- */
+
+  const letters = useMemo(() => {
+    return records
+      .map((record) => {
+        const lockDate = normalizeUnlockDate(record.unlockDate);
+        return {
+          ...record,
+          lockDate,
+          isLocked: lockDate ? !isTimeLockOpen(lockDate, nowTick) : false,
+          isSealed: Boolean(record.sealedContent),
+          writtenAt: Number.isFinite(record.createdAt) ? record.createdAt : record.updatedAt,
+        };
+      })
+      .sort((a, b) => (b.writtenAt || 0) - (a.writtenAt || 0));
+  }, [records, nowTick]);
+
+  const hasPendingLocks = useMemo(() => letters.some((letter) => letter.isLocked), [letters]);
+
+  useEffect(() => {
+    if (!hasPendingLocks) return undefined;
+    const timer = setInterval(() => setNowTick(Date.now()), LOCK_TICK_MS);
+    return () => clearInterval(timer);
+  }, [hasPendingLocks]);
+
+  useEffect(() => {
+    if (!notice) return undefined;
+    const timer = setTimeout(() => setNotice(null), NOTICE_TTL_MS);
+    return () => clearTimeout(timer);
+  }, [notice]);
+
+  /* --------------------------------------------------------------------- *
+   * Actions
+   * --------------------------------------------------------------------- */
+
+  const handleOpenLetter = useCallback(
+    async (letter) => {
+      if (!cryptoKey || openingId) return;
+      tap();
+      setNotice(null);
+
+      if (letter.isLocked) {
+        setNotice({
+          tone: 'lock',
+          text: `"${letter.title}" stays sealed until ${formatDatePretty(letter.lockDate)} - ${formatTimeRemaining(letter.lockDate)}. Its body is encrypted under a key this app will not re-derive before that date.`,
+        });
+        return;
+      }
+
+      if (!letter.isSealed) {
+        setActiveReadingLetter({
+          ...letter,
+          content: typeof letter.content === 'string' ? letter.content : '',
+        });
+        return;
+      }
+
+      setOpeningId(letter.id);
+      try {
+        const body = await unsealTimeLocked(letter.sealedContent, cryptoKey, {
+          context: letter.id,
+        });
+        setActiveReadingLetter({ ...letter, content: body });
+      } catch (err) {
+        if (err instanceof TimeLockedError) {
+          setNowTick(Date.now());
+          setNotice({
+            tone: 'lock',
+            text: `Still sealed until ${formatDatePretty(err.unlockDate)}.`,
+          });
+        } else {
+          setNotice({
+            tone: 'error',
+            text: 'This letter could not be unsealed. Its unlock date or record id may have been altered - the seal is bound to both, so changing either makes the body unreadable rather than merely unlocking it.',
+          });
+        }
+      } finally {
+        setOpeningId(null);
+      }
+    },
+    [cryptoKey, openingId, tap]
+  );
+
+  /** Records that the seal has actually been broken, and replicates that. */
+  const handleLetterOpened = useCallback(
+    async (letterId) => {
+      if (!cryptoKey || !letterId) return;
+      try {
+        const stored = await db.getDecrypted('letters', letterId, cryptoKey);
+        if (!stored || stored.deleted === true || stored.isOpened === true) return;
+        const row = await db.putEncrypted(
+          'letters',
+          {
+            ...stripInternalFields(stored),
+            isOpened: true,
+            openedAt: Date.now(),
+            updatedAt: nextTimestamp(),
+          },
+          cryptoKey
+        );
+        peerSync.broadcastLiveRecord('letters', row);
+      } catch {
+        // Purely cosmetic bookkeeping - never block the reader over it.
+      }
+    },
+    [cryptoKey]
+  );
 
   const handleSaveLetter = async (e) => {
     e.preventDefault();
-    if (!title.trim() || !content.trim() || !cryptoKey) return;
+    const trimmedTitle = title.trim();
+    const trimmedContent = content.trim();
+    if (!trimmedTitle || !trimmedContent || !cryptoKey || saving) return;
 
+    setSaveError('');
     try {
       setSaving(true);
       tap();
 
-      const { ciphertext: titleCipher, iv: titleIv } = await encryptText(title.trim(), cryptoKey);
-      const { ciphertext: contentCipher, iv: contentIv } = await encryptText(content.trim(), cryptoKey);
-
-      const newRecord = {
-        id: 'let-' + Date.now(),
-        titleCipher,
-        titleIv,
-        contentCipher,
-        contentIv,
-        unlockDate: unlockDate ? new Date(unlockDate).toISOString() : null,
+      const id = newLetterId();
+      const lockDate = normalizeUnlockDate(unlockDate);
+      const base = {
+        id,
+        title: trimmedTitle,
+        unlockDate: lockDate,
         isOpened: false,
-        updatedAt: Date.now(),
+        createdAt: Date.now(),
+        updatedAt: nextTimestamp(),
         deleted: false,
       };
 
-      await db.letters.put(newRecord);
-      peerSync.broadcastLiveRecord('letters', newRecord);
+      // A sealed letter stores ONLY the wrapped envelope - the body never sits
+      // in the record in a form the app can read before the date.
+      const record = lockDate
+        ? {
+            ...base,
+            sealedContent: await sealTimeLocked(trimmedContent, lockDate, cryptoKey, {
+              context: id,
+            }),
+          }
+        : { ...base, content: trimmedContent };
+
+      const row = await db.putEncrypted('letters', record, cryptoKey);
+      peerSync.broadcastLiveRecord('letters', row);
 
       celebration();
       fireHeartConfetti();
@@ -101,7 +431,7 @@ export function SecretCapsule() {
       setUnlockDate('');
       setIsWriteModalOpen(false);
     } catch {
-      alert('Error saving letter. Please try again.');
+      setSaveError('Could not seal this letter. Please try again.');
     } finally {
       setSaving(false);
     }
@@ -109,18 +439,30 @@ export function SecretCapsule() {
 
   const handleDeleteLetter = async (e, id) => {
     if (e) e.stopPropagation();
-    if (!window.confirm('Delete this love letter?')) return;
+    if (
+      !window.confirm(
+        'Delete this love letter? Its encrypted body is destroyed here and on your partner’s device.'
+      )
+    ) {
+      return;
+    }
     tap();
-    const existing = await db.letters.get(id);
-    if (existing) {
-      const updated = { ...existing, deleted: true, updatedAt: Date.now() };
-      await db.letters.put(updated);
-      peerSync.broadcastLiveRecord('letters', updated);
+    try {
+      const row = await db.softDelete('letters', id, cryptoKey);
+      if (row) peerSync.broadcastLiveRecord('letters', row);
+    } catch {
+      setNotice({ tone: 'error', text: 'Could not delete that letter. Please try again.' });
     }
     if (activeReadingLetter?.id === id) {
       setActiveReadingLetter(null);
     }
   };
+
+  const isLoading = Boolean(cryptoKey) && storedLetters === undefined;
+
+  /* --------------------------------------------------------------------- *
+   * Render
+   * --------------------------------------------------------------------- */
 
   return (
     <div className="space-y-4">
@@ -131,12 +473,13 @@ export function SecretCapsule() {
             <span>Secret Capsule</span>
             <Sparkles className="w-4 h-4 text-amber-500" />
           </h2>
-          <p className="text-xs text-slate-500">Time-locked letters & sweet notes</p>
+          <p className="text-xs text-slate-500">Time-locked letters &amp; sweet notes</p>
         </div>
 
         <BouncyButton
           onClick={() => {
             tap();
+            setSaveError('');
             setIsWriteModalOpen(true);
           }}
           className="py-2 px-3.5 text-xs gap-1.5 rounded-full"
@@ -146,15 +489,55 @@ export function SecretCapsule() {
         </BouncyButton>
       </div>
 
+      {/* Transient banner: lock refusals and real failures */}
+      {notice && (
+        <div
+          className={`flex items-start gap-2 px-3.5 py-2.5 rounded-2xl text-[11px] leading-relaxed border ${
+            notice.tone === 'error'
+              ? 'bg-rose-50 border-rose-200 text-rose-700'
+              : 'bg-slate-50 border-slate-200 text-slate-600'
+          }`}
+        >
+          {notice.tone === 'error' ? (
+            <ShieldAlert className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
+          ) : (
+            <Lock className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
+          )}
+          <span className="flex-1">{notice.text}</span>
+          <button
+            type="button"
+            onClick={() => setNotice(null)}
+            className="text-current opacity-50 hover:opacity-100"
+            aria-label="Dismiss"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+
+      {skippedCount > 0 && (
+        <div className="flex items-start gap-2 px-3.5 py-2.5 rounded-2xl text-[11px] leading-relaxed bg-amber-50 border border-amber-200 text-amber-800">
+          <ShieldAlert className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
+          <span>
+            {skippedCount} letter{skippedCount === 1 ? '' : 's'} could not be read with this
+            passphrase and {skippedCount === 1 ? 'was' : 'were'} hidden. That usually means it was
+            written under a different vault, or its record header was altered in transit.
+          </span>
+        </div>
+      )}
+
       {/* Letters List */}
-      {decryptedLetters.length === 0 ? (
+      {isLoading ? (
+        <div className="text-center py-16 text-xs text-slate-400">Unsealing your letters...</div>
+      ) : letters.length === 0 ? (
         <div className="text-center py-16 px-4 bg-white/50 rounded-3xl border-2 border-dashed border-blush-200">
           <div className="w-16 h-16 mx-auto mb-3 rounded-full bg-blush-100 text-blush-400 flex items-center justify-center">
             <Mail className="w-8 h-8" />
           </div>
           <h3 className="text-base font-bold text-slate-700">No Letters Yet</h3>
           <p className="text-xs text-slate-500 max-w-xs mx-auto mt-1 mb-5">
-            Leave a surprise letter for your partner, or seal a time capsule to open on your next anniversary!
+            Leave a surprise letter for your partner, or seal a time capsule to open on your next
+            anniversary!
           </p>
           <BouncyButton
             onClick={() => setIsWriteModalOpen(true)}
@@ -165,22 +548,14 @@ export function SecretCapsule() {
         </div>
       ) : (
         <div className="space-y-3">
-          {decryptedLetters.map((letter) => (
+          {letters.map((letter) => (
             <GlassCard
               key={letter.id}
               hoverEffect={!letter.isLocked}
-              onClick={() => {
-                if (!letter.isLocked) {
-                  tap();
-                  setActiveReadingLetter(letter);
-                } else {
-                  tap();
-                  alert(`This letter is time-locked until ${formatDatePretty(letter.unlockDate)}! No peeking! 🙈`);
-                }
-              }}
+              onClick={() => handleOpenLetter(letter)}
               className={`p-4 transition cursor-pointer border ${
                 letter.isLocked
-                  ? 'bg-slate-50/70 border-slate-200 opacity-80 cursor-not-allowed'
+                  ? 'bg-slate-50/70 border-slate-200 opacity-80'
                   : 'bg-white/80 border-blush-100 hover:border-blush-300'
               }`}
             >
@@ -193,12 +568,20 @@ export function SecretCapsule() {
                         : 'bg-blush-100 text-blush-600'
                     }`}
                   >
-                    {letter.isLocked ? <Lock className="w-5 h-5" /> : <Mail className="w-5 h-5" />}
+                    {letter.isLocked ? (
+                      <Lock className="w-5 h-5" />
+                    ) : letter.isOpened ? (
+                      <MailOpen className="w-5 h-5" />
+                    ) : (
+                      <Mail className="w-5 h-5" />
+                    )}
                   </div>
                   <div className="min-w-0">
                     <h4 className="text-sm font-bold text-slate-800 truncate">{letter.title}</h4>
                     <p className="text-[11px] text-slate-400">
-                      Written on {formatDatePretty(letter.updatedAt)}
+                      Written on {formatDatePretty(letter.writtenAt)}
+                      {letter.isLocked && letter.isSealed ? ' · key-wrapped' : ''}
+                      {!letter.isLocked && letter.isOpened ? ' · already opened' : ''}
                     </p>
                   </div>
                 </div>
@@ -207,11 +590,11 @@ export function SecretCapsule() {
                   {letter.isLocked ? (
                     <div className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-slate-200/80 text-slate-600 text-[10px] font-bold">
                       <Clock className="w-3 h-3" />
-                      <span>{formatTimeRemaining(letter.unlockDate)}</span>
+                      <span>{formatTimeRemaining(letter.lockDate)}</span>
                     </div>
                   ) : (
                     <span className="text-xs font-semibold text-blush-600 hover:underline">
-                      Read Letter 💌
+                      {openingId === letter.id ? 'Unsealing...' : 'Read Letter 💌'}
                     </span>
                   )}
                   <button
@@ -234,6 +617,7 @@ export function SecretCapsule() {
         <LetterEnvelope
           letter={activeReadingLetter}
           onClose={() => setActiveReadingLetter(null)}
+          onOpened={() => handleLetterOpened(activeReadingLetter.id)}
           onDelete={() => handleDeleteLetter(null, activeReadingLetter.id)}
         />
       )}
@@ -244,7 +628,7 @@ export function SecretCapsule() {
           <motion.div
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="w-full max-w-sm bg-white rounded-3xl p-5 shadow-2xl border border-blush-100 relative"
+            className="w-full max-w-sm bg-white rounded-3xl p-5 shadow-2xl border border-blush-100 relative max-h-[90vh] overflow-y-auto"
           >
             <button
               onClick={() => setIsWriteModalOpen(false)}
@@ -259,7 +643,9 @@ export function SecretCapsule() {
               </div>
               <div>
                 <h3 className="text-base font-bold text-slate-800">Write Love Letter</h3>
-                <p className="text-[11px] text-slate-400">AES-GCM 256 Encrypted</p>
+                <p className="text-[11px] text-slate-400">
+                  AES-GCM-256, encrypted on this device only
+                </p>
               </div>
             </div>
 
@@ -274,8 +660,12 @@ export function SecretCapsule() {
                   onChange={(e) => setTitle(e.target.value)}
                   placeholder="e.g. Open when you miss me, or 1st Anniversary"
                   required
+                  maxLength={120}
                   className="w-full px-3 py-2 text-xs bg-white border border-blush-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blush-400"
                 />
+                <p className="text-[10px] text-slate-400 mt-0.5">
+                  The title stays readable while the letter is sealed - only the body is locked.
+                </p>
               </div>
 
               <div>
@@ -288,7 +678,7 @@ export function SecretCapsule() {
                   placeholder="Write your heart out..."
                   required
                   rows={6}
-                  className="w-full px-3 py-2 text-sm font-handwriting text-lg bg-amber-50/30 border border-blush-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blush-400"
+                  className="w-full px-3 py-2 font-handwriting text-lg bg-amber-50/30 border border-blush-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blush-400"
                 />
               </div>
 
@@ -299,20 +689,51 @@ export function SecretCapsule() {
                 <input
                   type="date"
                   value={unlockDate}
+                  min={today}
                   onChange={(e) => setUnlockDate(e.target.value)}
                   className="w-full px-3 py-2 text-xs bg-white border border-blush-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blush-400"
                 />
                 <p className="text-[10px] text-slate-400 mt-0.5">
-                  Leave blank to allow opening immediately.
+                  Leave blank to allow opening immediately. A locked letter opens at 00:00 local
+                  time on the chosen day.
                 </p>
               </div>
+
+              {/* Honesty box - this wording must match the README's threat model */}
+              <div className="flex items-start gap-2 px-3 py-2.5 rounded-2xl bg-slate-50 border border-slate-200 text-[10px] leading-relaxed text-slate-600">
+                <Info className="w-3.5 h-3.5 mt-0.5 flex-shrink-0 text-slate-400" />
+                <div className="space-y-1">
+                  <p>
+                    <span className="font-bold text-slate-700">What the lock does:</span> the body is
+                    encrypted under its own key, wrapped with a key derived from the unlock date
+                    itself. The app cannot read it early, and editing the stored date corrupts the
+                    letter instead of opening it.
+                  </p>
+                  <p>
+                    <span className="font-bold text-slate-700">What it does not do:</span> it cannot
+                    stop either of you. Anyone who knows the vault passphrase can open a sealed
+                    letter early by setting their device clock forward. It is a promise you keep,
+                    not a safe you cannot crack.
+                  </p>
+                </div>
+              </div>
+
+              {saveError && (
+                <p className="text-[11px] font-semibold text-rose-600 text-center">{saveError}</p>
+              )}
 
               <BouncyButton
                 type="submit"
                 disabled={saving || !title.trim() || !content.trim()}
                 className="w-full py-3 text-sm font-bold shadow-md shadow-blush-300/40"
               >
-                {saving ? 'Encrypting & Sealing...' : 'Seal with Wax Stamp 💌'}
+                {saving
+                  ? unlockDate
+                    ? 'Sealing time lock...'
+                    : 'Encrypting...'
+                  : unlockDate
+                    ? 'Seal Until ' + formatDatePretty(unlockDate) + ' 🔒'
+                    : 'Seal with Wax Stamp 💌'}
               </BouncyButton>
             </form>
           </motion.div>
