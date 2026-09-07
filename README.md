@@ -208,10 +208,26 @@ rewritten — not as a safe you cannot open.
   privacy trade-off, made in exchange for reconnection working. Clearing site data
   rotates it.
 - **Invite links carry more than a peer id.** The `#connect=` fragment contains
-  the vault **salt** (not secret, but it identifies your vault), plus your couple
-  name and anniversary date. URL fragments are not sent to web servers, but the
-  link itself lands in whatever messenger you paste it into. Prefer the in-person
-  QR method when you can.
+  the vault **salt** and the **PBKDF2 iteration count** — both public KDF
+  parameters, neither secret, though the salt does identify your vault — plus
+  your couple name and anniversary date. URL fragments are not sent to web
+  servers, but the link itself lands in whatever messenger you paste it into.
+  Prefer the in-person QR method when you can.
+- **An invite link never contains the passphrase canary.** It would be convenient:
+  a joining device could then prove the typed passphrase matches before writing
+  anything. We do not do it. The canary is a ciphertext under the vault key, so
+  publishing it would hand an **offline passphrase-cracking oracle** to every
+  party that relays the link — the messenger, anyone it is forwarded to, anyone
+  who photographs the QR code. Against a human-chosen phrase that is a real
+  attack, and the passphrase is the only secret this app has. A mismatch is
+  caught instead by the P2P handshake, which encrypts every frame under the vault
+  key and therefore cannot authenticate two different keys — you get an explicit
+  `passphrase mismatch` error a few seconds later instead.
+- **Everything parsed out of a link is validated before it reaches cryptography.**
+  The salt must be base64 of exactly 16 bytes or it is discarded, so a crafted
+  link cannot choose a 2-byte PBKDF2 salt or throw a decoding error out of vault
+  setup. Dates, names and iteration counts are range-checked the same way, and a
+  bare string like `ourspace.app` is no longer accepted as an invite.
 - **Incoming invite links are not auto-dialled.** A link from an unrecognised peer
   waits behind an explicit confirmation, so a crafted link cannot silently make
   your browser start an ICE exchange and reveal your local IP to the sender.
@@ -342,17 +358,40 @@ npm run preview      # serve the production build locally
 npm run test:crypto  # Web Crypto / PBKDF2 / AES-GCM verification suite
 ```
 
-`npm run test:crypto` (aliased as `npm test`) runs `test-crypto.mjs` against
-`src/services/crypto.js` in Node. There is no component or integration test
-framework in this project — that is a gap, not a claim of coverage.
+`npm run test:crypto` (aliased as `npm test`) runs `test-crypto.mjs` in Node
+against the real `src/services/crypto.js` and `src/utils/invite.js` — Node's
+WebCrypto is the same implementation the browser uses, so every assertion is a
+real AES-GCM / PBKDF2 / HKDF operation rather than a mock. 128 assertions across
+ten sections: primitives, KDF versioning, passphrase normalisation, the canary,
+AEAD associated data, schema-v2 record envelopes, the **v1 → v2 migration
+round-trip**, **time-lock seal/unseal**, backup containers (including v1
+containers written at 250,000), and invite parsing.
 
-### Known TODO: PNG app icons
+Two honest gaps:
 
-`public/manifest.json` and `index.html` reference `/icons/icon-192.png`,
-`/icons/icon-512.png` and `/icons/icon-maskable-512.png`. **Those files do not
-exist yet and need to be generated from `public/favicon.svg`.** Until they are,
-Android falls back to the SVG icon (still installable) and iOS falls back to a
-screenshot. Generate them with any SVG-to-PNG tool, for example:
+- **`src/db/index.js` is not covered.** It is Dexie on top of IndexedDB, neither
+  of which exists in Node. The suite exercises the record reshaping that
+  `db.migrateLegacyRecords()` performs — the part that can lose data — but not
+  the Dexie `version(2).upgrade()` callback around it.
+- **There is no component or integration test framework.** That is a gap, not a
+  claim of coverage.
+
+### Open item: PNG app icons
+
+The app ships **one** icon: `public/favicon.svg`. Android accepts an SVG icon and
+installs fine. Two things are still missing, and neither is faked:
+
+- **iOS** ignores SVG icons entirely and falls back to a screenshot of the page
+  for the home-screen tile. It needs a PNG `apple-touch-icon`.
+- **Maskable icons** (the adaptive shape Android crops to a circle or squircle)
+  must be PNG, and there is no maskable variant.
+
+Earlier revisions of `manifest.json` and `index.html` listed three PNGs under
+`/icons/` that were never generated, so every load fetched three 404s. Those
+references have been removed rather than left dangling — the manifest now
+describes only what actually exists. To add the icons properly, generate them
+from `public/favicon.svg`, restore the manifest entries and the
+`apple-touch-icon` link:
 
 ```bash
 npx sharp-cli -i public/favicon.svg -o public/icons/icon-192.png resize 192 192

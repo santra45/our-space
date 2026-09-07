@@ -467,9 +467,14 @@ export function VaultProvider({ children }) {
             ? initialSettings.kdfIterations
             : PBKDF2_ITERATIONS_CURRENT;
           key = await deriveKeyFromPassphrase(normalized, salt, { iterations });
+          // The normal path: invite links deliberately do NOT carry the canary,
+          // because publishing a ciphertext under the vault key would hand an
+          // offline passphrase-cracking oracle to whoever relays the link (see
+          // utils/invite.js). The mismatch is caught instead by the P2P
+          // handshake, which cannot authenticate under two different keys.
           setWarning(
-            'This invite could not prove your passphrase matches your partner’s. If nothing syncs ' +
-              'across, you have each typed a different phrase — re-pair with a fresh invite link.'
+            'Paired. Your passphrase is confirmed the moment your phones connect — if it does not ' +
+              'match your partner’s exactly, the connection will say so rather than syncing.'
           );
         }
 

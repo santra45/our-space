@@ -193,12 +193,46 @@ export function SyncHubModal({ isOpen, onClose }) {
   const [promptBusy, setPromptBusy] = useState(false);
   const [promptError, setPromptError] = useState('');
 
+  /**
+   * This vault's PBKDF2 iteration count, carried in the invite.
+   *
+   * It is REQUIRED for correctness, not an optimisation. A vault created before
+   * the OWASP bump derives at 250,000 and keeps doing so forever. A partner
+   * joining it with no recorded count would derive at 600,000, get a different
+   * key, and never authorise - with nothing in the join UI to explain why. Like
+   * the salt, the count is a public KDF parameter and secret-free.
+   *
+   * The passphrase CANARY is deliberately NOT carried here. See buildInviteUrl.
+   */
+  const [inviteKdfIterations, setInviteKdfIterations] = useState(null);
+
   const qrCanvasRef = useRef(null);
   const { tap, celebration } = useHaptics();
+
+  useEffect(() => {
+    if (!isOpen) return undefined;
+    let cancelled = false;
+
+    db.vaultMeta
+      .get('config')
+      .then((meta) => {
+        if (cancelled || !meta) return;
+        if (Number.isFinite(meta.kdfIterations)) setInviteKdfIterations(meta.kdfIterations);
+      })
+      .catch(() => {
+        // Falls back to the current default, which is right for any vault this
+        // build created. Only a pre-bump vault needs the recorded value.
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen]);
 
   const shareUrl = buildInviteUrl(myPeerId, vaultSalt, {
     startDate: vaultConfig?.startDate,
     coupleNames: vaultConfig?.coupleNames,
+    kdfIterations: inviteKdfIterations,
   });
 
   // Render QR Code on canvas
@@ -210,7 +244,10 @@ export function SyncHubModal({ isOpen, onClose }) {
       shareUrl || myPeerId,
       {
         width: 190,
-        margin: 1,
+        // The QR spec requires a four-module quiet zone; `margin: 1` supplied
+        // one and made the symbol harder to acquire against a light background.
+        margin: 2,
+        errorCorrectionLevel: 'M',
         color: {
           dark: '#1e293b',
           light: '#ffffff',
