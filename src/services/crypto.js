@@ -45,9 +45,7 @@ const INTERNAL_RECORD_FIELDS = new Set([
   'ciphertext',
   'iv',
   '_del',
-  'needsReencrypt',
   '_schemaVersion',
-  '_needsReencrypt',
   '_headerTampered',
   '_binaryTampered',
   '_binaryUnverified',
@@ -350,7 +348,11 @@ export async function verifyPassphraseAgainstMeta(passphrase, meta) {
       passphrase,
       meta.salt,
       async (key) => (await readCanary(key, meta)) !== null,
-      { iterations: PBKDF2_ITERATIONS_CURRENT }
+      // The vault's OWN recorded count, not the current constant. There is one
+      // count today, but recording it per vault is exactly what makes raising it
+      // later possible without locking anyone out - and a verifier that ignores
+      // it would silently break on the day someone does.
+      { iterations: Number.isFinite(meta.kdfIterations) ? meta.kdfIterations : PBKDF2_ITERATIONS_CURRENT }
     );
     return true;
   } catch {
@@ -500,7 +502,7 @@ const BINARY_DIGEST_FIELD = '_bin';
  *     `_headerTampered`, refused by every gate that already reads that flag.
  * Every row written before this commit has no binding, and treating those as
  * hostile would refuse to restore or sync a vault's entire history. They are
- * re-sealed WITH a binding by db.migrateLegacyRecords()'s sweep at unlock, so
+ * sealed WITH a binding the next time the record is genuinely written, so
  * the carve-out drains per device instead of being permanent.
  *
  * Rejected alternative: enforcing the table at the two sanitize boundaries
@@ -689,7 +691,7 @@ export async function encryptRecord(plainFields, key, options = {}) {
  *   dimension is simply not checked (`_tableTampered` stays false), because
  *   there is nothing to compare the sealed name against.
  * @returns {Promise<Object>} The logical record, plus:
- *   `_schemaVersion` (1 or 2), `_needsReencrypt` (true for v1 rows),
+ *   `_schemaVersion`,
  *   `_headerTampered` (true when some unauthenticated part of the row disagrees
  *   with the authenticated envelope: the plaintext id/updatedAt/deleted, the
  *   attached binary, or the table it is presented as - treat as hostile),
@@ -772,7 +774,6 @@ export async function decryptRecord(record, key, options = {}) {
     typeof options.table === 'string' && options.table.length > 0 ? options.table : null;
 
   out._schemaVersion = RECORD_SCHEMA_VERSION;
-  out._needsReencrypt = false;
   out._binaryTampered = binaryCheck.tampered;
   out._binaryUnverified = binaryCheck.unverified;
   out._tableUnverified = sealedTable === null;

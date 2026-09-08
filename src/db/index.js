@@ -979,7 +979,7 @@ async function loadPrecedenceRule() {
  */
 const COMMON_FIELDS = ['id', 'updatedAt', 'deleted', 'v', 'ciphertext', 'iv', '_del'];
 const BINARY_FIELDS_BY_TABLE = {
-  memories: ['imageBlob', 'mimeType'],
+  memories: ['imageBlob'],
 };
 
 /**

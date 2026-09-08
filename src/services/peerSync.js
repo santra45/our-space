@@ -291,7 +291,7 @@ const WIRE_FIELDS_COMMON = ['id', 'updatedAt', 'deleted', 'v', 'ciphertext', 'iv
  * absent too: the receiver derives it itself.
  */
 const WIRE_FIELDS_BY_TABLE = {
-  memories: ['mimeType'],
+  memories: [],
 };
 
 function wireFieldsFor(table) {

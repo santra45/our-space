@@ -38,7 +38,7 @@ plain HTTP will not work.
 ```bash
 npm run build     # production build into dist/
 npm run preview   # serve the built output
-npm test          # crypto + sync test suite (350 assertions, plain node, no browser)
+npm test          # crypto + sync test suite (329 assertions, plain node, no browser)
 ```
 
 ---
@@ -81,8 +81,8 @@ The derived key is a non-extractable `CryptoKey` held only in memory. The practi
 consequence: **reloading the page asks for the passphrase again.** That is the cost of not
 storing it anywhere, and it is deliberate.
 
-New vaults derive at 600,000 iterations. Vaults created before that still open at their
-original count, which is recorded per vault — raising the number does not lock anyone out.
+Keys derive at 600,000 PBKDF2 iterations. The count is recorded on the vault itself rather
+than assumed, so it can be raised later without locking an existing vault out.
 
 **Time-locked letters.** A sealed letter's body is wrapped under a key derived from its
 unlock date, so the app genuinely cannot open it early and editing the stored date breaks
