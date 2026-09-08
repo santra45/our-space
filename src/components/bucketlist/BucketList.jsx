@@ -151,7 +151,12 @@ export async function seedDefaultItems(key) {
     const collisions = await db.bucketList.bulkGet(rows.map((row) => row.id));
     const fresh = rows.filter((_, index) => !collisions[index]);
     if (fresh.length === 0) return;
-    await db.bucketList.bulkAdd(fresh);
+    // bulkAdd does not fire the tombstone hooks, and encryptRecord strips
+    // `_del`, so stamp the index mirror here too. These seed rows are all live,
+    // but a row missing `_del` is invisible to the `where('_del').equals(0)`
+    // count that decides whether to seed at all - which would make the starter
+    // items reappear on every unlock.
+    await db.bucketList.bulkAdd(fresh.map((row) => ({ ...row, _del: row.deleted === true ? 1 : 0 })));
   });
 }
 

@@ -251,6 +251,10 @@ for (const method of [
   'putEncrypted',
   'softDelete',
   '_inheritedProvenance',
+  // Stamps the `_del` index mirror. bulkPut does not fire Dexie's tombstone
+  // hooks and encryptRecord strips the field, so every write site calls this
+  // explicitly - which makes it a real dependency of applyBackupMerge.
+  '_withDelIndex',
 ]) {
   if (typeof SweetheartDatabase.prototype[method] !== 'function') {
     throw new Error(`test harness is stale: SweetheartDatabase has no ${method}()`);
@@ -2269,6 +2273,62 @@ async function run() {
   // And genuinely newer still wins, as before.
   const dmNewer = await dmDiff(dmLocal, [{ id: 'x1', updatedAt: NOW + 1000, deleted: false }]);
   check('a genuinely newer remote row is still requested', dmNewer.length === 1);
+
+  /* -------- 11undecies. tombstones must survive a bulk write ---------------- */
+  section('11undecies. A tombstone written in bulk keeps its `_del` index mirror');
+
+  // Reported by the project owner. Dexie's `creating`/`updating` hooks keep
+  // `_del` in step with `deleted`, but they DO NOT FIRE for bulkPut/bulkAdd -
+  // and encryptRecord strips `_del`, because it is local bookkeeping that must
+  // never be sealed into an envelope or put on the wire.
+  //
+  // So every row written in bulk landed with `_del` undefined. getManifest()
+  // reads tombstones off `where('_del').equals(1)`, so a re-sealed or restored
+  // tombstone was advertised to the partner as deleted:false - and a deleted
+  // memory came back from the dead on the next sync.
+  const tsTomb = await encryptRecord(
+    { id: 'ts-gone', updatedAt: NOW, deleted: true },
+    key,
+    { table: 'letters' }
+  );
+  check(
+    'encryptRecord itself never emits `_del` - it must not reach an envelope',
+    tsTomb._del === undefined
+  );
+
+  const tsLive = await encryptRecord(
+    { id: 'ts-here', updatedAt: NOW, deleted: false, content: 'still here' },
+    key,
+    { table: 'letters' }
+  );
+
+  const tsStore = new FakeVaultStore({});
+  check(
+    'the write helper stamps a tombstone as 1',
+    tsStore._withDelIndex({ ...tsTomb })._del === 1
+  );
+  check(
+    'and a live row as 0, never undefined',
+    tsStore._withDelIndex({ ...tsLive })._del === 0
+  );
+
+  // End to end through the shipped restore path, which writes with bulkPut.
+  const tsTarget = new FakeVaultStore({
+    letters: [
+      await encryptRecord(
+        { id: 'ts-gone', updatedAt: NOW - MINUTE, deleted: false, content: 'about to go' },
+        key,
+        { table: 'letters' }
+      ),
+    ],
+  });
+  const tsPlan = await tsTarget.planBackupMerge({ letters: [tsTomb] }, key);
+  await tsTarget.applyBackupMerge(tsPlan);
+  const tsWritten = await tsTarget.table('letters').get('ts-gone');
+  check(
+    'a tombstone restored through applyBackupMerge is indexed as deleted',
+    tsWritten.deleted === true && tsWritten._del === 1
+  );
 
   section('11c. A backup whose origin cannot be established is `unknown`, not `same`');
 

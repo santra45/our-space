@@ -186,6 +186,33 @@ export class SweetheartDatabase extends Dexie {
    * setting a plain boolean and never think about the index mirror.
    * @private
    */
+  /**
+   * Stamps the `_del` index mirror onto a row about to be written.
+   *
+   * The Dexie hooks below keep `_del` in step for ordinary single-row writes,
+   * but they DO NOT FIRE for bulkPut / bulkAdd - and encryptRecord deliberately
+   * strips `_del`, because it is local bookkeeping that must never be sealed
+   * into an envelope or put on the wire. Both facts together mean every row
+   * written in bulk arrived with `_del` undefined.
+   *
+   * That silently broke deletion sync. getManifest() reads tombstones off
+   * `where('_del').equals(1)`, so a re-sealed or restored tombstone was
+   * advertised to the partner as `deleted: false` - and a deleted memory came
+   * back from the dead on the next sync.
+   *
+   * Applied explicitly at every write site rather than trusted to the hooks, so
+   * a future bulk path cannot reintroduce it.
+   *
+   * @param {Object} row
+   * @returns {Object} the same row, with `_del` in step with `deleted`
+   */
+  _withDelIndex(row) {
+    if (row && typeof row === 'object') {
+      row._del = row.deleted === true ? 1 : 0;
+    }
+    return row;
+  }
+
   _installTombstoneHooks() {
     for (const tableName of SYNCED_TABLES) {
       const table = this.table(tableName);
@@ -306,7 +333,7 @@ export class SweetheartDatabase extends Dexie {
       table: tableName,
       ...(await this._inheritedProvenance(tableName, plainFields.id, key)),
     });
-    await this.table(tableName).put(row);
+    await this.table(tableName).put(this._withDelIndex(row));
     return row;
   }
 
@@ -382,7 +409,7 @@ export class SweetheartDatabase extends Dexie {
       table: tableName,
       ...(await this._inheritedProvenance(tableName, id, key)),
     });
-    await this.table(tableName).put(row);
+    await this.table(tableName).put(this._withDelIndex(row));
     return row;
   }
 
@@ -551,7 +578,11 @@ export class SweetheartDatabase extends Dexie {
         }
 
         if (rewritten.length > 0) {
-          await table.bulkPut(rewritten);
+          // _del explicitly, because bulkPut does not fire the tombstone hooks
+          // and encryptRecord strips the field. Without this a re-sealed
+          // tombstone drops off the `_del` index and the manifest tells the
+          // partner the record is alive.
+          await table.bulkPut(rewritten.map((row) => this._withDelIndex(row)));
           stats.migrated += rewritten.length;
         }
       }
@@ -961,7 +992,11 @@ export class SweetheartDatabase extends Dexie {
               return false;
             })
             .map((entry) => entry.row);
-          if (stillWins.length > 0) await table.bulkPut(stillWins);
+          // Same bulkPut caveat as the re-seal sweep: stamp the index mirror
+          // or a restored tombstone stops replicating as a deletion.
+          if (stillWins.length > 0) {
+            await table.bulkPut(stillWins.map((row) => this._withDelIndex(row)));
+          }
           written[name] = (written[name] || 0) + stillWins.length;
         }
       }
