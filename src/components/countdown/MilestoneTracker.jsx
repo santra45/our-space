@@ -137,7 +137,10 @@ export function MilestoneTracker() {
         if (!record) {
           let decrypted;
           try {
-            decrypted = await decryptRecord(row, cryptoKey);
+            // The table is REQUIRED here. Without it decryptRecord has no expected
+            // table to compare the sealed `_tbl` against, so a row sealed for a
+            // different one is never flagged and renders as ordinary content.
+            decrypted = await decryptRecord(row, cryptoKey, { table: 'milestones' });
           } catch {
             skipped += 1;
             continue;

@@ -160,7 +160,10 @@ export function DateRoulette() {
 
       let record;
       try {
-        record = await decryptRecord(storedState, cryptoKey);
+        // The table is REQUIRED here. Without it decryptRecord has no expected
+        // table to compare the sealed `_tbl` against, so a row sealed for a
+        // different one is never flagged and renders as ordinary content.
+        record = await decryptRecord(storedState, cryptoKey, { table: 'dateIdeas' });
       } catch {
         return;
       }

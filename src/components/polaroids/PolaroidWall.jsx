@@ -64,7 +64,10 @@ export function PolaroidWall() {
       for (const row of storedRows) {
         if (row.deleted === true) continue;
         try {
-          const record = await decryptRecord(row, cryptoKey);
+          // The table is REQUIRED here. Without it decryptRecord has no expected
+          // table to compare the sealed `_tbl` against, so a row sealed for a
+          // different one is never flagged and renders as ordinary content.
+          const record = await decryptRecord(row, cryptoKey, { table: 'memories' });
           if (record.deleted === true) continue;
           // A rewritten plaintext header means a peer edited fields that AES-GCM
           // authenticates. Refuse to render forged metadata.

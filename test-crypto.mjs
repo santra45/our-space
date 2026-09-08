@@ -2464,6 +2464,75 @@ async function run() {
     xtOld._tableUnverified === true && xtOld._headerTampered !== true
   );
 
+  /* ------- 11quaterdecies. every decryptRecord call must name its table ---- */
+  section('11quaterdecies. No read path may skip the sealed-table check');
+
+  // This drifted twice. First getDecrypted/listDecrypted were fixed while the
+  // five screens still called decryptRecord directly - and that commit message
+  // claimed no component changes were needed, which was wrong, because the
+  // screens never go through those helpers at all. A source check is the only
+  // thing that actually holds the invariant: `{ table }` is optional in the
+  // signature (pre-binding rows legitimately have none), so no type or runtime
+  // check can catch a caller that simply forgets it.
+  const { readdirSync, readFileSync, statSync } = await import('node:fs');
+  const { join } = await import('node:path');
+
+  const walkSrc = (dir) => {
+    const out = [];
+    for (const entry of readdirSync(dir)) {
+      const full = join(dir, entry);
+      if (statSync(full).isDirectory()) out.push(...walkSrc(full));
+      else if (/\.(js|jsx)$/.test(entry)) out.push(full);
+    }
+    return out;
+  };
+
+  /** Strips comments so prose mentions of decryptRecord() are not read as calls. */
+  const stripComments = (src) =>
+    src.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/(^|[^:])\/\/[^\n]*/g, '$1 ');
+
+  /** Returns the argument text of every decryptRecord( ... ) call. */
+  const callArgs = (src) => {
+    const out = [];
+    const needle = 'decryptRecord(';
+    let at = src.indexOf(needle);
+    while (at !== -1) {
+      let depth = 0;
+      let i = at + needle.length - 1;
+      for (; i < src.length; i++) {
+        if (src[i] === '(') depth++;
+        else if (src[i] === ')') {
+          depth--;
+          if (depth === 0) break;
+        }
+      }
+      out.push(src.slice(at + needle.length, i));
+      at = src.indexOf(needle, i === -1 ? at + needle.length : i);
+    }
+    return out;
+  };
+
+  // crypto.js DEFINES decryptRecord and calls its own legacy helper, so it has
+  // no caller-supplied table to pass on.
+  const TABLE_CHECK_SKIP = new Set([join('src', 'services', 'crypto.js')]);
+
+  const offenders = [];
+  for (const file of walkSrc('src')) {
+    if (TABLE_CHECK_SKIP.has(file)) continue;
+    for (const args of callArgs(stripComments(readFileSync(file, 'utf8')))) {
+      // Accepts `{ table: x }` and the `{ table }` shorthand alike.
+      if (!/\btable\b/.test(args)) {
+        offenders.push(`${file} -> decryptRecord(${args.replace(/\s+/g, ' ').trim()})`);
+      }
+    }
+  }
+
+  check(
+    'every decryptRecord() caller names its table — offenders: ' +
+      (offenders.join(' | ') || 'none'),
+    offenders.length === 0
+  );
+
   section('11c. A backup whose origin cannot be established is `unknown`, not `same`');
 
   // ImportPreview had branches for 'foreign' and 'no-local-vault' and none for
