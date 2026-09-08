@@ -618,21 +618,24 @@ export class SweetheartDatabase extends Dexie {
         // be replayed into this one under its own valid envelope - the key that
         // `tables` is being iterated by is exactly the claim being checked.
         const verdict = await verifyRowIntegrity(row, key, tableName);
-        if (verdict !== 'ok') {
+        if (verdict !== 'ok' && verdict !== 'unverified') {
           stats[verdict]++;
           continue;
         }
-        candidates.push(row);
+        // An unverified row is kept as a CANDIDATE but remembered as such: it may
+        // still create something at an id we do not have, because that destroys
+        // nothing. The decision loop below is what refuses it an overwrite.
+        candidates.push({ row, verified: verdict === 'ok' });
       }
 
       // Compare against what is already here, in chunks so a photo table does
       // not have to be resident all at once.
       for (let offset = 0; offset < candidates.length; offset += BULK_WRITE_CHUNK) {
         const chunk = candidates.slice(offset, offset + BULK_WRITE_CHUNK);
-        const existingRows = await table.bulkGet(chunk.map((row) => row.id));
+        const existingRows = await table.bulkGet(chunk.map((entry) => entry.row.id));
         for (let i = 0; i < chunk.length; i++) {
           const existing = existingRows[i];
-          const row = chunk[i];
+          const { row, verified } = chunk[i];
           if (!existing) {
             // A tombstone for an id we have never seen deletes nothing, and it is
             // not harmless: it is invisible in every list (they all filter on
@@ -661,6 +664,17 @@ export class SweetheartDatabase extends Dexie {
           // ciphertext, so a forger holding one blob encrypted under the vault
           // key can aim a tombstone at any id they can guess - and the seeded
           // ids are identical across every vault by construction.
+          // Same rule for a binding that is merely ABSENT rather than wrong: an
+          // envelope predating the photo digest or the table binding cannot
+          // prove which bytes or which table it belongs to, so it may not
+          // overwrite or delete. Otherwise a single harvested pre-binding
+          // envelope erases a photo (swap the bytes, or just omit them) or
+          // deletes a letter from another table, on a fully-swept device.
+          if (!verified) {
+            stats.unauthenticated++;
+            continue;
+          }
+
           if (!recordHasAuthenticatedHeader(row)) {
             stats.unauthenticated++;
             continue;
@@ -896,6 +910,19 @@ async function verifyRowIntegrity(row, key, tableName) {
       plain._tableTampered === true
     ) {
       return 'tampered';
+    }
+    // Binding present and correct is 'ok'. Binding ABSENT is neither ok nor
+    // tampered - it is unknowable, and it must not be silently treated as ok.
+    //
+    // This is the hole the re-seal sweep does NOT close, and the reason it does
+    // not is worth stating plainly: migrateLegacyRecords re-seals rows this
+    // device HOLDS, while this function only ever decrypts the row ARRIVING.
+    // Sweeping therefore does nothing about an envelope an attacker harvested
+    // before binding existed. Without this verdict such an envelope stays a
+    // permanent capability against that id - on every device, however many
+    // times either side sweeps.
+    if (plain._binaryUnverified === true || plain._tableUnverified === true) {
+      return 'unverified';
     }
     return 'ok';
   } catch {

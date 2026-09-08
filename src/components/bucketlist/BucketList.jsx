@@ -115,7 +115,13 @@ export async function seedDefaultItems(key) {
           updatedAt: nextTimestamp(),
           deleted: false,
         },
-        key
+        key,
+        // Bind the table. Without it these rows seal as "table unverified", and
+        // the import/sync gates refuse an unverified row an overwrite - which
+        // would quietly make the six starter items un-editable from a partner
+        // device. Every other write goes through db.putEncrypted, which supplies
+        // this already; this is the one direct encryptRecord call in the app.
+        { table: 'bucketList' }
       )
     );
   }

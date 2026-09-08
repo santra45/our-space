@@ -1509,9 +1509,12 @@ async function run() {
     compatPlan.totals.added === 1 && compatPlan.totals.tampered === 0
   );
 
-  // WHAT THIS DOES NOT COVER, pinned so nobody reads the section title as more
-  // than it says: until a row has been re-sealed, it is STILL cross-fileable.
-  // The binding refuses a mismatch; it cannot invent one that was never sealed.
+  // The gap this section used to document is now CLOSED, and the fix is not the
+  // re-seal sweep - that only re-seals rows this device HOLDS, while every gate
+  // decrypts the row ARRIVING. An envelope harvested before binding existed
+  // would otherwise have stayed a permanent capability against that id on every
+  // device, no matter how often either side swept. So an absent binding is now
+  // its own verdict: `unverified` may CREATE, but never overwrite or delete.
   const unboundTombstone = await encryptRecord(
     { id: 'shared-id-2', updatedAt: NOW, deleted: true },
     key
@@ -1527,9 +1530,24 @@ async function run() {
   });
   const gapPlan = await gapStore.planBackupMerge({ letters: [unboundTombstone] }, key);
   check(
-    'DOCUMENTED GAP: an UNBOUND tombstone still deletes across tables until it is swept',
-    gapPlan.totals.deleted === 1 && gapPlan.totals.tampered === 0
+    'an UNBOUND tombstone can no longer delete a live letter',
+    gapPlan.totals.deleted === 0 && gapPlan.totals.unauthenticated === 1
   );
+  await gapStore.applyBackupMerge(gapPlan);
+  const gapSurvivor = await gapStore.table('letters').get('shared-id-2');
+  check('the live letter survived the unbound tombstone', gapSurvivor.deleted !== true);
+
+  // An unbound row may still CREATE, so an older vault still restores.
+  const unboundCreate = await encryptRecord(
+    { id: 'let-from-old-vault', updatedAt: NOW, deleted: false, content: 'Old but honest' },
+    key
+  );
+  const createGapPlan = await gapStore.planBackupMerge({ letters: [unboundCreate] }, key);
+  check(
+    'but an unbound row for an unused id still creates, so old backups restore',
+    createGapPlan.totals.added === 1 && createGapPlan.totals.unauthenticated === 0
+  );
+
 
   // ...which is why the sweep drains it. migrateLegacyRecords re-seals any row
   // whose envelope lacks the binding, under the same id and updatedAt.
@@ -1578,6 +1596,92 @@ async function run() {
     'so it stays exactly as it was, and stays refused by the gates',
     stillTampered.ciphertext === launderBase.ciphertext &&
       (await decryptRecord(stillTampered, key))._headerTampered === true
+  );
+
+  /* ------- 11quinquies. the sweep does not protect against a HELD envelope -- */
+  section('11quinquies. An unverified binding may create but never overwrite');
+
+  // The structural point an adversarial reviewer made, and the reason the
+  // re-seal sweep was never the fix: migrateLegacyRecords re-seals rows this
+  // device HOLDS, while every gate decrypts the row ARRIVING. So an envelope
+  // harvested before the photo digest or the table binding existed stayed a
+  // permanent capability against that id - on a fully swept device, forever.
+  const qSweptStore = new FakeVaultStore({
+    memories: [
+      {
+        ...(await encryptRecord(
+          { id: 'mem-swept', updatedAt: NOW - MINUTE, deleted: false, caption: 'Bound and swept' },
+          key,
+          { table: 'memories' }
+        )),
+        imageBlob: new Uint8Array(64),
+      },
+    ],
+  });
+
+  // A pre-binding envelope: no table option, no digest map. Newer, so it would
+  // win on timestamp alone.
+  const qHeldEnvelope = await encryptRecord(
+    { id: 'mem-swept', updatedAt: NOW + MINUTE, deleted: false, caption: 'Bound and swept' },
+    key
+  );
+
+  const qSwapPlan = await qSweptStore.planBackupMerge(
+    { memories: [{ ...qHeldEnvelope, imageBlob: new Uint8Array(900) }] },
+    key
+  );
+  check(
+    'a held pre-binding envelope cannot overwrite, even on a swept device',
+    qSwapPlan.totals.updated === 0 &&
+      qSwapPlan.totals.unauthenticated + qSwapPlan.totals.tampered === 1
+  );
+
+  // The same envelope with the photo simply OMITTED erased it just as well.
+  const qStripPlan = await qSweptStore.planBackupMerge({ memories: [qHeldEnvelope] }, key);
+  check(
+    'and it cannot erase the photo by omitting the bytes either',
+    qStripPlan.totals.updated === 0 && qStripPlan.totals.unauthenticated === 1
+  );
+
+  await qSweptStore.applyBackupMerge(qSwapPlan);
+  await qSweptStore.applyBackupMerge(qStripPlan);
+  const qSweptSurvivor = await qSweptStore.table('memories').get('mem-swept');
+  check(
+    'the photo bytes survived both',
+    qSweptSurvivor.imageBlob?.length === 64 && qSweptSurvivor.deleted !== true
+  );
+
+  // But an unverified row must still be able to CREATE, or restoring a backup
+  // taken before binding existed would be impossible.
+  const qOldCreate = await encryptRecord(
+    { id: 'mem-from-old-backup', updatedAt: NOW, deleted: false, caption: 'Honest and old' },
+    key
+  );
+  const qOldCreatePlan = await qSweptStore.planBackupMerge({ memories: [qOldCreate] }, key);
+  check(
+    'an unverified row for an unused id still creates',
+    qOldCreatePlan.totals.added === 1 && qOldCreatePlan.totals.unauthenticated === 0
+  );
+
+  // And a fully bound, genuinely newer row must still win, or records freeze.
+  // The blob goes THROUGH encryptRecord so it lands in the digest map. Spreading
+  // one on afterwards leaves an attached blob the envelope never sealed, which
+  // is correctly reported as tampering.
+  const qBoundNewer = await encryptRecord(
+    {
+      id: 'mem-swept',
+      updatedAt: NOW + 2 * MINUTE,
+      deleted: false,
+      caption: 'Legit edit',
+      imageBlob: new Uint8Array(64),
+    },
+    key,
+    { table: 'memories' }
+  );
+  const qBoundPlan = await qSweptStore.planBackupMerge({ memories: [qBoundNewer] }, key);
+  check(
+    'a properly bound newer row still overwrites, so records are not frozen',
+    qBoundPlan.totals.updated === 1 && qBoundPlan.totals.unauthenticated === 0
   );
 
   section('11c. A backup whose origin cannot be established is `unknown`, not `same`');
@@ -1636,23 +1740,28 @@ async function run() {
 
   const liveLetterA = await encryptRecord(
     { id: 'let-merge-a', updatedAt: NOW, deleted: false, title: 'Newer local edit' },
-    key
+    key,
+    { table: 'letters' }
   );
   const liveLetterB = await encryptRecord(
     { id: 'let-merge-b', updatedAt: NOW - 30 * MINUTE, deleted: false, title: 'Older local copy' },
-    key
+    key,
+    { table: 'letters' }
   );
   const backupLetterA = await encryptRecord(
     { id: 'let-merge-a', updatedAt: NOW - 60 * MINUTE, deleted: false, title: 'Stale backup copy' },
-    key
+    key,
+    { table: 'letters' }
   );
   const backupLetterB = await encryptRecord(
     { id: 'let-merge-b', updatedAt: NOW - 5 * MINUTE, deleted: false, title: 'Newer backup copy' },
-    key
+    key,
+    { table: 'letters' }
   );
   const backupLetterC = await encryptRecord(
     { id: 'let-merge-c', updatedAt: NOW - 90 * MINUTE, deleted: false, title: 'Only in the backup' },
-    key
+    key,
+    { table: 'letters' }
   );
 
   const mergeStore = new FakeVaultStore({ letters: [liveLetterA, liveLetterB] });
@@ -1739,7 +1848,8 @@ async function run() {
   const racePlan = await raceStore.planBackupMerge({ letters: [backupLetterC] }, key);
   const arrivedMidPreview = await encryptRecord(
     { id: 'let-merge-c', updatedAt: NOW, deleted: false, title: 'Landed from the partner mid-preview' },
-    key
+    key,
+    { table: 'letters' }
   );
   await raceStore.table('letters').put(arrivedMidPreview);
   const raceApplied = await raceStore.applyBackupMerge(racePlan);

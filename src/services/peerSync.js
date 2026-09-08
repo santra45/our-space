@@ -2124,7 +2124,16 @@ export class PeerSyncManager {
       if (plain && plain._headerTampered === true) {
         return { ok: false, code: 'header_tampered' };
       }
-      return { ok: true };
+      // Binding ABSENT is neither ok nor tampered. It is reported so the caller
+      // can allow a create but refuse an overwrite - the same rule the import
+      // path applies. The re-seal sweep does NOT cover this: it re-seals rows
+      // this device HOLDS, while this only ever decrypts the row ARRIVING, so an
+      // envelope harvested before binding existed would otherwise stay a
+      // permanent capability against that id no matter how often we sweep.
+      if (plain && (plain._binaryUnverified === true || plain._tableUnverified === true)) {
+        return { ok: true, unverified: true };
+      }
+      return { ok: true, unverified: false };
     } catch {
       return { ok: false, code: 'undecryptable' };
     }
@@ -2172,7 +2181,9 @@ export class PeerSyncManager {
         continue;
       }
 
-      staged.push({ table: item.table, row });
+      // Carried on the staged entry rather than mutating the row: `row` is what
+      // gets written to IndexedDB, and a bookkeeping field would be persisted.
+      staged.push({ table: item.table, row, unverifiedBinding: integrity.unverified === true });
     }
 
     if (reasons.has('future_timestamp')) this._warnClockSkew();
@@ -2243,7 +2254,7 @@ export class PeerSyncManager {
     let stale = 0;
 
     await db.transaction('rw', tables, async () => {
-      for (const { table, row } of staged) {
+      for (const { table, row, unverifiedBinding } of staged) {
         const existing = await db.table(table).get(row.id);
         // Overwriting or deleting an existing row requires a BOUND header, so a
         // v1 row can only ever create. decryptLegacyRecord cannot detect a
@@ -2253,6 +2264,16 @@ export class PeerSyncManager {
         // forged tombstone. A partner mid-migration still syncs: rows we do not
         // have yet are unaffected, and their own sweep re-seals the rest as v2.
         if (existing && !recordHasAuthenticatedHeader(row)) {
+          stale++;
+          continue;
+        }
+        // Same rule for a binding that is merely absent: an envelope predating
+        // the photo digest or the table binding cannot prove which bytes or
+        // which table it belongs to, so it may create but never overwrite or
+        // delete. Without this a harvested pre-binding envelope erases a photo
+        // (swap the bytes, or just omit them) with no UI in the way at all,
+        // because the sync path has no confirmation step.
+        if (existing && unverifiedBinding === true) {
           stale++;
           continue;
         }
