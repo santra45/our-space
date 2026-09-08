@@ -10,6 +10,7 @@ import Header from './components/layout/Header';
 import BottomNav from './components/layout/BottomNav';
 import LockScreen from './components/layout/LockScreen';
 import AmbientParticles from './components/common/AmbientParticles';
+import ErrorBoundary from './components/common/ErrorBoundary';
 import MilestoneTracker from './components/countdown/MilestoneTracker';
 import PolaroidWall from './components/polaroids/PolaroidWall';
 import DateRoulette from './components/scratchoff/DateRoulette';
@@ -49,11 +50,19 @@ function AppContent() {
             exit={{ opacity: 0, y: -12 }}
             transition={{ duration: 0.22, ease: 'easeOut' }}
           >
-            {activeTab === 'countdown' && <MilestoneTracker />}
-            {activeTab === 'polaroids' && <PolaroidWall />}
-            {activeTab === 'roulette' && <DateRoulette />}
-            {activeTab === 'capsule' && <SecretCapsule />}
-            {activeTab === 'bucketlist' && <BucketList />}
+            {/*
+              Per-tab boundary, keyed on the tab. A crash in one screen must not
+              take the header and the nav down with it - with those still on
+              screen the user can simply move to another tab, and the key means
+              coming back re-mounts it cleanly rather than showing a stale error.
+            */}
+            <ErrorBoundary key={`boundary-${activeTab}`}>
+              {activeTab === 'countdown' && <MilestoneTracker />}
+              {activeTab === 'polaroids' && <PolaroidWall />}
+              {activeTab === 'roulette' && <DateRoulette />}
+              {activeTab === 'capsule' && <SecretCapsule />}
+              {activeTab === 'bucketlist' && <BucketList />}
+            </ErrorBoundary>
           </motion.div>
         </AnimatePresence>
       </main>
@@ -72,11 +81,16 @@ function AppContent() {
 
 export function App() {
   return (
-    <VaultProvider>
-      <SyncProvider>
-        <AppContent />
-      </SyncProvider>
-    </VaultProvider>
+    // Outermost net. The per-tab boundary handles the common case; this one is
+    // for a crash in a provider, the header, the nav or the lock screen, where
+    // there is no smaller subtree left to fall back to.
+    <ErrorBoundary>
+      <VaultProvider>
+        <SyncProvider>
+          <AppContent />
+        </SyncProvider>
+      </VaultProvider>
+    </ErrorBoundary>
   );
 }
 
