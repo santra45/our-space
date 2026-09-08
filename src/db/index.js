@@ -43,13 +43,17 @@ export const SYNCED_TABLES = Object.freeze([
 ]);
 
 /**
- * Tables a backup file is allowed to write into.
+ * Tables an ordinary MERGE import is allowed to write into.
  *
- * `vaultMeta` is deliberately ABSENT. It holds the salt and canary that key the
- * entire vault; letting a restore overwrite them re-keys the vault and orphans
- * every record created since the backup was taken. It is still exported (so the
- * file is a complete forensic record and so a future "restore onto a blank
- * device" flow can read the salt deliberately), but import always skips it.
+ * `vaultMeta` is deliberately ABSENT here. It holds the salt and canary that key
+ * the entire vault; letting a routine restore overwrite them re-keys the vault
+ * and orphans every record created since the backup was taken.
+ *
+ * The one place vaultMeta may legitimately come out of a backup is the explicit
+ * IDENTITY RESTORE flow - restoreVaultIdentity() below, driven by
+ * VaultContext.restoreVaultFromBackup(). That path adopts the backup's salt on
+ * purpose, verified against the backup's own canary, behind the same
+ * confirmation phrase that guards every other salt replacement.
  */
 export const IMPORTABLE_TABLES = new Set(SYNCED_TABLES);
 
@@ -66,6 +70,12 @@ export const MAX_RECORDS_PER_TABLE = 20000;
 export const MAX_IMAGE_BLOB_BYTES = 32 * 1024 * 1024;
 
 const BULK_WRITE_CHUNK = 100;
+
+/**
+ * A record stamped further ahead than this is a clock artefact, not history.
+ * Matches the ceiling peerSync applies to inbound records.
+ */
+const MAX_BACKUP_CLOCK_SKEW_MS = 48 * 60 * 60 * 1000;
 
 export class SweetheartDatabase extends Dexie {
   constructor() {
@@ -287,7 +297,11 @@ export class SweetheartDatabase extends Dexie {
     const existing = await this.table(tableName).get(id);
     if (!existing) return null;
 
-    const updatedAt = Math.max(Date.now(), (existing.updatedAt || 0) + 1);
+    // Not Date.now(): a device with a slow clock would stamp a tombstone the
+    // partner's copy already beats, so the delete would be silently undone on
+    // the next merge. syncSafeNow() is ahead of anything the partner has issued;
+    // the +1 guarantees the tombstone also beats the row it is replacing.
+    const updatedAt = Math.max(await syncSafeNow(), (existing.updatedAt || 0) + 1);
     let row;
     if (key) {
       row = await encryptRecord({ id, updatedAt, deleted: true }, key);
@@ -408,37 +422,72 @@ export class SweetheartDatabase extends Dexie {
   }
 
   /**
-   * Imports validated decrypted tables into local IndexedDB.
+   * Reads the live vault identity WITHOUT swallowing the failure.
    *
-   * Hardened against a corrupted, oversized or hand-edited backup:
-   *  - `vaultMeta` is skipped outright, so a restore can never re-key the vault
-   *    and orphan everything created since the backup.
-   *  - Only known fields survive; arbitrary extra keys are dropped instead of
-   *    being persisted into live tables.
-   *  - Caller-supplied objects are never mutated.
-   *  - Per-table record caps and a per-blob byte cap.
-   *  - The transaction is scoped to the tables actually being written.
+   * Every gate that protects irreversible data destruction depends on knowing
+   * whether a vault is present. A `catch { return null }` there is
+   * indistinguishable from "there is definitely no vault", which is how a
+   * transient IndexedDB error (a blocked version upgrade, a full disk, a private
+   * window) used to be promoted into permission to overwrite a live salt. So
+   * this reports THREE outcomes and lets the caller fail closed on the third.
    *
-   * @param {Record<string, Object[]>} tables
-   * @returns {Promise<{ imported: Record<string, number>, skipped: number, skippedTables: string[] }>}
+   * @returns {Promise<{ ok: boolean, meta: Object|null, error?: Error }>}
    */
-  async importRawDataFromBackup(tables) {
+  async readVaultIdentity() {
+    try {
+      const meta = await this.vaultMeta.get('config');
+      return { ok: true, meta: meta && meta.salt ? meta : null };
+    } catch (err) {
+      return { ok: false, meta: null, error: err };
+    }
+  }
+
+  /**
+   * Plans a MERGE of a decrypted backup into the live tables. Writes nothing.
+   *
+   * This exists because the old importRawDataFromBackup() was a blind bulkPut:
+   * no timestamp comparison, no proof the file came from this vault, no preview.
+   * With the stable deterministic seed ids this build introduced
+   * (bkt-default-1..6, roulette-current), ANY two vaults collide on primary key,
+   * so that bulkPut would replace live rows with rows encrypted under a foreign
+   * key - rows every read path then silently skips, making the items simply
+   * vanish. Three defences, in order:
+   *
+   *   1. STRUCTURE   sanitizeImportedRecord() drops unknown fields and rejects a
+   *                  malformed header, mirroring peerSync._validateWireRecord.
+   *   2. INTEGRITY   every row must decrypt under THIS vault's key and must not
+   *                  report `_headerTampered`, mirroring
+   *                  peerSync._verifyRecordIntegrity. A backup from a different
+   *                  vault fails here, record by record, and writes nothing.
+   *   3. PRECEDENCE  the winner is chosen by peerSync's OWN _incomingWins rule
+   *                  (loaded below, deliberately not reimplemented), so a merge
+   *                  and a sync can never disagree about which copy is newer.
+   *                  Restoring an older backup of the same vault therefore adds
+   *                  what is missing and leaves newer local edits alone.
+   *
+   * @param {Record<string, Object[]>} tables - `tables` from a decrypted container.
+   * @param {CryptoKey} key - The key the RESULTING vault will be read with.
+   * @returns {Promise<Object>} A plan; hand it to applyBackupMerge() to write.
+   */
+  async planBackupMerge(tables, key) {
     if (!tables || typeof tables !== 'object' || Array.isArray(tables)) {
       throw new Error('Invalid backup table payload');
     }
+    if (!key) {
+      // Fail closed: without a key nothing can be integrity-checked, and an
+      // unchecked write is exactly the hole this function exists to close.
+      throw new Error('Cannot verify a backup while the vault is locked.');
+    }
 
-    const imported = {};
+    const incomingWins = await loadPrecedenceRule();
+
+    const perTable = {};
     const skippedTables = [];
-    let skipped = 0;
-
-    const staged = new Map();
+    const writes = [];
+    const totals = { added: 0, updated: 0, stale: 0, invalid: 0, undecryptable: 0 };
 
     for (const [tableName, records] of Object.entries(tables)) {
-      if (!IMPORTABLE_TABLES.has(tableName)) {
-        skippedTables.push(tableName);
-        continue;
-      }
-      if (!Array.isArray(records)) {
+      if (!IMPORTABLE_TABLES.has(tableName) || !Array.isArray(records)) {
         skippedTables.push(tableName);
         continue;
       }
@@ -448,36 +497,248 @@ export class SweetheartDatabase extends Dexie {
         );
       }
 
-      const clean = [];
+      const stats = { total: records.length, added: 0, updated: 0, stale: 0, invalid: 0, undecryptable: 0 };
+      const table = this.table(tableName);
+
+      // Sanitize + integrity-check first, OUTSIDE any transaction: awaiting Web
+      // Crypto inside a Dexie transaction lets it commit out from under us.
+      const candidates = [];
       for (const record of records) {
-        const sanitized = sanitizeImportedRecord(tableName, record);
-        if (!sanitized) {
-          skipped++;
+        const row = sanitizeImportedRecord(tableName, record);
+        if (!row) {
+          stats.invalid++;
           continue;
         }
-        clean.push(sanitized);
-      }
-      staged.set(tableName, clean);
-    }
-
-    if (staged.size === 0) {
-      return { imported, skipped, skippedTables };
-    }
-
-    const targetTables = Array.from(staged.keys()).map((name) => this.table(name));
-
-    await this.transaction('rw', targetTables, async () => {
-      for (const [tableName, records] of staged.entries()) {
-        const table = this.table(tableName);
-        for (let offset = 0; offset < records.length; offset += BULK_WRITE_CHUNK) {
-          await table.bulkPut(records.slice(offset, offset + BULK_WRITE_CHUNK));
+        if (!(await verifyRowIntegrity(row, key))) {
+          stats.undecryptable++;
+          continue;
         }
-        imported[tableName] = records.length;
+        candidates.push(row);
+      }
+
+      // Compare against what is already here, in chunks so a photo table does
+      // not have to be resident all at once.
+      for (let offset = 0; offset < candidates.length; offset += BULK_WRITE_CHUNK) {
+        const chunk = candidates.slice(offset, offset + BULK_WRITE_CHUNK);
+        const existingRows = await table.bulkGet(chunk.map((row) => row.id));
+        for (let i = 0; i < chunk.length; i++) {
+          const existing = existingRows[i];
+          if (!existing) {
+            stats.added++;
+            writes.push({ table: tableName, row: chunk[i] });
+          } else if (incomingWins(existing, chunk[i])) {
+            stats.updated++;
+            writes.push({ table: tableName, row: chunk[i] });
+          } else {
+            stats.stale++;
+          }
+        }
+      }
+
+      perTable[tableName] = stats;
+      for (const field of Object.keys(totals)) totals[field] += stats[field];
+    }
+
+    return { writes, perTable, totals, skippedTables, incomingWins };
+  }
+
+  /**
+   * Writes a plan produced by planBackupMerge(), after the user confirmed it.
+   *
+   * The precedence rule is re-applied INSIDE the transaction. A live sync can
+   * land a newer copy in the seconds between the preview and the confirmation,
+   * and a plan that was accurate when it was built must not be allowed to
+   * regress that. Comparison is pure, so it is safe inside the transaction;
+   * decryption already happened during planning.
+   *
+   * @param {Object} plan
+   * @returns {Promise<{ written: Record<string, number>, supersededSincePreview: number }>}
+   */
+  async applyBackupMerge(plan) {
+    if (!plan || !Array.isArray(plan.writes) || typeof plan.incomingWins !== 'function') {
+      throw new Error('applyBackupMerge: not a plan produced by planBackupMerge()');
+    }
+    const written = {};
+    let supersededSincePreview = 0;
+    if (plan.writes.length === 0) return { written, supersededSincePreview };
+
+    const tableNames = [...new Set(plan.writes.map((entry) => entry.table))];
+    const tables = tableNames.map((name) => this.table(name));
+
+    await this.transaction('rw', tables, async () => {
+      for (const name of tableNames) {
+        const table = this.table(name);
+        const rows = plan.writes.filter((entry) => entry.table === name).map((entry) => entry.row);
+
+        for (let offset = 0; offset < rows.length; offset += BULK_WRITE_CHUNK) {
+          const chunk = rows.slice(offset, offset + BULK_WRITE_CHUNK);
+          const existingRows = await table.bulkGet(chunk.map((row) => row.id));
+          const stillWins = chunk.filter((row, i) => {
+            const existing = existingRows[i];
+            if (!existing) return true;
+            if (plan.incomingWins(existing, row)) return true;
+            supersededSincePreview++;
+            return false;
+          });
+          if (stillWins.length > 0) await table.bulkPut(stillWins);
+          written[name] = (written[name] || 0) + stillWins.length;
+        }
       }
     });
 
-    return { imported, skipped, skippedTables };
+    return { written, supersededSincePreview };
   }
+
+  /**
+   * Adopts a vault identity (salt + canary + KDF count) out of a backup.
+   *
+   * THIS IS THE ONLY PLACE IN THE APP THAT WRITES vaultMeta FROM A FILE, and it
+   * is what makes the rescue backup an actual way back rather than a promise the
+   * code could not keep. Callers must already have:
+   *   - derived a key from `metaRow.salt` and PROVED it against `metaRow.canary`
+   *     (an unverifiable identity is refused upstream - writing a salt nobody
+   *     can be shown to hold the key for is the trap this replaces), and
+   *   - obtained the destroy confirmation when a different live vault exists.
+   *
+   * @param {{ salt: string, canary: string, canaryIv: string, kdfIterations?: number,
+   *           updatedAt?: number }} metaRow
+   * @returns {Promise<void>}
+   */
+  async restoreVaultIdentity(metaRow) {
+    await this.vaultMeta.put({
+      id: 'config',
+      salt: metaRow.salt,
+      canary: metaRow.canary,
+      canaryIv: metaRow.canaryIv,
+      kdfIterations: Number.isFinite(metaRow.kdfIterations)
+        ? metaRow.kdfIterations
+        : PBKDF2_ITERATIONS_LEGACY,
+      updatedAt: Number.isFinite(metaRow.updatedAt) ? metaRow.updatedAt : 0,
+    });
+  }
+}
+
+/**
+ * The vault identity a backup container carries, or null when it carries none.
+ *
+ * Exported containers include `vaultMeta` (see EXPORTED_TABLES) precisely so a
+ * restore can read it deliberately. A container missing it - or missing its
+ * canary - cannot be used to restore identity, because there would be no way to
+ * prove the passphrase before committing a salt.
+ *
+ * @param {Record<string, Object[]>} tables
+ * @returns {{ salt: string, canary: string, canaryIv: string, kdfIterations: number,
+ *            updatedAt: number }|null}
+ */
+export function readBackupVaultIdentity(tables) {
+  const rows = tables && tables.vaultMeta;
+  if (!Array.isArray(rows)) return null;
+  const row = rows.find((entry) => entry && entry.id === 'config' && typeof entry.salt === 'string');
+  if (!row) return null;
+  if (typeof row.canary !== 'string' || typeof row.canaryIv !== 'string') return null;
+  return {
+    salt: row.salt,
+    canary: row.canary,
+    canaryIv: row.canaryIv,
+    kdfIterations: Number.isFinite(row.kdfIterations)
+      ? row.kdfIterations
+      : PBKDF2_ITERATIONS_LEGACY,
+    updatedAt: Number.isFinite(row.updatedAt) ? row.updatedAt : 0,
+  };
+}
+
+/**
+ * Says whether a backup belongs to the vault currently on this device.
+ *
+ * 'unknown' is NOT 'foreign' and NOT 'same' - it means the question could not be
+ * answered, and every caller must treat it as a reason to stop rather than a
+ * reason to proceed.
+ *
+ * @param {ReturnType<typeof readBackupVaultIdentity>} backupIdentity
+ * @param {{ ok: boolean, meta: Object|null }} localRead - from db.readVaultIdentity()
+ * @returns {'same'|'foreign'|'no-local-vault'|'unknown'}
+ */
+export function compareVaultIdentity(backupIdentity, localRead) {
+  if (!localRead || localRead.ok !== true) return 'unknown';
+  if (!localRead.meta) return 'no-local-vault';
+  if (!backupIdentity || typeof backupIdentity.salt !== 'string') return 'unknown';
+  return backupIdentity.salt === localRead.meta.salt ? 'same' : 'foreign';
+}
+
+/**
+ * Proves a row from a backup is genuinely readable by THIS vault before it is
+ * ever written.
+ *
+ * Mirrors peerSync._verifyRecordIntegrity deliberately: same check, same
+ * `_headerTampered` rejection. It is duplicated rather than imported because
+ * that method reads peerSync's own key, which is null when no partner is
+ * connected - and a backup restore must work offline.
+ *
+ * @returns {Promise<boolean>}
+ */
+async function verifyRowIntegrity(row, key) {
+  try {
+    const plain = await decryptRecord(row, key);
+    if (plain && plain._headerTampered === true) return false;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Borrows the LIVE last-write-wins rule from the sync engine.
+ *
+ * Deliberately not reimplemented here. A second copy of "which version is newer"
+ * would drift from peerSync's, and the two paths write the same rows - a merge
+ * that disagreed with a sync would ping-pong records forever. Imported lazily
+ * because peerSync imports this module; the cycle only resolves at call time,
+ * long after both modules have finished evaluating.
+ *
+ * Fails closed: if the rule cannot be loaded, the merge is refused rather than
+ * falling back to a home-grown comparison.
+ *
+ * Rollup warns that peerSync is both dynamically and statically imported and so
+ * will not be split into its own chunk. That is the desired outcome, not a
+ * problem: the module is already in the main bundle, so this resolves instantly
+ * and offline. Do NOT "fix" the warning by making this a static import - that
+ * reintroduces the evaluation cycle this defers around.
+ *
+ * @returns {Promise<(existing: Object, incoming: Object) => boolean>}
+ */
+/**
+ * Lazily borrows peerSync's monotonic clock.
+ *
+ * Same lazy-import reason as loadPrecedenceRule: peerSync imports this module,
+ * so a static import here would be circular. Unlike the precedence rule, a
+ * missing clock is NOT fatal - a tombstone that stamps a plain wall-clock time
+ * is still a valid tombstone, it just loses the remote high-water guarantee. So
+ * this degrades to Date.now() instead of refusing the delete.
+ *
+ * @returns {Promise<number>}
+ */
+async function syncSafeNow() {
+  try {
+    const mod = await import('../services/peerSync');
+    const engine = mod && mod.default;
+    if (engine && typeof engine.getSyncSafeTimestamp === 'function') {
+      return engine.getSyncSafeTimestamp();
+    }
+  } catch {
+    // peerSync unavailable (not yet loaded, or storage blocked). Fall through.
+  }
+  return Date.now();
+}
+
+async function loadPrecedenceRule() {
+  const mod = await import('../services/peerSync');
+  const engine = mod && mod.default;
+  if (!engine || typeof engine._incomingWins !== 'function') {
+    throw new Error(
+      'Cannot verify which copy of a record is newer, so nothing was written. Reload and try again.'
+    );
+  }
+  return engine._incomingWins.bind(engine);
 }
 
 /**
@@ -509,6 +770,14 @@ function sanitizeImportedRecord(tableName, record) {
   if (!record || typeof record !== 'object' || Array.isArray(record)) return null;
   if (typeof record.id !== 'string' || record.id.length === 0 || record.id.length > 128) return null;
   if (record.updatedAt !== undefined && !Number.isFinite(record.updatedAt)) return null;
+  // Same header rules the sync path enforces (peerSync._validateWireRecord).
+  // A negative or far-future stamp is not just odd data: restored, it would win
+  // every last-write-wins comparison against real edits, forever.
+  if (Number.isFinite(record.updatedAt)) {
+    if (record.updatedAt < 0) return null;
+    if (record.updatedAt > Date.now() + MAX_BACKUP_CLOCK_SKEW_MS) return null;
+  }
+  if (record.v !== undefined && record.v !== 1 && record.v !== 2) return null;
 
   const allowed = new Set([...COMMON_FIELDS, ...(LEGACY_FIELDS_BY_TABLE[tableName] || [])]);
   const out = {};
@@ -542,4 +811,46 @@ function sanitizeImportedRecord(tableName, record) {
 }
 
 export const db = new SweetheartDatabase();
+
+/* ------------------------------------------------------------------------- *
+ * Blocked-upgrade detection
+ *
+ * IndexedDB will not run the v1 -> v2 upgrade while another tab still holds the
+ * database open at v1, so db.open() hangs and every read rejects. That read
+ * failure used to be indistinguishable from "this device has no vault", which
+ * routed a returning user to the CREATE VAULT form - one confirmation away from
+ * writing a fresh salt over a fully populated live vault. Dexie tells us exactly
+ * why, so the UI can say "close the other tabs" instead of offering to erase
+ * everything.
+ * ------------------------------------------------------------------------- */
+
+let upgradeBlocked = false;
+const upgradeBlockedListeners = new Set();
+
+db.on('blocked', () => {
+  upgradeBlocked = true;
+  for (const listener of upgradeBlockedListeners) {
+    try {
+      listener(true);
+    } catch {
+      // A listener throwing must not stop the others being told.
+    }
+  }
+});
+
+/** @returns {boolean} True when another tab is holding the old schema open. */
+export function isUpgradeBlocked() {
+  return upgradeBlocked;
+}
+
+/**
+ * @param {(blocked: boolean) => void} listener
+ * @returns {() => void} Unsubscribe.
+ */
+export function subscribeUpgradeBlocked(listener) {
+  upgradeBlockedListeners.add(listener);
+  if (upgradeBlocked) listener(true);
+  return () => upgradeBlockedListeners.delete(listener);
+}
+
 export default db;

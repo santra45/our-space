@@ -39,11 +39,16 @@ import { buildInviteUrl, parseInvite } from '../../utils/invite';
 import BouncyButton from '../common/BouncyButton';
 import QRScannerModal from './QRScannerModal';
 import { useHaptics } from '../../hooks/useHaptics';
-import db, { MAX_BACKUP_FILE_BYTES } from '../../db';
+import db, {
+  MAX_BACKUP_FILE_BYTES,
+  readBackupVaultIdentity,
+  compareVaultIdentity,
+} from '../../db';
 import {
   createEncryptedBackup,
   decryptBackupContainer,
   verifyPassphraseAgainstMeta,
+  resolveKdfIterations,
   normalizePassphrase,
   MIN_PASSPHRASE_LENGTH,
 } from '../../services/crypto';
@@ -162,6 +167,117 @@ function PassphrasePrompt({
   );
 }
 
+/**
+ * The preview a merge-import must survive before a single row is written.
+ *
+ * Counts, not reassurance. `stale` is the number the old blind bulkPut would
+ * have silently overwritten with older data, and `undecryptable` is the tell
+ * that the file belongs to a different vault entirely.
+ */
+function ImportPreview({ plan, relation, busy, onConfirm, onCancel }) {
+  const { added, updated, stale, invalid, undecryptable } = plan.totals;
+  const willWrite = added + updated;
+  const foreign = relation === 'foreign';
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        className="w-full max-w-sm bg-white rounded-3xl p-5 shadow-2xl border border-blush-100 max-h-[85vh] overflow-y-auto"
+      >
+        <h3 className="text-base font-bold text-slate-800">Review this restore</h3>
+        <p className="mt-1 text-[11px] text-slate-500 leading-relaxed">
+          Nothing has been written yet. This is what the merge would do.
+        </p>
+
+        {foreign && (
+          <div className="mt-3 p-3 rounded-xl bg-rose-50 border-2 border-rose-300 flex items-start gap-2">
+            <ShieldAlert className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+            <div className="text-[11px] text-rose-800 leading-relaxed">
+              <p className="font-extrabold uppercase tracking-wide">Different vault</p>
+              <p className="mt-1">
+                This backup was made by a <strong>different vault</strong> than the one on this
+                device. Its records are encrypted under a key this device does not have, and some of
+                them share fixed ids with yours (the starter bucket-list items, the date roulette
+                pick), so a blind restore would replace your copies with rows nothing here can read —
+                they would simply vanish from every screen with no error.
+              </p>
+              <p className="mt-1 font-bold">
+                Every record from it failed the decryption check below and will NOT be written.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {relation === 'no-local-vault' && (
+          <div className="mt-3 p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-[11px] text-amber-900 leading-relaxed">
+            This device has no vault identity recorded, so the backup could not be matched against
+            one. Only records that decrypt with your current key will be written.
+          </div>
+        )}
+
+        <div className="mt-3 grid grid-cols-2 gap-2 text-center">
+          <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-100">
+            <p className="text-lg font-extrabold text-emerald-700">{added}</p>
+            <p className="text-[10px] font-bold text-emerald-800 uppercase tracking-wide">Added</p>
+          </div>
+          <div className="p-2.5 rounded-xl bg-indigo-50 border border-indigo-100">
+            <p className="text-lg font-extrabold text-indigo-700">{updated}</p>
+            <p className="text-[10px] font-bold text-indigo-800 uppercase tracking-wide">Updated</p>
+          </div>
+        </div>
+
+        <ul className="mt-2 space-y-1 text-[11px] text-slate-600">
+          <li className="flex justify-between gap-2 px-1">
+            <span>Older than what you already have — kept as-is</span>
+            <span className="font-bold text-slate-800">{stale}</span>
+          </li>
+          <li className="flex justify-between gap-2 px-1">
+            <span>Could not be decrypted by this vault — refused</span>
+            <span className={`font-bold ${undecryptable > 0 ? 'text-rose-600' : 'text-slate-800'}`}>
+              {undecryptable}
+            </span>
+          </li>
+          <li className="flex justify-between gap-2 px-1">
+            <span>Malformed or out-of-range — refused</span>
+            <span className="font-bold text-slate-800">{invalid}</span>
+          </li>
+        </ul>
+
+        <p className="mt-3 text-[10px] text-slate-500 leading-relaxed">
+          Newer local edits are never replaced by older ones from the file — the same rule your two
+          phones use when they sync. Your vault key is not touched by a merge; to rebuild a vault
+          from a rescue file, lock the app and use &quot;Restore from a rescue backup&quot; on the
+          lock screen instead.
+        </p>
+
+        <div className="mt-4 grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={busy}
+            className="py-2.5 rounded-2xl border border-slate-200 text-xs font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={busy || willWrite === 0}
+            className="py-2.5 rounded-2xl bg-blush-500 text-white text-xs font-bold shadow-sm shadow-blush-300/50 hover:bg-blush-600 disabled:opacity-50 inline-flex items-center justify-center gap-1.5"
+          >
+            {busy && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+            <span>
+              {willWrite === 0 ? 'Nothing to write' : busy ? 'Merging...' : `Merge ${willWrite}`}
+            </span>
+          </button>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
 export function SyncHubModal({ isOpen, onClose }) {
   const {
     myPeerId,
@@ -179,7 +295,7 @@ export function SyncHubModal({ isOpen, onClose }) {
     syncNow,
     connectionType,
   } = useSync();
-  const { vaultSalt, vaultConfig } = useVault();
+  const { vaultSalt, vaultConfig, cryptoKey } = useVault();
   const [partnerInputId, setPartnerInputId] = useState('');
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [copySuccess, setCopySuccess] = useState(false);
@@ -205,6 +321,11 @@ export function SyncHubModal({ isOpen, onClose }) {
    * The passphrase CANARY is deliberately NOT carried here. See buildInviteUrl.
    */
   const [inviteKdfIterations, setInviteKdfIterations] = useState(null);
+  const [inviteMetaError, setInviteMetaError] = useState('');
+
+  // { plan, relation, identity }
+  const [importPreview, setImportPreview] = useState(null);
+  const [importBusy, setImportBusy] = useState(false);
 
   const qrCanvasRef = useRef(null);
   const { tap, celebration } = useHaptics();
@@ -212,16 +333,28 @@ export function SyncHubModal({ isOpen, onClose }) {
   useEffect(() => {
     if (!isOpen) return undefined;
     let cancelled = false;
+    setInviteMetaError('');
 
     db.vaultMeta
       .get('config')
       .then((meta) => {
-        if (cancelled || !meta) return;
-        if (Number.isFinite(meta.kdfIterations)) setInviteKdfIterations(meta.kdfIterations);
+        if (cancelled) return;
+        if (!meta || !meta.salt) {
+          setInviteMetaError('This device has no vault key material, so it cannot invite anyone.');
+          return;
+        }
+        // resolveKdfIterations always answers: a row without the field predates
+        // it and is therefore 250,000. So the ONLY way to end up without a count
+        // is a failed read, handled below.
+        setInviteKdfIterations(resolveKdfIterations(meta));
       })
-      .catch(() => {
-        // Falls back to the current default, which is right for any vault this
-        // build created. Only a pre-bump vault needs the recorded value.
+      .catch((err) => {
+        if (cancelled) return;
+        console.error('Could not read the vault KDF iteration count:', err);
+        setInviteMetaError(
+          'Could not read this vault’s key settings, so no invite can be built right now. ' +
+            'Close any other tab running Our Space and reopen this hub.'
+        );
       });
 
     return () => {
@@ -229,19 +362,34 @@ export function SyncHubModal({ isOpen, onClose }) {
     };
   }, [isOpen]);
 
-  const shareUrl = buildInviteUrl(myPeerId, vaultSalt, {
-    startDate: vaultConfig?.startDate,
-    coupleNames: vaultConfig?.coupleNames,
-    kdfIterations: inviteKdfIterations,
-  });
+  /**
+   * REG-3: the invite is not built until the KDF count has actually resolved.
+   *
+   * This used to be computed on first render with `inviteKdfIterations` still
+   * null, so `#kdf=` was omitted from both the link and the QR for as long as the
+   * async vaultMeta read took. A link copied in that window hands a legacy
+   * 250,000-iteration vault to a joiner who then derives at 600,000, gets a
+   * different key, and hits a permanent passphrase_mismatch with nothing in the
+   * UI to explain it. An invite missing the count is worse than no invite, so
+   * until it resolves there is no invite.
+   */
+  const inviteReady = Boolean(myPeerId) && Boolean(vaultSalt) && Number.isFinite(inviteKdfIterations);
+
+  const shareUrl = inviteReady
+    ? buildInviteUrl(myPeerId, vaultSalt, {
+        startDate: vaultConfig?.startDate,
+        coupleNames: vaultConfig?.coupleNames,
+        kdfIterations: inviteKdfIterations,
+      })
+    : '';
 
   // Render QR Code on canvas
   useEffect(() => {
-    if (!isOpen || !myPeerId || !qrCanvasRef.current) return;
+    if (!isOpen || !inviteReady || !shareUrl || !qrCanvasRef.current) return;
 
     QRCode.toCanvas(
       qrCanvasRef.current,
-      shareUrl || myPeerId,
+      shareUrl,
       {
         width: 190,
         // The QR spec requires a four-module quiet zone; `margin: 1` supplied
@@ -257,11 +405,19 @@ export function SyncHubModal({ isOpen, onClose }) {
         if (error) console.error('QR code generation error:', error);
       }
     );
-  }, [isOpen, myPeerId, shareUrl]);
+  }, [isOpen, inviteReady, shareUrl]);
 
   // WhatsApp / Native Web Share API trigger
   const handleShareInvite = async () => {
     tap();
+    if (!inviteReady) {
+      setPairError(
+        inviteMetaError ||
+          'Still reading this vault’s key settings. An invite sent without them would fail to pair, ' +
+            'so it is not built yet — try again in a moment.'
+      );
+      return;
+    }
     const shareData = {
       title: 'Our Private Space 💕',
       text: 'Connect with me on our private space app! Tap to pair our phones directly:',
@@ -436,33 +592,77 @@ export function SyncHubModal({ isOpen, onClose }) {
     }
   };
 
+  /**
+   * PLANS the import. Writes nothing.
+   *
+   * The old version went straight from this passphrase prompt to a bulkPut over
+   * the live tables - no check that the file came from this vault, no timestamp
+   * comparison, no preview, no confirmation. With the deterministic seed ids this
+   * build introduced (bkt-default-1..6, roulette-current), two DIFFERENT vaults
+   * collide on primary key, so importing a friend's backup replaced live rows
+   * with rows encrypted under a key this device does not have. Every read path
+   * skips undecryptable rows silently, so those items just disappeared.
+   *
+   * Now: verify identity, verify every record decrypts here, compare timestamps
+   * with the sync engine's own rule, then show the user the damage before asking.
+   */
   const runImport = async (passphrase) => {
     setPromptBusy(true);
     setPromptError('');
     try {
       // Decrypt and verify the 128-bit GCM tag. Wrong key or tampering throws.
       const decrypted = await decryptBackupContainer(passphrasePrompt.container, passphrase);
-      const result = await db.importRawDataFromBackup(decrypted.tables);
 
-      const total = Object.values(result.imported || {}).reduce((sum, n) => sum + n, 0);
-      const skippedNote = result.skipped
-        ? ` ${result.skipped} unreadable record(s) were skipped.`
-        : '';
-      // vaultMeta is deliberately not importable: restoring it would replace the
-      // live salt and orphan everything created since the backup was taken.
-      const metaNote = (result.skippedTables || []).includes('vaultMeta')
-        ? ' Your vault key was left untouched, so records made since this backup still open.'
-        : '';
+      if (!cryptoKey) {
+        setPromptError('The vault is locked, so a backup cannot be verified. Unlock and try again.');
+        return;
+      }
 
+      const identity = readBackupVaultIdentity(decrypted.tables);
+      const localRead = await db.readVaultIdentity();
+      const relation = compareVaultIdentity(identity, localRead);
+
+      // Fail closed: if we cannot read our own identity we cannot tell whether
+      // this file belongs here, and a wrong answer costs the user their photos.
+      if (relation === 'unknown' && !localRead.ok) {
+        setPromptError(
+          'This device’s vault could not be read, so the backup could not be checked against it. ' +
+            'Nothing was written. Close any other tab running Our Space and try again.'
+        );
+        return;
+      }
+
+      const plan = await db.planBackupMerge(decrypted.tables, cryptoKey);
       closePrompt();
-      setBackupNotice(`Backup verified and restored: ${total} record(s).${skippedNote}${metaNote}`);
-      celebration();
+      setImportPreview({ plan, relation, identity });
     } catch (err) {
       setPromptError(
         'Backup rejected: ' + (err?.message || 'incorrect passphrase or corrupted backup file')
       );
     } finally {
       setPromptBusy(false);
+    }
+  };
+
+  /** Applies a plan the user has now seen and accepted. */
+  const confirmImport = async () => {
+    if (!importPreview) return;
+    setImportBusy(true);
+    setBackupError('');
+    try {
+      const result = await db.applyBackupMerge(importPreview.plan);
+      const written = Object.values(result.written || {}).reduce((sum, n) => sum + n, 0);
+      const supersededNote = result.supersededSincePreview
+        ? ` ${result.supersededSincePreview} were superseded by a newer copy that arrived while you were reading this, and were left alone.`
+        : '';
+      setImportPreview(null);
+      setBackupNotice(`Merged ${written} record(s) from that backup.${supersededNote}`);
+      celebration();
+    } catch (err) {
+      setImportPreview(null);
+      setBackupError('The merge failed: ' + (err?.message || 'unknown error'));
+    } finally {
+      setImportBusy(false);
     }
   };
 
@@ -663,9 +863,29 @@ export function SyncHubModal({ isOpen, onClose }) {
           <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-2">
             Your Device Pairing QR
           </p>
-          <div className="inline-block p-2 bg-white rounded-xl shadow-sm border border-slate-200">
-            <canvas ref={qrCanvasRef} className="mx-auto block" />
-          </div>
+          {/* No QR until the invite is complete. A code that scans into a
+              kdf-less link is a silent pairing failure on the other phone. */}
+          {inviteReady ? (
+            <div className="inline-block p-2 bg-white rounded-xl shadow-sm border border-slate-200">
+              <canvas ref={qrCanvasRef} className="mx-auto block" />
+            </div>
+          ) : (
+            <div className="inline-flex flex-col items-center justify-center gap-2 w-[206px] h-[206px] bg-white rounded-xl shadow-sm border border-slate-200 px-4">
+              {inviteMetaError ? (
+                <>
+                  <AlertTriangle className="w-5 h-5 text-amber-500" />
+                  <p className="text-[10px] text-slate-500 leading-relaxed">{inviteMetaError}</p>
+                </>
+              ) : (
+                <>
+                  <Loader2 className="w-5 h-5 text-slate-300 animate-spin" />
+                  <p className="text-[10px] text-slate-400 leading-relaxed">
+                    Preparing your invite…
+                  </p>
+                </>
+              )}
+            </div>
+          )}
 
           <div className="mt-3 flex items-center justify-center gap-2">
             <button
@@ -684,11 +904,16 @@ export function SyncHubModal({ isOpen, onClose }) {
           <div className="mt-3">
             <BouncyButton
               onClick={handleShareInvite}
-              className="w-full py-2.5 text-xs gap-1.5 font-bold shadow-sm"
+              disabled={!inviteReady}
+              className="w-full py-2.5 text-xs gap-1.5 font-bold shadow-sm disabled:opacity-50"
             >
               <Share2 className="w-4 h-4" />
               <span>
-                {copySuccess ? 'Link Copied to Clipboard!' : 'Share Pairing Link (WhatsApp)'}
+                {copySuccess
+                  ? 'Link Copied to Clipboard!'
+                  : inviteReady
+                    ? 'Share Pairing Link (WhatsApp)'
+                    : 'Preparing invite…'}
               </span>
             </BouncyButton>
           </div>
@@ -799,13 +1024,24 @@ export function SyncHubModal({ isOpen, onClose }) {
       {passphrasePrompt?.mode === 'import' && (
         <PassphrasePrompt
           title="Unlock this backup"
-          description="Enter the passphrase this .vault file was encrypted with. Your current vault key is never replaced by a restore."
+          description="Enter the passphrase this .vault file was encrypted with. Nothing is written yet — you will see exactly what would change before anything is merged. A merge never replaces your current vault key."
           requireConfirm={false}
-          submitLabel="Restore backup"
+          submitLabel="Check backup"
           busy={promptBusy}
           error={promptError}
           onSubmit={runImport}
           onCancel={closePrompt}
+        />
+      )}
+
+      {/* RISK-1: the confirmation step the import never had. */}
+      {importPreview && (
+        <ImportPreview
+          plan={importPreview.plan}
+          relation={importPreview.relation}
+          busy={importBusy}
+          onConfirm={confirmImport}
+          onCancel={() => setImportPreview(null)}
         />
       )}
     </div>
