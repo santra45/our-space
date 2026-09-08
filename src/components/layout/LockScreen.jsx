@@ -593,7 +593,6 @@ export function LockScreen() {
         // Present only once invites carry them; verified when they are.
         canary: invite.canary,
         canaryIv: invite.canaryIv,
-        kdfIterations: invite.kdfIterations,
       },
       { confirmDestroy: destroyToken }
     );

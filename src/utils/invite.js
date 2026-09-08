@@ -4,7 +4,7 @@
  *
  * WHY THIS FILE IS SECURITY-SENSITIVE
  * Everything it returns is attacker-controlled the moment a user opens a link
- * somebody sent them. Two of those fields feed cryptography directly:
+ * somebody sent them, and one of those fields feeds cryptography directly:
  *
  *  - `salt` becomes the PBKDF2 salt for the joining device's vault key. An
  *    unvalidated salt used to flow straight through to `atob()`, so a 3-character
@@ -12,10 +12,12 @@
  *    character threw out of vault initialization. Every return path now gates on
  *    `isValidSalt()` (base64 of exactly 16 bytes) and drops a malformed salt.
  *
- *  - `kdfIterations` says which PBKDF2 count the inviter's vault uses. This is
- *    required, not an optimisation: a vault created before the OWASP bump
- *    derives at 250,000, and a joiner who assumed 600,000 would silently produce
- *    a different key. Like the salt it is a public KDF parameter.
+ * A link used to carry a PBKDF2 iteration count as well, because a vault created
+ * before the OWASP bump derived at a lower one and a joiner had to be told. There
+ * is one count now, both phones already know it, and a number a stranger chooses
+ * is a number worth not accepting: a link asking for 1,000 iterations is a link
+ * asking the joining phone to derive a weak key. So `kdf` is gone from the link
+ * entirely rather than merely ignored.
  *
  * WHY THE CANARY IS PARSED BUT NEVER SENT
  * `canary`/`canaryIv` would let a joiner prove the typed passphrase matches the
@@ -71,10 +73,6 @@ const MAX_FIELD_LENGTH = 2048;
 
 /** Longest couple name accepted from an invite. Matches VaultContext. */
 const MAX_COUPLE_NAMES_LENGTH = 120;
-
-/** Bounds on a KDF iteration count carried by an invite. Matches resolveKdfIterations. */
-const MIN_KDF_ITERATIONS = 1000;
-const MAX_KDF_ITERATIONS = 10000000;
 
 /**
  * Re-encodes base64 into its canonical standard-alphabet, padded form.
@@ -136,23 +134,6 @@ function toUrlSafe(value) {
 }
 
 /**
- * @returns {number|null} A sane PBKDF2 iteration count, or null.
- * Strict on purpose: `parseInt` would happily turn '600000; DROP' into 600000
- * and '1e9' into 1, and this value decides how a vault key is derived.
- */
-function cleanIterations(value) {
-  let parsed = null;
-  if (typeof value === 'number') {
-    parsed = value;
-  } else if (typeof value === 'string' && /^\d{1,9}$/.test(value.trim())) {
-    parsed = Number(value.trim());
-  }
-  if (!Number.isInteger(parsed)) return null;
-  if (parsed < MIN_KDF_ITERATIONS || parsed > MAX_KDF_ITERATIONS) return null;
-  return parsed;
-}
-
-/**
  * Normalises one parsed invite. A malformed optional field is DROPPED rather
  * than passed through, so a caller can never derive against a hostile salt.
  * @returns {Object|null}
@@ -175,7 +156,6 @@ function buildInvite(peerId, raw = {}) {
     coupleNames: cleanCoupleNames(raw.coupleNames),
     canary: hasProof ? canary : null,
     canaryIv: hasProof ? canaryIv : null,
-    kdfIterations: cleanIterations(raw.kdfIterations),
   };
 }
 
@@ -187,7 +167,6 @@ function fromParams(params) {
     coupleNames: params.get('names'),
     canary: params.get('canary'),
     canaryIv: params.get('civ'),
-    kdfIterations: params.get('kdf'),
   });
 }
 
@@ -198,7 +177,7 @@ function fromParams(params) {
  * @param {string} peerId
  * @param {string} salt - The inviter's vault salt (base64, 16 bytes).
  * @param {{ baseUrl?: string, startDate?: string, coupleNames?: string,
- *           canary?: string, canaryIv?: string, kdfIterations?: number }|string} [optionsOrBaseUrl]
+ *           canary?: string, canaryIv?: string }|string} [optionsOrBaseUrl]
  * @returns {string}
  */
 export function buildInviteUrl(peerId, salt, optionsOrBaseUrl = null) {
@@ -207,7 +186,6 @@ export function buildInviteUrl(peerId, salt, optionsOrBaseUrl = null) {
   let coupleNames = null;
   let canary = null;
   let canaryIv = null;
-  let kdfIterations = null;
 
   if (typeof optionsOrBaseUrl === 'string') {
     baseUrl = optionsOrBaseUrl;
@@ -217,7 +195,6 @@ export function buildInviteUrl(peerId, salt, optionsOrBaseUrl = null) {
     coupleNames = optionsOrBaseUrl.coupleNames;
     canary = optionsOrBaseUrl.canary;
     canaryIv = optionsOrBaseUrl.canaryIv;
-    kdfIterations = optionsOrBaseUrl.kdfIterations;
   }
 
   const base =
@@ -231,7 +208,6 @@ export function buildInviteUrl(peerId, salt, optionsOrBaseUrl = null) {
   if (salt) hashParams.set('salt', toUrlSafe(salt) || salt);
   if (startDate) hashParams.set('start', startDate);
   if (coupleNames) hashParams.set('names', coupleNames);
-  if (Number.isFinite(kdfIterations)) hashParams.set('kdf', String(kdfIterations));
   // NOTHING in this app passes these, on purpose - see the canary note in the
   // module header. Supported so a future flow that has an already-authenticated
   // channel can reuse this builder without publishing an offline oracle.
@@ -256,8 +232,8 @@ export function buildInviteUrl(peerId, salt, optionsOrBaseUrl = null) {
  *
  * @param {string} input
  * @returns {{ partnerPeerId: string, salt: string|null, startDate: string|null,
- *             coupleNames: string|null, canary: string|null, canaryIv: string|null,
- *             kdfIterations: number|null } | null}
+ *             coupleNames: string|null, canary: string|null,
+ *             canaryIv: string|null } | null}
  */
 export function parseInvite(input) {
   if (!input || typeof input !== 'string') return null;

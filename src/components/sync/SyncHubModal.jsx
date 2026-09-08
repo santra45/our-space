@@ -49,7 +49,6 @@ import {
   createEncryptedBackup,
   decryptBackupContainer,
   verifyPassphraseAgainstMeta,
-  resolveKdfIterations,
   normalizePassphrase,
   MIN_PASSPHRASE_LENGTH,
 } from '../../services/crypto';
@@ -201,9 +200,11 @@ function PassphrasePrompt({
  *
  * BUT ORIGIN IS THE WRONG THING TO KEY A WARNING ON, AND THAT WAS THE HOLE.
  * Keying the only unproven-origin banner on relation === 'unknown' left the
- * CREATE path silent, and the create path is the permissive one by design. The
- * re-seal kill chain fixed in d9239ab arrived exactly there: a file whose own
- * vaultMeta classifies as 'same' - which costs a forger nothing, because
+ * CREATE path silent, and creating is the permissive half of the record gate:
+ * a row that lands at an id this device has never held destroys nothing, so it
+ * is allowed where an overwrite would not be. That is exactly where a file whose
+ * own vaultMeta classifies as 'same' arrives - which costs a forger nothing,
+ * because
  * readBackupVaultIdentity reads that identity out of the file itself - showing
  * "Added: 2, Deleted permanently: 0" and no banner whatsoever. So the second
  * banner is keyed on `added > 0` instead, with no reference to origin at all,
@@ -225,15 +226,13 @@ function PassphrasePrompt({
  *     only the forger who volunteered to be caught, while charging every honest
  *     user with a truncated file.
  *   - The per-row gate is what actually holds, and it is two-tier. Every
- *     candidate must carry ciphertext that AES-GCM verifies under THIS device's
- *     live key (planBackupMerge -> verifyRowIntegrity ->
- *     recordCarriesAuthenticatedPayload + decryptRecord). On top of that, a row
- *     may only OVERWRITE OR TOMBSTONE a row that already exists when its
- *     plaintext id / updatedAt / deleted header is sealed inside that same
- *     ciphertext - `recordHasAuthenticatedHeader`, i.e. a v2 envelope, enforced
- *     at plan time and re-asserted inside the applyBackupMerge transaction. A
- *     v1 row may still create at an unused id, which is what keeps restoring an
- *     old backup working.
+ *     candidate must be a sealed envelope that AES-GCM verifies under THIS
+ *     device's live key (planBackupMerge -> verifyRowIntegrity ->
+ *     recordHasAuthenticatedHeader + decryptRecord), whether it would create
+ *     something or replace something. On top of that, a row may only OVERWRITE
+ *     OR TOMBSTONE a row that already exists when its photo bytes and its table
+ *     are sealed in too, enforced at plan time and re-asserted inside the
+ *     applyBackupMerge transaction.
  *   - Neither tier stops the loss this dialog is really about. A genuinely newer
  *     tombstone is not an attack, it is the sync rule working, and it is exactly
  *     what erases the last copy of a photo when the user imports device A's
@@ -506,20 +505,6 @@ export function SyncHubModal({ isOpen, onClose }) {
   const [promptBusy, setPromptBusy] = useState(false);
   const [promptError, setPromptError] = useState('');
 
-  /**
-   * This vault's PBKDF2 iteration count, carried in the invite.
-   *
-   * It is REQUIRED for correctness, not an optimisation. A vault created before
-   * the OWASP bump derives at 250,000 and keeps doing so forever. A partner
-   * joining it with no recorded count would derive at 600,000, get a different
-   * key, and never authorise - with nothing in the join UI to explain why. Like
-   * the salt, the count is a public KDF parameter and secret-free.
-   *
-   * The passphrase CANARY is deliberately NOT carried here. See buildInviteUrl.
-   */
-  const [inviteKdfIterations, setInviteKdfIterations] = useState(null);
-  const [inviteMetaError, setInviteMetaError] = useState('');
-
   // { plan, relation, identity }
   const [importPreview, setImportPreview] = useState(null);
   const [importBusy, setImportBusy] = useState(false);
@@ -527,56 +512,21 @@ export function SyncHubModal({ isOpen, onClose }) {
   const qrCanvasRef = useRef(null);
   const { tap, celebration } = useHaptics();
 
-  useEffect(() => {
-    if (!isOpen) return undefined;
-    let cancelled = false;
-    setInviteMetaError('');
-
-    db.vaultMeta
-      .get('config')
-      .then((meta) => {
-        if (cancelled) return;
-        if (!meta || !meta.salt) {
-          setInviteMetaError('Nothing is set up on this phone yet, so we cannot make an invite.');
-          return;
-        }
-        // resolveKdfIterations always answers: a row without the field predates
-        // it and is therefore 250,000. So the ONLY way to end up without a count
-        // is a failed read, handled below.
-        setInviteKdfIterations(resolveKdfIterations(meta));
-      })
-      .catch((err) => {
-        if (cancelled) return;
-        console.error('Could not read the vault KDF iteration count:', err);
-        setInviteMetaError(
-          'We could not get your invite ready. Close any other tabs with Our Space open, then ' +
-            'open this again.'
-        );
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [isOpen]);
-
   /**
-   * REG-3: the invite is not built until the KDF count has actually resolved.
+   * An invite needs two things and waits for both: somewhere to dial, and the
+   * salt the joining phone derives its key from. The peer id arrives from the
+   * signalling server a moment after the modal opens, so there IS a window where
+   * neither exists - and a link copied in that window is a link that pairs
+   * nothing. Until both are here there is no invite.
    *
-   * This used to be computed on first render with `inviteKdfIterations` still
-   * null, so `#kdf=` was omitted from both the link and the QR for as long as the
-   * async vaultMeta read took. A link copied in that window hands a legacy
-   * 250,000-iteration vault to a joiner who then derives at 600,000, gets a
-   * different key, and hits a permanent passphrase_mismatch with nothing in the
-   * UI to explain it. An invite missing the count is worse than no invite, so
-   * until it resolves there is no invite.
+   * The passphrase CANARY is deliberately not carried. See buildInviteUrl.
    */
-  const inviteReady = Boolean(myPeerId) && Boolean(vaultSalt) && Number.isFinite(inviteKdfIterations);
+  const inviteReady = Boolean(myPeerId) && Boolean(vaultSalt);
 
   const shareUrl = inviteReady
     ? buildInviteUrl(myPeerId, vaultSalt, {
         startDate: vaultConfig?.startDate,
         coupleNames: vaultConfig?.coupleNames,
-        kdfIterations: inviteKdfIterations,
       })
     : '';
 
@@ -608,9 +558,7 @@ export function SyncHubModal({ isOpen, onClose }) {
   const handleShareInvite = async () => {
     tap();
     if (!inviteReady) {
-      setPairError(
-        inviteMetaError || 'Your invite is not quite ready. Give it a second and try again.'
-      );
+      setPairError('Your invite is not quite ready. Give it a second and try again.');
       return;
     }
     const shareData = {
@@ -1084,26 +1032,15 @@ export function SyncHubModal({ isOpen, onClose }) {
             Your Device Pairing QR
           </p>
           {/* No QR until the invite is complete. A code that scans into a
-              kdf-less link is a silent pairing failure on the other phone. */}
+              half-built link is a silent pairing failure on the other phone. */}
           {inviteReady ? (
             <div className="inline-block p-2 bg-white rounded-xl shadow-sm border border-slate-200">
               <canvas ref={qrCanvasRef} className="mx-auto block" />
             </div>
           ) : (
             <div className="inline-flex flex-col items-center justify-center gap-2 w-[206px] h-[206px] bg-white rounded-xl shadow-sm border border-slate-200 px-4">
-              {inviteMetaError ? (
-                <>
-                  <AlertTriangle className="w-5 h-5 text-amber-500" />
-                  <p className="text-[10px] text-slate-500 leading-relaxed">{inviteMetaError}</p>
-                </>
-              ) : (
-                <>
-                  <Loader2 className="w-5 h-5 text-slate-300 animate-spin" />
-                  <p className="text-[10px] text-slate-400 leading-relaxed">
-                    Preparing your invite…
-                  </p>
-                </>
-              )}
+              <Loader2 className="w-5 h-5 text-slate-300 animate-spin" />
+              <p className="text-[10px] text-slate-400 leading-relaxed">Preparing your invite…</p>
             </div>
           )}
 
