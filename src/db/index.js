@@ -30,6 +30,7 @@
  * strip them for tidiness - that silently removes those paths from the suite.
  */
 import Dexie from 'dexie';
+import { MAX_IMAGE_BLOB_BYTES } from '../services/limits.js';
 import {
   RECORD_SCHEMA_VERSION,
   PBKDF2_ITERATIONS_LEGACY,
@@ -76,8 +77,12 @@ export const MAX_BACKUP_FILE_BYTES = 150 * 1024 * 1024;
 /** Ceiling on records accepted from one table in one restore. */
 export const MAX_RECORDS_PER_TABLE = 20000;
 
-/** Ceiling on a single decoded image blob accepted from a backup or a peer. */
-export const MAX_IMAGE_BLOB_BYTES = 32 * 1024 * 1024;
+/**
+ * Re-exported so existing importers keep working. Defined in services/limits.js
+ * and DERIVED from the wire ceiling - see that file for why it is not a number
+ * written down here.
+ */
+export { MAX_IMAGE_BLOB_BYTES };
 
 const BULK_WRITE_CHUNK = 100;
 

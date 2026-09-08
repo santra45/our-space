@@ -49,6 +49,12 @@ import {
 } from './crypto.js';
 import { PEER_ID_REGEX } from '../utils/invite.js';
 import db, { SYNCED_TABLES, MAX_IMAGE_BLOB_BYTES, MAX_RECORDS_PER_TABLE } from '../db/index.js';
+// Wire ceilings live in one place so the local photo limit can be derived from
+// them; see services/limits.js for why they used to drift.
+import {
+  MAX_BATCH_PAYLOAD_BYTES,
+  MAX_SINGLE_RECORD_BYTES,
+} from './limits.js';
 
 /* ------------------------------------------------------------------------- *
  * Protocol constants
@@ -59,20 +65,6 @@ const LEGACY_PROTOCOL_ID = 'SWEETHEART_V1';
 
 /** Hard ceiling on an inbound ciphertext string. Anything larger is hostile or broken. */
 const MAX_CIPHERTEXT_LENGTH = 30 * 1024 * 1024;
-
-/**
- * Budget for ONE outbound SYNC_RECORDS_BATCH, measured on the serialized record
- * payload before encryption. Base64 + AES-GCM inflates roughly 1.34x, so 8MB of
- * records lands near 11MB of ciphertext - comfortably under the 30MB inbound cap
- * with room for a partner running slightly different limits.
- */
-const MAX_BATCH_PAYLOAD_BYTES = 8 * 1024 * 1024;
-
-/**
- * Ceiling on a SINGLE record. A record over this can never be framed, so it is
- * reported to both sides rather than silently dropped forever.
- */
-const MAX_SINGLE_RECORD_BYTES = 16 * 1024 * 1024;
 
 const AUTH_TIMEOUT_MS = 30000;
 const CONNECT_OPEN_TIMEOUT_MS = 15000;
