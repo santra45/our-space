@@ -261,6 +261,38 @@ export class SweetheartDatabase extends Dexie {
    * @param {CryptoKey} key
    * @returns {Promise<Object>} The stored row, ready to hand to peerSync.broadcastLiveRecord.
    */
+  /**
+   * Decides whether a write at `id` must inherit PROVENANCE_LEGACY.
+   *
+   * Provenance is STICKY PER ID, and it has to be, because a device cannot tell
+   * its own record from one an attacker got created at that id. d9239ab marked
+   * the re-seal sweep, but every other re-encrypt path re-authored freely - and
+   * an adversarial reviewer executed four chains through them, one needing no
+   * user gesture at all (SecretCapsule's automatic time-lock seal pass), one
+   * needing a single tap on an unread letter, and one turning the user's own
+   * "Delete this precious memory?" confirmation into an authenticated tombstone
+   * that erased the partner's copy.
+   *
+   * The rule: a brand-new id gets full standing. An id that already holds a row
+   * this vault cannot authenticate keeps that row's reduced standing, whoever
+   * writes over it and for whatever reason. Editing content you were shown does
+   * not vouch for where it came from.
+   *
+   * @returns {Promise<Object>} Options to spread into encryptRecord().
+   */
+  async _inheritedProvenance(tableName, id, key) {
+    try {
+      const existing = await this.table(tableName).get(id);
+      if (!existing) return {};
+      if (isLegacyRecord(existing)) return { provenance: PROVENANCE_LEGACY };
+      const verdict = await verifyRowIntegrity(existing, key, tableName);
+      return verdict === 'ok' ? {} : { provenance: PROVENANCE_LEGACY };
+    } catch {
+      // Cannot establish standing, so do not grant any. Fail closed.
+      return { provenance: PROVENANCE_LEGACY };
+    }
+  }
+
   async putEncrypted(tableName, plainFields, key) {
     if (!SYNCED_TABLES.includes(tableName)) {
       throw new Error(`putEncrypted: unknown table "${tableName}"`);
@@ -270,7 +302,10 @@ export class SweetheartDatabase extends Dexie {
     // The table is sealed INTO the envelope, so this row cannot later be
     // replayed into a different table under its own valid ciphertext (see
     // TABLE_BINDING_FIELD in crypto.js).
-    const row = await encryptRecord(plainFields, key, { table: tableName });
+    const row = await encryptRecord(plainFields, key, {
+      table: tableName,
+      ...(await this._inheritedProvenance(tableName, plainFields.id, key)),
+    });
     await this.table(tableName).put(row);
     return row;
   }
@@ -337,7 +372,16 @@ export class SweetheartDatabase extends Dexie {
     // Bound to this table, like every other write. A tombstone is the row an
     // attacker most wants to move between tables - it needs no plausible
     // payload, only an id - so it is the one that must carry the binding.
-    const row = await encryptRecord({ id, updatedAt, deleted: true }, key, { table: tableName });
+    // Provenance is inherited here too, and this is the case that mattered most:
+    // a hostile peer creates a junk row, the user sees an unrecognisable card,
+    // taps Delete and confirms - and without this the app would mint a fully
+    // authenticated tombstone at that id and replicate it, erasing the partner's
+    // real photo. Deleting something you did not recognise is not an assertion
+    // that you authored it.
+    const row = await encryptRecord({ id, updatedAt, deleted: true }, key, {
+      table: tableName,
+      ...(await this._inheritedProvenance(tableName, id, key)),
+    });
     await this.table(tableName).put(row);
     return row;
   }

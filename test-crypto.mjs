@@ -246,6 +246,11 @@ for (const method of [
   'applyBackupMerge',
   'restoreVaultIdentity',
   'migrateLegacyRecords',
+  // The sticky-provenance rule lives in these two, so section 11octies drives
+  // the real implementations rather than a restatement of them.
+  'putEncrypted',
+  'softDelete',
+  '_inheritedProvenance',
 ]) {
   if (typeof SweetheartDatabase.prototype[method] !== 'function') {
     throw new Error(`test harness is stale: SweetheartDatabase has no ${method}()`);
@@ -2102,6 +2107,116 @@ async function run() {
   check(
     'a clean fully bound row is still skipped, not re-encrypted every unlock',
     snCleanStats.migrated === 0 && snCleanStats.tampered === 0 && snCleanStats.scanned === 1
+  );
+
+  /* ---- 11nonies. provenance is sticky per id, not cleared by any write ---- */
+  section('11nonies. Re-authoring an inherited row cannot promote it');
+
+  // Four chains an adversarial reviewer executed against the first provenance
+  // fix. That fix marked ONE re-encrypt path (the sweep) while five others
+  // re-authored freely, so the marker evaporated on the next ordinary write:
+  //  A1  SecretCapsule's time-lock seal pass - fires from a useEffect, no user
+  //      gesture whatsoever - called putEncrypted and cleared it.
+  //  A2  One tap on an unread letter (isOpened: true) did the same.
+  //  A4  One checkbox tap on a bucket-list item, likewise.
+  //  A3  Worst: a hostile peer creates a junk row, the user sees an
+  //      unrecognisable card, taps Delete and confirms - and softDelete minted a
+  //      fully AUTHENTICATED tombstone at that id, which replicated and erased
+  //      the partner's real photo. The user's own caution was the weapon.
+  //
+  // A device cannot tell its own record from one an attacker got created at that
+  // id, so standing is inherited from whatever already sits there.
+  const spDonor = await encryptRecord(
+    { id: 'sp-donor', updatedAt: NOW, deleted: false, note: 'harvested' },
+    key,
+    { table: 'letters' }
+  );
+  const spStore = new FakeVaultStore({});
+
+  // An attacker-created v1 row, swept into a marked v2 envelope.
+  await spStore.planBackupMerge(
+    {
+      letters: [
+        {
+          id: 'sp-victim',
+          updatedAt: NOW,
+          deleted: false,
+          v: 1,
+          contentCipher: spDonor.ciphertext,
+          contentIv: spDonor.iv,
+        },
+      ],
+    },
+    key
+  ).then((plan) => spStore.applyBackupMerge(plan));
+  await spStore.migrateLegacyRecords(key);
+
+  const spSwept = await decryptRecord(
+    await spStore.table('letters').get('sp-victim'),
+    key,
+    { table: 'letters' }
+  );
+  check('the swept row starts out marked', spSwept._headerUnverified === true);
+
+  // A1/A2/A4: any ordinary write over that id must NOT promote it.
+  const spRewritten = await spStore.putEncrypted(
+    'letters',
+    { id: 'sp-victim', updatedAt: NOW + MINUTE, deleted: false, content: 'x', isOpened: true },
+    key
+  );
+  const spRewrittenPlain = await decryptRecord(spRewritten, key, { table: 'letters' });
+  check(
+    'an ordinary putEncrypted over an inherited id does NOT promote it',
+    spRewrittenPlain._headerUnverified === true
+  );
+
+  // A3: the tombstone must inherit too.
+  const spTomb = await spStore.softDelete('letters', 'sp-victim', key);
+  const spTombPlain = await decryptRecord(spTomb, key, { table: 'letters' });
+  check(
+    'softDelete over an inherited id mints an inherited tombstone, not an authenticated one',
+    spTombPlain._headerUnverified === true
+  );
+
+  // And that tombstone must not be able to delete the partner's real record.
+  const spPartner = new FakeVaultStore({
+    letters: [
+      await encryptRecord(
+        { id: 'sp-victim', updatedAt: NOW, deleted: false, content: 'The real letter' },
+        key,
+        { table: 'letters' }
+      ),
+    ],
+  });
+  const spTombPlan = await spPartner.planBackupMerge({ letters: [spTomb] }, key);
+  check(
+    "THE POINT: the inherited tombstone cannot erase the partner's letter",
+    spTombPlan.totals.deleted === 0
+  );
+
+  // No false positives: a brand-new id keeps full standing, and a clean row
+  // stays clean when edited, or ordinary use would degrade into paralysis.
+  const spFresh = await spStore.putEncrypted(
+    'letters',
+    { id: 'sp-brand-new', updatedAt: NOW, deleted: false, content: 'Mine' },
+    key
+  );
+  const spFreshPlain = await decryptRecord(spFresh, key, { table: 'letters' });
+  check('a brand-new id keeps full standing', spFreshPlain._headerUnverified !== true);
+
+  const spEdited = await spStore.putEncrypted(
+    'letters',
+    { id: 'sp-brand-new', updatedAt: NOW + MINUTE, deleted: false, content: 'Mine, edited' },
+    key
+  );
+  const spEditedPlain = await decryptRecord(spEdited, key, { table: 'letters' });
+  check('and editing a clean row keeps it clean', spEditedPlain._headerUnverified !== true);
+
+  const spCleanTomb = await spStore.softDelete('letters', 'sp-brand-new', key);
+  const spCleanTombPlain = await decryptRecord(spCleanTomb, key, { table: 'letters' });
+  check(
+    'deleting a clean row still mints an authenticated tombstone',
+    spCleanTombPlain._headerUnverified !== true
   );
 
   section('11c. A backup whose origin cannot be established is `unknown`, not `same`');
