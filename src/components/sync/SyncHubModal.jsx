@@ -175,6 +175,15 @@ function PassphrasePrompt({
  * have silently overwritten with older data, and `undecryptable` is the tell
  * that the file belongs to a different vault entirely.
  *
+ * `tampered` is counted and rendered APART from `undecryptable`, and the split
+ * lives in db/index.js's verifyRowIntegrity rather than here. One line used to
+ * carry both: every integrity failure landed in `undecryptable` under the label
+ * "Could not be decrypted by this vault", including rows that decrypted
+ * perfectly under the live key and were refused because their header, their
+ * photo bytes or their table disagreed with the envelope. So the single row
+ * that proves someone edited the user's file was reported to them as "wrong
+ * key" - the most reassuring possible reading of the least reassuring fact.
+ *
  * A MERGE CAN DESTROY, AND THAT IS THE HEADLINE NUMBER.
  * `planBackupMerge` classifies a write that tombstones a live row as `deleted`,
  * separately from `updated` (db/index.js, the `row.deleted === true &&
@@ -239,6 +248,7 @@ function ImportPreview({ plan, relation, busy, onConfirm, onCancel }) {
   const stale = t.stale || 0;
   const invalid = t.invalid || 0;
   const undecryptable = t.undecryptable || 0;
+  const tampered = t.tampered || 0;
   const unauthenticated = t.unauthenticated || 0;
   // Deletions are writes. Excluding them from this total once made a merge whose
   // entire effect was destroying rows render as "Nothing to write".
@@ -379,10 +389,14 @@ function ImportPreview({ plan, relation, busy, onConfirm, onCancel }) {
                 destructive ? 'text-rose-800' : 'text-slate-500'
               }`}
             >
+              {/* The timeline runs the other way round: a tombstone inside the
+                  file was necessarily written BEFORE the file was exported. The
+                  deletion is newer than YOUR copy, not newer than the file. */}
               {destructive
-                ? `This file records that ${deleted} of these were deleted after it was made, and ` +
-                  `you still have them here. Merging obeys that: their photos and letter text are ` +
-                  `erased from this device and cannot be brought back, on this device or the other one.`
+                ? `${deleted} of these were already deleted when this file was made, and you ` +
+                  `still have them here. Merging obeys those deletions: their photos and letter ` +
+                  `text are erased from this device and cannot be brought back, on this device ` +
+                  `or the other one.`
                 : 'Nothing in this file erases a record you still have.'}
             </p>
           </div>
@@ -397,6 +411,19 @@ function ImportPreview({ plan, relation, busy, onConfirm, onCancel }) {
             <span>Could not be decrypted by this vault — refused</span>
             <span className={`font-bold ${undecryptable > 0 ? 'text-rose-600' : 'text-slate-800'}`}>
               {undecryptable}
+            </span>
+          </li>
+          {/* NOT the same refusal as the line above, and the difference is the
+              whole point: these rows DID open under this vault's key, and were
+              refused because some part of the row disagreed with what the key
+              authenticated - a rewritten header, swapped photo bytes, or an
+              envelope sealed for a different table. Folded into "could not be
+              decrypted", the one number that says someone went at the file read
+              as "wrong key". */}
+          <li className="flex justify-between gap-2 px-1">
+            <span>Opened, but altered since it was sealed — refused</span>
+            <span className={`font-bold ${tampered > 0 ? 'text-rose-600' : 'text-slate-800'}`}>
+              {tampered}
             </span>
           </li>
           {/* planBackupMerge counts a row here when it would have overwritten or

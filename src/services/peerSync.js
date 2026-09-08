@@ -2066,30 +2066,43 @@ export class PeerSyncManager {
    * cheap AES-GCM open per record, plus - only when a record carries a photo -
    * one SHA-256 pass over those bytes.
    *
-   * WHAT IT PROVES DEPENDS ON THE ROW'S SCHEMA, and the difference is the whole
-   * reason the commit gate exists as well as this one:
+   * WHAT IT PROVES DEPENDS ON THE ROW'S SCHEMA AND ON HOW OLD ITS ENVELOPE IS,
+   * and the difference is the whole reason the commit gate exists as well as
+   * this one. Scoped precisely, because these dimensions did not ship together:
    *
-   *  - v2: the key opened the envelope, and the envelope agrees with everything
-   *    on the row it does not itself contain - the plaintext id / updatedAt /
-   *    deleted header (`_headerTampered`) and the SHA-256 of the attached photo
-   *    bytes (`_binaryTampered`). So a peer cannot rewrite the header, and
-   *    cannot keep a valid envelope while swapping the photo underneath it.
+   *  - EVERY v2 row: the key opened the envelope, and the envelope's own copy of
+   *    the plaintext id / updatedAt / deleted header matches the row's
+   *    (`_headerTampered`). No exception and no version window - encryptRecord
+   *    has sealed that header inside the payload since v2 existed at all - so a
+   *    peer can never rewrite a header undetected.
+   *  - A v2 row sealed WITH a digest map: the SHA-256 of the attached photo
+   *    bytes matches too (`_binaryTampered`), so a peer cannot keep a valid
+   *    envelope while swapping the photo underneath it.
+   *  - A v2 row sealed WITH a table binding: the table the peer filed it under
+   *    matches the one it was sealed for (`_tableTampered`), so a peer cannot
+   *    replay a bucketList tombstone as a delete against a letter.
    *  - v1: the key opened SOME `<base>Cipher` field, and that is all.
-   *    decryptLegacyRecord() stamps both tamper flags false unconditionally
-   *    because v1 carries no authenticated header and no digest - there is
-   *    nothing to compare against. A clean verdict on a v1 row means
+   *    decryptLegacyRecord() stamps every tamper flag false unconditionally
+   *    because v1 carries no authenticated header, no digest and no binding -
+   *    there is nothing to compare against. A clean verdict on a v1 row means
    *    "unknowable". That is why _commitStagedRecords additionally refuses any
    *    v1 row aimed at an id that already exists: it may create, never destroy.
    *
-   * One case stays unverified on purpose: a v2 envelope sealed before digest
-   * binding shipped has no digest map, so its bytes are accepted as-is rather
-   * than rejected. Refusing them would break every photo already in the vault
-   * and every partner still on the older build. See BINARY_DIGEST_FIELD in
-   * crypto.js for the full reasoning.
+   * Two cases stay unverified on purpose, and they are the SAME case twice: an
+   * envelope sealed before the digest map existed, and one sealed before the
+   * table binding existed, are accepted as-is rather than rejected. Refusing
+   * them would break every photo already in the vault and cut off every partner
+   * still on an older build. Each drains: db.migrateLegacyRecords() re-seals
+   * such rows at unlock, so a device fixes its own, and rows keep arriving
+   * unverified from a partner only until that partner has swept. See
+   * BINARY_DIGEST_FIELD and TABLE_BINDING_FIELD in crypto.js.
    *
+   * @param {Object} row
+   * @param {string} [table] - The table the peer filed this row under. Omit it
+   *   and the table dimension is simply not checked.
    * @returns {Promise<{ ok: boolean, code?: string }>}
    */
-  async _verifyRecordIntegrity(row) {
+  async _verifyRecordIntegrity(row, table) {
     if (!this.cryptoKey) return { ok: false, code: 'locked' };
     // See recordCarriesAuthenticatedPayload: decryptRecord resolving does not by
     // itself prove our key was used, because a row with no ciphertext resolves
@@ -2099,11 +2112,14 @@ export class PeerSyncManager {
       return { ok: false, code: 'unauthenticated' };
     }
     try {
-      const plain = await decryptRecord(row, this.cryptoKey);
+      const plain = await decryptRecord(row, this.cryptoKey, { table });
       // Reported separately from header_tampered only so the rejection counter
-      // names the real reason; both verdicts refuse the write.
+      // names the real reason; every one of these verdicts refuses the write.
       if (plain && plain._binaryTampered === true) {
         return { ok: false, code: 'binary_tampered' };
+      }
+      if (plain && plain._tableTampered === true) {
+        return { ok: false, code: 'table_mismatch' };
       }
       if (plain && plain._headerTampered === true) {
         return { ok: false, code: 'header_tampered' };
@@ -2147,7 +2163,10 @@ export class PeerSyncManager {
         continue;
       }
 
-      const integrity = await this._verifyRecordIntegrity(row);
+      // `item.table` is the peer's own claim about where this row belongs, and
+      // it is exactly the claim being checked: a sealed table binding that
+      // disagrees with it is a cross-table replay.
+      const integrity = await this._verifyRecordIntegrity(row, item.table);
       if (!integrity.ok) {
         note(integrity.code);
         continue;

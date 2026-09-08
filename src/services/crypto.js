@@ -54,7 +54,10 @@ const INTERNAL_RECORD_FIELDS = new Set([
   '_headerTampered',
   '_binaryTampered',
   '_binaryUnverified',
+  '_tableTampered',
+  '_tableUnverified',
   '_bin',
+  '_tbl',
 ]);
 
 const getCrypto = () => (typeof window !== 'undefined' ? window.crypto : globalThis.crypto);
@@ -489,6 +492,46 @@ function isBinaryValue(value) {
 const BINARY_DIGEST_FIELD = '_bin';
 
 /**
+ * Payload key naming the TABLE a record was sealed for.
+ *
+ * WHY THIS EXISTS
+ * An envelope binds `id`, `updatedAt` and `deleted` - and, since the digest map,
+ * the attached bytes. It did NOT bind which table the row belongs to, and
+ * neither import boundary supplied one: db.planBackupMerge iterates
+ * `Object.entries(tables)` and peerSync._stageIncomingRecords reads `item.table`
+ * straight off the wire. So an envelope sealed as a bucketList tombstone could
+ * be moved, byte for byte, into the `letters` array of a backup container (or
+ * into a `{ table: 'letters' }` wire item) and it authenticated perfectly: same
+ * key, same bound header, nothing rewritten. planBackupMerge then classified it
+ * as a delete against a LIVE letter carrying that id.
+ *
+ * Nothing stopped that except arithmetic. Record ids are uuids, and the two
+ * families of fixed ids this build ships (bkt-default-1..6 in bucketList,
+ * roulette-current in dateIdeas) happen to live in different tables, so no id is
+ * currently reachable from two tables at once. That is a property of the seed
+ * data, not an enforced invariant: one new seeded row sharing an id across
+ * tables, or one id scheme that is not a uuid, and the replay lands.
+ *
+ * COMPATIBILITY SHAPE - deliberately identical to BINARY_DIGEST_FIELD's:
+ *   - binding ABSENT  -> `_tableUnverified`. Old, not forged. Accepted.
+ *   - binding PRESENT and disagreeing -> `_tableTampered`, folded into
+ *     `_headerTampered`, refused by every gate that already reads that flag.
+ * Every row written before this commit has no binding, and treating those as
+ * hostile would refuse to restore or sync a vault's entire history. They are
+ * re-sealed WITH a binding by db.migrateLegacyRecords()'s sweep at unlock, so
+ * the carve-out drains per device instead of being permanent.
+ *
+ * Rejected alternative: enforcing the table at the two sanitize boundaries
+ * instead, without touching the envelope. Cheaper, and it needs no drain - but
+ * the only thing those boundaries could compare against is the row's id, so the
+ * check reduces to "refuse an id that also exists in another table". That leans
+ * on exactly the id-uniqueness accident described above rather than replacing
+ * it, and it cannot see an id the local device has never held. A binding inside
+ * the AES-GCM tag is checkable with no local state at all.
+ */
+const TABLE_BINDING_FIELD = '_tbl';
+
+/**
  * SHA-256 of a binary field's bytes, base64. Accepts the three shapes
  * isBinaryValue() admits. A Uint8Array VIEW hashes only its own window, which is
  * what we want: that window is what gets stored.
@@ -578,9 +621,14 @@ async function verifyBinaryDigests(record, digestMap) {
  *
  * @param {Object} plainFields - The full logical record. Must include `id`.
  * @param {CryptoKey} key
+ * @param {{ table?: string }} [options] - `table` seals the name of the table
+ *   this row belongs to into the envelope (see TABLE_BINDING_FIELD), so a row
+ *   cannot be replayed into a different table under a valid envelope. Omitting
+ *   it produces the pre-binding shape, which decryptRecord reports as
+ *   `_tableUnverified` rather than refusing.
  * @returns {Promise<Object>} `{ id, updatedAt, deleted, v, ciphertext, iv, ...binary }`
  */
-export async function encryptRecord(plainFields, key) {
+export async function encryptRecord(plainFields, key, options = {}) {
   if (!plainFields || typeof plainFields !== 'object') {
     throw new Error('encryptRecord: plainFields must be an object');
   }
@@ -620,6 +668,15 @@ export async function encryptRecord(plainFields, key) {
     digests[field] = await digestBinaryValue(value);
   }
   payload[BINARY_DIGEST_FIELD] = digests;
+
+  // Written only when the caller names a table. Unlike the digest map, absence
+  // cannot be made meaningful here: a caller that does not know its table is
+  // indistinguishable from an old build, and there is no honest value to invent.
+  // `_tbl` is in INTERNAL_RECORD_FIELDS, so a caller cannot smuggle its own
+  // through `plainFields`.
+  if (typeof options.table === 'string' && options.table.length > 0) {
+    payload[TABLE_BINDING_FIELD] = options.table;
+  }
 
   const { ciphertext, iv } = await encryptJSON(payload, key);
 
@@ -664,6 +721,12 @@ async function decryptLegacyRecord(record, key) {
   // answer is the same one they already give a v1 header: a v1 row may create,
   // never overwrite (see recordHasAuthenticatedHeader).
   out._binaryUnverified = Object.values(record).some(isBinaryValue);
+  // A v1 row has nowhere to put a table binding either, so the table it is
+  // presented as is unprovable. Same answer as the header and the photo: it may
+  // create, never overwrite (recordHasAuthenticatedHeader gates that), so a
+  // misfiled v1 row cannot destroy anything that already exists.
+  out._tableTampered = false;
+  out._tableUnverified = true;
   return out;
 }
 
@@ -677,14 +740,21 @@ async function decryptLegacyRecord(record, key) {
  *
  * @param {Object} record - A raw row from IndexedDB or from a sync message.
  * @param {CryptoKey} key
+ * @param {{ table?: string }} [options] - `table` is the table the row is being
+ *   PRESENTED as. Supply it on every untrusted path; without it the table
+ *   dimension is simply not checked (`_tableTampered` stays false), because
+ *   there is nothing to compare the sealed name against.
  * @returns {Promise<Object>} The logical record, plus:
  *   `_schemaVersion` (1 or 2), `_needsReencrypt` (true for v1 rows),
  *   `_headerTampered` (true when some unauthenticated part of the row disagrees
- *   with the authenticated envelope: the plaintext id/updatedAt/deleted, or the
- *   attached binary - treat as hostile),
+ *   with the authenticated envelope: the plaintext id/updatedAt/deleted, the
+ *   attached binary, or the table it is presented as - treat as hostile),
  *   `_binaryTampered` (the binary half of the above, on its own),
  *   `_binaryUnverified` (the row carries binary but its envelope predates
- *   digest binding, or is v1: nothing is wrong, nothing is proven).
+ *   digest binding, or is v1: nothing is wrong, nothing is proven),
+ *   `_tableTampered` (the envelope names a different table than `options.table`),
+ *   `_tableUnverified` (the envelope predates table binding, or is v1: same
+ *   "nothing wrong, nothing proven" verdict, and what the re-seal sweep drains).
  *
  *   `_headerTampered` is meaningful ONLY for v2 rows. A v1 row has no
  *   authenticated header and no digest map to compare anything against, so
@@ -787,7 +857,7 @@ export function recordCarriesAuthenticatedPayload(record) {
   return false;
 }
 
-export async function decryptRecord(record, key) {
+export async function decryptRecord(record, key, options = {}) {
   if (!record || typeof record !== 'object') {
     throw new Error('decryptRecord: expected a record object');
   }
@@ -824,19 +894,33 @@ export async function decryptRecord(record, key) {
 
   const binaryCheck = await verifyBinaryDigests(record, payload[BINARY_DIGEST_FIELD]);
 
+  // The table the envelope was sealed for, when it carries one. An absent
+  // binding is an old row, not a forged one - see TABLE_BINDING_FIELD.
+  const sealedTable =
+    typeof payload[TABLE_BINDING_FIELD] === 'string' && payload[TABLE_BINDING_FIELD].length > 0
+      ? payload[TABLE_BINDING_FIELD]
+      : null;
+  const expectedTable =
+    typeof options.table === 'string' && options.table.length > 0 ? options.table : null;
+
   out._schemaVersion = RECORD_SCHEMA_VERSION;
   out._needsReencrypt = false;
   out._binaryTampered = binaryCheck.tampered;
   out._binaryUnverified = binaryCheck.unverified;
+  out._tableUnverified = sealedTable === null;
+  out._tableTampered =
+    expectedTable !== null && sealedTable !== null && sealedTable !== expectedTable;
   // `_headerTampered` is the single flag every consumer already gates on, so a
-  // swapped photo is folded into it rather than needing five UI components to
-  // learn a new field. Read it as "some unauthenticated part of this row
-  // disagrees with the authenticated envelope"; `_binaryTampered` says which.
+  // swapped photo or a cross-table replay is folded into it rather than needing
+  // five UI components to learn a new field. Read it as "some unauthenticated
+  // part of this row disagrees with the authenticated envelope";
+  // `_binaryTampered` / `_tableTampered` say which.
   out._headerTampered =
     (typeof payload.id === 'string' && payload.id !== record.id) ||
     (innerUpdatedAt !== null && innerUpdatedAt !== record.updatedAt) ||
     (innerDeleted !== null && innerDeleted !== (record.deleted === true)) ||
-    binaryCheck.tampered;
+    binaryCheck.tampered ||
+    out._tableTampered;
 
   return out;
 }

@@ -40,7 +40,6 @@ import {
   isLegacyRecord,
   recordCarriesAuthenticatedPayload,
   recordHasAuthenticatedHeader,
-  recordHasAttachedBinary,
 } from '../services/crypto.js';
 
 /** Tables that participate in P2P sync and in backups. */
@@ -255,7 +254,10 @@ export class SweetheartDatabase extends Dexie {
     }
     if (!key) throw new Error('putEncrypted: vault is locked');
 
-    const row = await encryptRecord(plainFields, key);
+    // The table is sealed INTO the envelope, so this row cannot later be
+    // replayed into a different table under its own valid ciphertext (see
+    // TABLE_BINDING_FIELD in crypto.js).
+    const row = await encryptRecord(plainFields, key, { table: tableName });
     await this.table(tableName).put(row);
     return row;
   }
@@ -319,29 +321,42 @@ export class SweetheartDatabase extends Dexie {
     // the next merge. syncSafeNow() is ahead of anything the partner has issued;
     // the +1 guarantees the tombstone also beats the row it is replacing.
     const updatedAt = Math.max(await syncSafeNow(), (existing.updatedAt || 0) + 1);
-    const row = await encryptRecord({ id, updatedAt, deleted: true }, key);
+    // Bound to this table, like every other write. A tombstone is the row an
+    // attacker most wants to move between tables - it needs no plausible
+    // payload, only an id - so it is the one that must carry the binding.
+    const row = await encryptRecord({ id, updatedAt, deleted: true }, key, { table: tableName });
     await this.table(tableName).put(row);
     return row;
   }
 
   /**
-   * One-shot sweep that finishes the v1 -> v2 migration now that a key exists.
+   * One-shot sweep that finishes the v1 -> v2 migration now that a key exists,
+   * and re-seals v2 rows whose envelopes predate a binding this build enforces.
    *
-   * Call once after the vault unlocks. Each legacy row is decrypted, re-sealed
-   * with encryptRecord() and written back under the SAME id and updatedAt, so
-   * the sync manifest is unchanged and no peer sees a spurious update. A row is
-   * only replaced after its replacement has been built successfully; anything
-   * that fails to decrypt is left exactly as it was.
+   * Call once after the vault unlocks. Each row that needs it is decrypted,
+   * re-sealed with encryptRecord() and written back under the SAME id and
+   * updatedAt, so the sync manifest is unchanged and no peer sees a spurious
+   * update. A row is only replaced after its replacement has been built
+   * successfully; anything that fails to decrypt is left exactly as it was, and
+   * anything that reports tampering is left alone deliberately (see below).
+   *
+   * This is what drains the two compatibility carve-outs - a v2 row with no
+   * binary digest map, and a v2 row with no table binding - so neither is
+   * permanent. It drains PER DEVICE and only for rows this device holds: until
+   * a given device has completed one sweep, its own older rows still verify on
+   * fewer dimensions, and a partner still on an older build keeps sending
+   * unbound rows until that partner sweeps.
    *
    * @param {CryptoKey} key
    * @param {{ chunkSize?: number }} [options]
-   * @returns {Promise<{ scanned: number, migrated: number, failed: number }>}
+   * @returns {Promise<{ scanned: number, migrated: number, failed: number,
+   *                     tampered: number }>}
    */
   async migrateLegacyRecords(key, options = {}) {
     if (!key) throw new Error('migrateLegacyRecords: vault is locked');
     const chunkSize = Number.isFinite(options.chunkSize) ? options.chunkSize : 25;
 
-    const stats = { scanned: 0, migrated: 0, failed: 0 };
+    const stats = { scanned: 0, migrated: 0, failed: 0, tampered: 0 };
 
     for (const tableName of SYNCED_TABLES) {
       const table = this.table(tableName);
@@ -356,7 +371,7 @@ export class SweetheartDatabase extends Dexie {
           if (!row) continue;
           stats.scanned++;
 
-          // Two kinds of row need re-sealing.
+          // Three kinds of row need re-sealing.
           //
           // 1. v1 rows, which is what this sweep was originally for.
           // 2. v2 rows written BEFORE photo bytes were bound into the envelope.
@@ -367,27 +382,55 @@ export class SweetheartDatabase extends Dexie {
           //    path re-seals a v2 row, so every photo already in a live vault
           //    would have stayed swappable forever. Draining it is the whole
           //    point, so they are opened too.
+          // 3. v2 rows written before the TABLE was bound into the envelope
+          //    (TABLE_BINDING_FIELD). Same carve-out, same drain, and this is
+          //    the one that costs: a table binding is inside the ciphertext, so
+          //    unlike an attached blob its absence cannot be detected without
+          //    decrypting. The cheap `recordHasAttachedBinary` skip therefore
+          //    had to go, and the sweep now opens every v2 row once per unlock:
+          //    one AES-GCM open of a small JSON envelope per row, on a sweep
+          //    that already SHA-256s every attached photo it opens. That cost is
+          //    the price of this carve-out draining at all rather than being
+          //    permanent, and it is paid on a background task VaultContext fires
+          //    un-awaited after unlock.
           //
-          // A v2 row with no binary attached cannot be binary-unverified, so it
-          // is skipped without being decrypted and the sweep stays cheap.
+          // Rows this device did not write are covered too: seedDefaultItems()
+          // in BucketList.jsx calls encryptRecord() directly with no table, so
+          // the six starter items - the ones on fixed, cross-vault-colliding ids
+          // - are always sealed unbound and are bound here at the next unlock.
           const isLegacy = isLegacyRecord(row);
-          if (!isLegacy && !recordHasAttachedBinary(row)) continue;
 
           try {
-            const plain = await decryptRecord(row, key);
-            // A v2 row whose binary already verifies is done - re-encrypting it
-            // would burn CPU on every photo at every unlock for nothing.
-            if (!isLegacy && plain._binaryUnverified !== true) continue;
+            const plain = await decryptRecord(row, key, { table: tableName });
+            // A v2 row already bound on both dimensions is done - re-encrypting
+            // it would burn CPU on every row at every unlock for nothing.
+            if (!isLegacy && plain._binaryUnverified !== true && plain._tableUnverified !== true) {
+              continue;
+            }
+            // NEVER re-seal a row that reports tampering. Re-sealing rebuilds the
+            // envelope around the row's CURRENT top-level header and bytes, which
+            // for a tampered row would authenticate the tampering - the sweep
+            // would launder it into a perfectly valid v2 record and every gate
+            // downstream would then accept it. Leave it exactly as it is, still
+            // refused by those gates, and report it separately from `failed`
+            // (which VaultContext renders as "written with a different
+            // passphrase", and this is not that).
+            if (plain._headerTampered === true) {
+              stats.tampered++;
+              continue;
+            }
             delete plain._schemaVersion;
             delete plain._needsReencrypt;
             delete plain._headerTampered;
             delete plain._binaryTampered;
             delete plain._binaryUnverified;
+            delete plain._tableTampered;
+            delete plain._tableUnverified;
             // Preserve identity and ordering exactly: a migration is not an edit.
             plain.id = row.id;
             plain.updatedAt = Number.isFinite(row.updatedAt) ? row.updatedAt : 0;
             plain.deleted = row.deleted === true;
-            rewritten.push(await encryptRecord(plain, key));
+            rewritten.push(await encryptRecord(plain, key, { table: tableName }));
           } catch {
             stats.failed++;
           }
@@ -489,9 +532,13 @@ export class SweetheartDatabase extends Dexie {
    *   1. STRUCTURE   sanitizeImportedRecord() drops unknown fields and rejects a
    *                  malformed header, mirroring peerSync._validateWireRecord.
    *   2. INTEGRITY   every row must decrypt under THIS vault's key and must not
-   *                  report `_headerTampered` / `_binaryTampered`, mirroring
-   *                  peerSync._verifyRecordIntegrity. A backup from a different
-   *                  vault fails here, record by record, and writes nothing.
+   *                  report `_headerTampered` / `_binaryTampered` /
+   *                  `_tableTampered`, mirroring peerSync._verifyRecordIntegrity.
+   *                  A backup from a different vault fails here, record by
+   *                  record, and writes nothing. The two failures are counted
+   *                  apart - `undecryptable` (wrong key or rotted bytes) and
+   *                  `tampered` (opened under this key, then edited) - because
+   *                  one of those is a filing mistake and the other is a person.
    *                  On a v1 row this proves only that the key opened a cipher
    *                  field - see verifyRowIntegrity for why that is weaker than
    *                  it looks, and step 2b below for what covers the gap.
@@ -530,6 +577,7 @@ export class SweetheartDatabase extends Dexie {
       stale: 0,
       invalid: 0,
       undecryptable: 0,
+      tampered: 0,
       unauthenticated: 0,
     };
 
@@ -552,6 +600,7 @@ export class SweetheartDatabase extends Dexie {
         stale: 0,
         invalid: 0,
         undecryptable: 0,
+        tampered: 0,
         unauthenticated: 0,
       };
       const table = this.table(tableName);
@@ -565,8 +614,12 @@ export class SweetheartDatabase extends Dexie {
           stats.invalid++;
           continue;
         }
-        if (!(await verifyRowIntegrity(row, key))) {
-          stats.undecryptable++;
+        // The table name is passed so a row sealed for a DIFFERENT table cannot
+        // be replayed into this one under its own valid envelope - the key that
+        // `tables` is being iterated by is exactly the claim being checked.
+        const verdict = await verifyRowIntegrity(row, key, tableName);
+        if (verdict !== 'ok') {
+          stats[verdict]++;
           continue;
         }
         candidates.push(row);
@@ -778,44 +831,75 @@ export function compareVaultIdentity(backupIdentity, localRead) {
  * restore must work offline.
  *
  * WHAT THIS PROVES, AND WHAT IT DOES NOT - the rule is two-tier, and the tiers
- * are NOT interchangeable:
+ * are NOT interchangeable. Each bullet below is scoped to the rows it is
+ * actually true of, because these three dimensions did not ship together:
  *
- *  - For a v2 row it proves the key opened an envelope AND that the envelope
- *    agrees with the unauthenticated parts of the row: the plaintext
- *    id/updatedAt/deleted header, and the SHA-256 of every attached binary
- *    field. A rewritten header or a swapped photo fails here.
- *  - For a v1 row it proves ONLY that some `<base>Cipher` field opened under
- *    this key. decryptLegacyRecord() stamps `_headerTampered: false` and
- *    `_binaryTampered: false` unconditionally, because v1 has no authenticated
- *    header and no digest to compare against. A clean verdict on a v1 row
- *    therefore means "unknowable", not "clean", which is exactly why one lifted
- *    ciphertext used as a decoy pair passed this check (test 11bis) and why
- *    planBackupMerge separately demands recordHasAuthenticatedHeader() before
- *    letting anything overwrite or tombstone an existing row.
+ *  - EVERY v2 row: the key opened the envelope, and the envelope's own copy of
+ *    the plaintext id / updatedAt / deleted header matches the row's. A
+ *    rewritten header fails here with no exception - encryptRecord has sealed
+ *    that header inside the payload since the commit that introduced v2 at all
+ *    (crypto.js, `payload.id = id; payload.updatedAt = updatedAt;
+ *    payload.deleted = deleted;`), so no v2 row exists that lacks it.
+ *  - A v2 row sealed WITH a digest map: the SHA-256 of every attached binary
+ *    field matches too, so a swapped photo fails. A v2 row sealed before that
+ *    map existed carries none, and its bytes are reported `unverified` rather
+ *    than tampered - and accepted.
+ *  - A v2 row sealed WITH a table binding: the table it is being presented as
+ *    matches the one it was sealed for, so a cross-table replay fails. A row
+ *    sealed before that binding existed is again `unverified`, and accepted.
+ *  - A v1 row: none of the three holds. It proves ONLY that some
+ *    `<base>Cipher` field opened under this key. decryptLegacyRecord() stamps
+ *    `_headerTampered: false` and `_binaryTampered: false` unconditionally,
+ *    because v1 has no authenticated header, no digest and no binding to
+ *    compare against. A clean verdict on a v1 row therefore means "unknowable",
+ *    not "clean", which is exactly why one lifted ciphertext used as a decoy
+ *    pair passed this check (test 11bis) and why planBackupMerge separately
+ *    demands recordHasAuthenticatedHeader() before letting anything overwrite
+ *    or tombstone an existing row.
  *
- * The residual gap, stated rather than papered over: a v2 envelope sealed
- * before digest binding existed carries no digest map, so its photo bytes are
- * accepted unverified. That is the deliberate backward-compatibility choice
- * (see BINARY_DIGEST_FIELD in crypto.js) - refusing them would make old photos
- * unrestorable.
+ * The residual window, stated rather than papered over: the two `unverified`
+ * carve-outs above are not permanent, but they are not instant either.
+ * db.migrateLegacyRecords() re-seals such rows at unlock - both carve-outs, one
+ * sweep - so a device drains its own. Until that sweep has completed on a given
+ * device, that device's older photos are still swappable and its older rows
+ * still movable between tables; and a partner still on an older build keeps
+ * sending unbound rows until that partner has swept too.
  *
- * @returns {Promise<boolean>}
+ * @param {Object} row
+ * @param {CryptoKey} key
+ * @param {string} [tableName] - The table the row is being presented as. Omit it
+ *   and the table dimension is simply not checked.
+ * @returns {Promise<'ok'|'undecryptable'|'tampered'>} A REASON, not a boolean.
+ *   The two failures are separated because the import preview reports them
+ *   separately: 'undecryptable' means "this file belongs to another vault, or
+ *   the bytes rotted"; 'tampered' means "this row opened under YOUR key and was
+ *   then edited". Reporting the second as the first told the user "wrong key"
+ *   about the one row that proves someone went at their file deliberately.
  */
-async function verifyRowIntegrity(row, key) {
+async function verifyRowIntegrity(row, key, tableName) {
   // A successful decrypt is not on its own proof the key was used: a row with no
   // ciphertext at all resolves through the legacy path without touching the key.
   // Require an authenticated payload FIRST, or a foreign row on a colliding
   // stable id (bkt-default-1, roulette-current) would overwrite a live one.
-  if (!recordCarriesAuthenticatedPayload(row)) return false;
+  // 'undecryptable' is the honest label for it: the row carries nothing this
+  // vault's key could ever have sealed.
+  if (!recordCarriesAuthenticatedPayload(row)) return 'undecryptable';
   try {
-    const plain = await decryptRecord(row, key);
-    if (!plain) return false;
-    // `_headerTampered` already covers `_binaryTampered`; both are named here so
-    // that decoupling them later cannot silently reopen the photo-swap hole.
-    if (plain._headerTampered === true || plain._binaryTampered === true) return false;
-    return true;
+    const plain = await decryptRecord(row, key, { table: tableName });
+    if (!plain) return 'undecryptable';
+    // `_headerTampered` already covers the other two; all three are named here
+    // so that decoupling them later cannot silently reopen the photo-swap or
+    // the cross-table hole.
+    if (
+      plain._headerTampered === true ||
+      plain._binaryTampered === true ||
+      plain._tableTampered === true
+    ) {
+      return 'tampered';
+    }
+    return 'ok';
   } catch {
-    return false;
+    return 'undecryptable';
   }
 }
 

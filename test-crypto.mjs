@@ -22,6 +22,8 @@
  *  11. Foreign backups       a stranger's file cannot overwrite a colliding id
  * 11d. Photo-swap forgery   a kept envelope plus swapped bytes is refused on
  *                           both the import and the sync gate
+ * 11e. Table binding       an envelope sealed for one table cannot be replayed
+ *                           into another, and the pre-binding carve-out drains
  *  12. Merge precedence      an older backup does not revert newer local work
  *  13. Rescue restore        adopt an identity, unlock with the ORIGINAL phrase
  *  14. Import sanitising     a restored clock artefact cannot win forever
@@ -29,9 +31,10 @@
  *
  * HOW SECTIONS 11-15 REACH db/index.js WITHOUT A BROWSER
  * `planBackupMerge`, `applyBackupMerge`, `restoreVaultIdentity`,
- * `readVaultIdentity` and `exportRawDataForBackup` are methods on a Dexie
- * subclass, but the only Dexie surface they touch is `table(name)` with
- * get/put/toArray/bulkGet/bulkPut, `transaction()` and `vaultMeta`. So
+ * `readVaultIdentity`, `exportRawDataForBackup` and `migrateLegacyRecords` are
+ * methods on a Dexie subclass, but the only Dexie surface they touch is
+ * `table(name)` with get/put/toArray/bulkGet/bulkPut/toCollection().primaryKeys(),
+ * `transaction()` and `vaultMeta`. So
  * `FakeVaultStore` below supplies exactly that in memory and the SHIPPED methods
  * are then borrowed onto it verbatim. The storage underneath is fake; none of
  * the logic on top of it is. The precedence rule really is fetched out of
@@ -42,8 +45,9 @@
  *  - Dexie's own `version(2).upgrade()` callback and the `blocked` event that
  *    drives isUpgradeBlocked()/subscribeUpgradeBlocked(). Both need a real
  *    IndexedDB with two live connections. Section 7 covers the record reshaping
- *    `db.migrateLegacyRecords()` performs - the part that can lose data - but
- *    not the schema upgrade around it.
+ *    `db.migrateLegacyRecords()` performs and section 11e runs the shipped
+ *    method itself against the in-memory store - the parts that can lose data -
+ *    but not the schema upgrade around them.
  *  - The `_del` tombstone hooks, which are Dexie CRUD hooks.
  *  - Every React gate: LockScreen's restore mode, its unreadable panel and its
  *    slow/blocked hint during 'checking', SyncHubModal's ImportPreview rendering
@@ -203,6 +207,15 @@ class FakeVaultStore {
       async bulkPut(list) {
         for (const row of list) rows.set(row.id, row);
       },
+      // The only Collection surface migrateLegacyRecords() touches.
+      toCollection() {
+        return {
+          async primaryKeys() {
+            if (store.failReads) throw new Error('simulated IndexedDB failure');
+            return Array.from(rows.keys());
+          },
+        };
+      },
     };
   }
 
@@ -223,6 +236,7 @@ for (const method of [
   'planBackupMerge',
   'applyBackupMerge',
   'restoreVaultIdentity',
+  'migrateLegacyRecords',
 ]) {
   if (typeof SweetheartDatabase.prototype[method] !== 'function') {
     throw new Error(`test harness is stale: SweetheartDatabase has no ${method}()`);
@@ -1219,9 +1233,18 @@ async function run() {
   const swapPlan = await photoStore.planBackupMerge({ memories: [swappedWire] }, key);
   check(
     'the swapped photo is refused by the integrity gate',
-    swapPlan.totals.undecryptable === 1 &&
+    swapPlan.totals.tampered === 1 &&
       swapPlan.totals.added === 0 &&
       swapPlan.totals.updated === 0
+  );
+  // The counter it lands in is load-bearing, not cosmetic: the preview renders
+  // `undecryptable` as "could not be decrypted by this vault", which is what a
+  // FOREIGN file looks like. This row decrypted perfectly under the live key and
+  // was refused for a swapped photo, and reporting that as "wrong key" told the
+  // user the reassuring story instead of the true one.
+  check(
+    'and it is NOT reported as undecryptable - it opened under this very key',
+    swapPlan.totals.undecryptable === 0
   );
   check('it queues no write', swapPlan.writes.length === 0);
   await photoStore.applyBackupMerge(swapPlan);
@@ -1386,6 +1409,175 @@ async function run() {
   check(
     'the hostile row is rejected as invalid, and the legitimate row still lands',
     hostilePlan && hostilePlan.totals.invalid === 1 && hostilePlan.totals.added === 1
+  );
+
+  /* ------------- 11e. an envelope may not change tables -------------------- */
+  section('11e. An envelope sealed for one table cannot be replayed into another');
+
+  // The envelope binds id, updatedAt, deleted, and (since the digest map) the
+  // attached bytes. It did NOT bind WHICH TABLE the row belongs to, and neither
+  // import boundary supplied one: planBackupMerge iterates the container's own
+  // keys, and _stageIncomingRecords trusts `item.table` off the wire. So a
+  // genuine bucketList tombstone - correctly sealed, nothing rewritten, opening
+  // perfectly under the vault key - could be moved into the `letters` array of a
+  // container and was classified as a delete against a LIVE letter on that id.
+  //
+  // Only uuid arithmetic stood in the way: the fixed seed ids happen to live in
+  // different tables. That is a property of today's seed data, not an invariant
+  // anything enforces, which is why it is enforced here now.
+  const crossLetter = await encryptRecord(
+    {
+      id: 'shared-id-1',
+      updatedAt: NOW - MINUTE,
+      deleted: false,
+      title: 'Open when you miss me',
+      content: 'Still here.',
+    },
+    key,
+    { table: 'letters' }
+  );
+  const crossTombstone = await encryptRecord(
+    { id: 'shared-id-1', updatedAt: NOW, deleted: true },
+    key,
+    { table: 'bucketList' }
+  );
+
+  const crossStore = new FakeVaultStore({ letters: [crossLetter] });
+  const crossPlan = await crossStore.planBackupMerge({ letters: [crossTombstone] }, key);
+  check(
+    'a bucketList tombstone filed under `letters` is refused as tampered',
+    crossPlan.totals.tampered === 1 && crossPlan.totals.deleted === 0
+  );
+  check('and it queues no write', crossPlan.writes.length === 0);
+  await crossStore.applyBackupMerge(crossPlan);
+  const survivingLetter = await crossStore.table('letters').get('shared-id-1');
+  check(
+    'the live letter is still there and still not a tombstone',
+    Boolean(survivingLetter) && survivingLetter.deleted !== true
+  );
+  const readableLetter = await decryptRecord(survivingLetter, key, { table: 'letters' });
+  check('and it still reads correctly in its own table', readableLetter.content === 'Still here.');
+
+  // The fix must not break the honest case: the SAME tombstone, in the table it
+  // was actually sealed for, still deletes.
+  await crossStore.table('bucketList').put(
+    await encryptRecord(
+      { id: 'shared-id-1', updatedAt: NOW - MINUTE, deleted: false, text: 'A real bucket item' },
+      key,
+      { table: 'bucketList' }
+    )
+  );
+  const honestTombPlan = await crossStore.planBackupMerge({ bucketList: [crossTombstone] }, key);
+  check(
+    'the same tombstone in its OWN table is accepted, and counted as destructive',
+    honestTombPlan.totals.deleted === 1 && honestTombPlan.totals.tampered === 0
+  );
+
+  // The sync path enforces it at the same point, against the peer's own claim.
+  const savedCrossKey = peerSync.cryptoKey;
+  peerSync.cryptoKey = key;
+  try {
+    const wrongTable = await peerSync._verifyRecordIntegrity(crossTombstone, 'letters');
+    check(
+      'the sync gate refuses a cross-table replay and names the reason',
+      wrongTable.ok === false && wrongTable.code === 'table_mismatch'
+    );
+    const rightTable = await peerSync._verifyRecordIntegrity(crossTombstone, 'bucketList');
+    check('and still accepts the row in the table it was sealed for', rightTable.ok === true);
+  } finally {
+    peerSync.cryptoKey = savedCrossKey;
+  }
+
+  // COMPATIBILITY, and its price. An envelope sealed before the binding existed
+  // carries none, and is reported `_tableUnverified` rather than tampered - the
+  // same shape the binary digest uses, for the same reason: refusing them would
+  // make every row already in a live vault unrestorable.
+  const unboundRow = await encryptRecord(
+    { id: 'pre-binding-1', updatedAt: NOW, deleted: false, text: 'Sealed before the binding' },
+    key
+  );
+  const unboundPlain = await decryptRecord(unboundRow, key, { table: 'letters' });
+  check(
+    'a pre-binding envelope is `unverified`, NOT tampered, whatever table it is read as',
+    unboundPlain._tableUnverified === true &&
+      unboundPlain._tableTampered === false &&
+      unboundPlain._headerTampered === false
+  );
+  const compatPlan = await new FakeVaultStore().planBackupMerge({ letters: [unboundRow] }, key);
+  check(
+    'so an older vault still restores',
+    compatPlan.totals.added === 1 && compatPlan.totals.tampered === 0
+  );
+
+  // WHAT THIS DOES NOT COVER, pinned so nobody reads the section title as more
+  // than it says: until a row has been re-sealed, it is STILL cross-fileable.
+  // The binding refuses a mismatch; it cannot invent one that was never sealed.
+  const unboundTombstone = await encryptRecord(
+    { id: 'shared-id-2', updatedAt: NOW, deleted: true },
+    key
+  );
+  const gapStore = new FakeVaultStore({
+    letters: [
+      await encryptRecord(
+        { id: 'shared-id-2', updatedAt: NOW - MINUTE, deleted: false, content: 'Reachable' },
+        key,
+        { table: 'letters' }
+      ),
+    ],
+  });
+  const gapPlan = await gapStore.planBackupMerge({ letters: [unboundTombstone] }, key);
+  check(
+    'DOCUMENTED GAP: an UNBOUND tombstone still deletes across tables until it is swept',
+    gapPlan.totals.deleted === 1 && gapPlan.totals.tampered === 0
+  );
+
+  // ...which is why the sweep drains it. migrateLegacyRecords re-seals any row
+  // whose envelope lacks the binding, under the same id and updatedAt.
+  const drainStore = new FakeVaultStore({ bucketList: [unboundRow] });
+  const drainStats = await drainStore.migrateLegacyRecords(key);
+  check(
+    'the sweep re-seals the unbound row (and reports it migrated)',
+    drainStats.migrated === 1 && drainStats.failed === 0 && drainStats.tampered === 0
+  );
+  const drained = await drainStore.table('bucketList').get('pre-binding-1');
+  check(
+    'a re-seal is not an edit: same id, same updatedAt, same tombstone state',
+    drained.updatedAt === unboundRow.updatedAt &&
+      drained.id === unboundRow.id &&
+      drained.deleted === false
+  );
+  const drainedHome = await decryptRecord(drained, key, { table: 'bucketList' });
+  check(
+    'it is now bound, and still readable in its own table',
+    drainedHome._tableUnverified === false &&
+      drainedHome._tableTampered === false &&
+      drainedHome.text === 'Sealed before the binding'
+  );
+  const drainedAway = await decryptRecord(drained, key, { table: 'letters' });
+  check(
+    'and after the sweep the very same row IS refused in another table',
+    drainedAway._tableTampered === true && drainedAway._headerTampered === true
+  );
+
+  // The sweep must never re-seal a row that reports tampering: re-sealing
+  // rebuilds the envelope around the row's CURRENT header, which would
+  // authenticate the tampering and launder it past every downstream gate.
+  const launderBase = await encryptRecord(
+    { id: 'launder-1', updatedAt: NOW - MINUTE, deleted: false, text: 'Header rewritten' },
+    key
+  );
+  const laundered = { ...launderBase, updatedAt: launderBase.updatedAt + 5000 };
+  const launderStore = new FakeVaultStore({ bucketList: [laundered] });
+  const launderStats = await launderStore.migrateLegacyRecords(key);
+  check(
+    'the sweep refuses to re-seal a header-tampered row',
+    launderStats.tampered === 1 && launderStats.migrated === 0 && launderStats.failed === 0
+  );
+  const stillTampered = await launderStore.table('bucketList').get('launder-1');
+  check(
+    'so it stays exactly as it was, and stays refused by the gates',
+    stillTampered.ciphertext === launderBase.ciphertext &&
+      (await decryptRecord(stillTampered, key))._headerTampered === true
   );
 
   section('11c. A backup whose origin cannot be established is `unknown`, not `same`');
@@ -1875,7 +2067,12 @@ async function run() {
   check('the three intact records are still accepted', tamperPlan.totals.added === 3);
   check(
     'the tampered and the corrupt rows are both refused',
-    tamperPlan.totals.undecryptable === 2 && tamperPlan.totals.invalid === 0
+    tamperPlan.totals.undecryptable + tamperPlan.totals.tampered === 2 &&
+      tamperPlan.totals.invalid === 0
+  );
+  check(
+    'and they are counted apart: the rewritten header is `tampered`, the bit rot `undecryptable`',
+    tamperPlan.totals.tampered === 1 && tamperPlan.totals.undecryptable === 1
   );
   check(
     'a bad record does not abort the merge for the good ones',
