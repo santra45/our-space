@@ -44,8 +44,8 @@ import {
   bufferToBase64,
   base64ToBuffer,
   decryptRecord,
-  recordCarriesAuthenticatedPayload,
   recordHasAuthenticatedHeader,
+  RECORD_SCHEMA_VERSION,
 } from './crypto.js';
 import { PEER_ID_REGEX } from '../utils/invite.js';
 import db, { SYNCED_TABLES, MAX_IMAGE_BLOB_BYTES, MAX_RECORDS_PER_TABLE } from '../db/index.js';
@@ -276,21 +276,22 @@ const ALLOWED_MESSAGE_TYPES = new Set([
   'PONG',
 ]);
 
-/** Fields common to every record shape, v1 and v2 alike. */
+/** The whole of a record's plaintext: the header sync compares, and the seal. */
 const WIRE_FIELDS_COMMON = ['id', 'updatedAt', 'deleted', 'v', 'ciphertext', 'iv'];
 
 /**
- * Legacy (schema v1) fields, per table. A partner who has not yet run the v2
- * re-encryption sweep still sends these, so they stay on the allowlist. Local-only
- * bookkeeping (`_del`, `needsReencrypt`) is deliberately absent: the receiver
- * derives both itself.
+ * The only per-table addition: a photo's type tag, which travels beside the
+ * bytes rather than inside the envelope.
+ *
+ * Everything else a record has is INSIDE the ciphertext, so there is nothing
+ * else a peer may put on the wire. The metadata names that used to be listed
+ * here belonged to a plaintext-column shape this app no longer has; leaving them
+ * on the allowlist let a peer write readable junk into our tables next to a
+ * perfectly valid envelope. Local-only bookkeeping (`_del`) is deliberately
+ * absent too: the receiver derives it itself.
  */
 const WIRE_FIELDS_BY_TABLE = {
-  memories: ['date', 'captionCipher', 'captionIv', 'mimeType'],
-  milestones: ['date', 'titleCipher', 'titleIv'],
-  dateIdeas: ['category', 'isScratched', 'textCipher', 'textIv'],
-  letters: ['unlockDate', 'isOpened', 'titleCipher', 'titleIv', 'contentCipher', 'contentIv'],
-  bucketList: ['category', 'completed', 'completedAt', 'textCipher', 'textIv'],
+  memories: ['mimeType'],
 };
 
 function wireFieldsFor(table) {
@@ -304,8 +305,7 @@ function wireFieldsFor(table) {
  * directions (we refused their rows; they refused ours) and the two messages
  * must not drift into contradicting each other. It names the actual remedy: the
  * refusal is caused by the SENDER's rows predating the integrity binding, and
- * only the sender's device can fix that, by running a build that has the re-seal
- * sweep and unlocking once.
+ * only the sender's device can fix that, by updating the app.
  *
  * @param {number} count
  * @returns {string}
@@ -2062,10 +2062,10 @@ export class PeerSyncManager {
   /**
    * Converts a stored row into its wire form.
    *
-   * Schema v2 rows are `{ id, updatedAt, deleted, v, ciphertext, iv }` plus an
+   * A row is `{ id, updatedAt, deleted, v, ciphertext, iv }` plus an
    * independently-encrypted `imageBlob`; the blob is base64'd because JSON cannot
-   * carry binary. Local-only bookkeeping (`_del`, `needsReencrypt`) never leaves
-   * this device - the receiver derives its own.
+   * carry binary. Local-only bookkeeping (`_del`) never leaves this device - the
+   * receiver derives its own.
    */
   _toWireRecord(table, row) {
     const allowed = wireFieldsFor(table);
@@ -2120,7 +2120,10 @@ export class PeerSyncManager {
       return { ok: false, code: 'future_timestamp' };
     }
     if (typeof data.deleted !== 'boolean') return { ok: false, code: 'bad_tombstone' };
-    if (data.v !== undefined && data.v !== 1 && data.v !== 2) return { ok: false, code: 'bad_version' };
+    // Version 2 or nothing, and an ABSENT version is not a pass. There is one
+    // record shape, and a peer claiming another is a peer this build cannot
+    // reason about.
+    if (data.v !== RECORD_SCHEMA_VERSION) return { ok: false, code: 'bad_version' };
     return { ok: true };
   }
 
@@ -2169,45 +2172,34 @@ export class PeerSyncManager {
    * cheap AES-GCM open per record, plus - only when a record carries a photo -
    * one SHA-256 pass over those bytes.
    *
-   * WHAT IT PROVES DEPENDS ON THE ROW'S SCHEMA AND ON HOW OLD ITS ENVELOPE IS,
-   * and the difference is the whole reason the commit gate exists as well as
-   * this one. Scoped precisely, because these dimensions did not ship together:
+   * WHAT IT PROVES IS UNCONDITIONAL ON THE FIRST DIMENSION AND SCOPED ON THE
+   * OTHER TWO, because the three bindings did not ship together:
    *
-   *  - EVERY v2 row: the key opened the envelope, and the envelope's own copy of
+   *  - EVERY row: the key opened the envelope, and the envelope's own copy of
    *    the plaintext id / updatedAt / deleted header matches the row's
-   *    (`_headerTampered`). No exception and no version window - encryptRecord
-   *    has sealed that header inside the payload since v2 existed at all - so a
-   *    peer can never rewrite a header undetected.
-   *  - A v2 row sealed WITH a digest map: the SHA-256 of the attached photo
+   *    (`_headerTampered`). No exception - encryptRecord has sealed that header
+   *    inside the payload since the envelope existed at all - so a peer can
+   *    never rewrite a header undetected. A row that is not an envelope never
+   *    reaches the check; it is refused outright below.
+   *  - A row sealed WITH a digest map: the SHA-256 of the attached photo
    *    bytes matches too (`_binaryTampered`), so a peer cannot keep a valid
    *    envelope while swapping the photo underneath it.
-   *  - A v2 row sealed WITH a table binding: the table the peer filed it under
+   *  - A row sealed WITH a table binding: the table the peer filed it under
    *    matches the one it was sealed for (`_tableTampered`), so a peer cannot
    *    replay a bucketList tombstone as a delete against a letter.
-   *  - v1: the key opened SOME `<base>Cipher` field, and that is all.
-   *    decryptLegacyRecord() stamps every tamper flag false unconditionally
-   *    because v1 carries no authenticated header, no digest and no binding -
-   *    there is nothing to compare against. A clean verdict on a v1 row means
-   *    "unknowable". That is why _commitStagedRecords additionally refuses any
-   *    v1 row aimed at an id that already exists: it may create, never destroy.
    *
-   * Three cases stay unverified on purpose, and they are the SAME case three
-   * times: an envelope sealed before the digest map existed, one sealed before
-   * the table binding existed, and one the sender's own sweep re-sealed out of a
-   * v1 row (PROVENANCE_LEGACY, surfaced as `_headerUnverified`). All are
-   * accepted as-is rather than rejected outright, because refusing them would
-   * break every photo already in the vault and cut a partner off completely
-   * rather than partially. See BINARY_DIGEST_FIELD, TABLE_BINDING_FIELD and
-   * PROVENANCE_FIELD in crypto.js.
+   * Two cases stay unverified on purpose, and they are the same case twice: an
+   * envelope sealed before the digest map existed, and one sealed before the
+   * table binding existed. Both are accepted as-is rather than rejected
+   * outright, because refusing them would break every photo already in the vault
+   * and cut a partner off completely rather than partially. See
+   * BINARY_DIGEST_FIELD and TABLE_BINDING_FIELD in crypto.js.
    *
-   * BUT `unverified` IS NOT `ok`, AND THE DIFFERENCE IS NOT TEMPORARY FOR
-   * EVERYONE. db.migrateLegacyRecords() re-seals the first two kinds at unlock,
-   * so a device on THIS build drains its own rows. A partner on an older build
-   * never runs that sweep - it ships in this build - so their rows keep arriving
-   * unverified indefinitely, and _commitStagedRecords refuses every update and
-   * every delete they send for as long as that lasts. Their creates still land.
-   * The third kind never drains at all, by design: a v1 row's header was never
-   * authenticated and re-sealing must not pretend otherwise.
+   * BUT `unverified` IS NOT `ok`. Such an envelope cannot prove which bytes or
+   * which table it belongs to, so _commitStagedRecords lets it create and
+   * refuses it every update and every delete. A partner still on a build that
+   * predates those bindings has all of their edits land in that bucket for as
+   * long as that lasts; their creates still arrive.
    *
    * Callers must therefore report an `unverified` refusal as its own outcome
    * (`unverifiable`), not as staleness - the partner is NOT up to date, and the
@@ -2225,11 +2217,12 @@ export class PeerSyncManager {
    */
   async _verifyRecordIntegrity(row, table) {
     if (!this.cryptoKey) return { ok: false, code: 'locked' };
-    // See recordCarriesAuthenticatedPayload: decryptRecord resolving does not by
-    // itself prove our key was used, because a row with no ciphertext resolves
-    // through the legacy path untouched. Without this an authenticated peer
-    // could push a bare row over any id it can guess.
-    if (!recordCarriesAuthenticatedPayload(row)) {
+    // Asked FIRST, and asked plainly, rather than inferred from a decrypt that
+    // resolved. decryptRecord() throws on anything that is not a complete
+    // envelope, so this agrees with it - but the whole two-tier rule is stated
+    // in terms of this predicate, and a gate should not rest on how some other
+    // function happens to fail.
+    if (!recordHasAuthenticatedHeader(row)) {
       return { ok: false, code: 'unauthenticated' };
     }
     try {
@@ -2247,16 +2240,10 @@ export class PeerSyncManager {
       }
       // Binding ABSENT is neither ok nor tampered. It is reported so the caller
       // can allow a create but refuse an overwrite - the same rule the import
-      // path applies. The re-seal sweep does NOT cover this: it re-seals rows
-      // this device HOLDS, while this only ever decrypts the row ARRIVING, so an
-      // envelope harvested before binding existed would otherwise stay a
-      // permanent capability against that id no matter how often we sweep.
-      if (
-        plain &&
-        (plain._binaryUnverified === true ||
-          plain._tableUnverified === true ||
-          plain._headerUnverified === true)
-      ) {
+      // path applies. Nothing this device does can repair it either: an envelope
+      // an attacker harvested before binding existed would otherwise stay a
+      // permanent capability against that id.
+      if (plain && (plain._binaryUnverified === true || plain._tableUnverified === true)) {
         return { ok: true, unverified: true };
       }
       return { ok: true, unverified: false };
@@ -2344,26 +2331,14 @@ export class PeerSyncManager {
   }
 
   _fingerprint(row) {
-    const parts = [String(row.v || 1), row.ciphertext || '', row.iv || ''];
-    // The `<base>Cipher` fields are folded in ONLY for a row that has no
-    // authenticated envelope, i.e. a v1 row, where they are the only content
-    // there is and dropping them would make every v1 row at a given id
-    // fingerprint identically.
-    //
-    // On a v2 row they are exactly the bug class removed below for the blob's
-    // byteLength: leftover, unauthenticated, attacker-choosable. A v2 envelope
-    // does not seal them, so appending `captionCipher: "zzzz"` to an otherwise
-    // byte-identical replay used to flip the tie-break - _incomingWins(local,
-    // {...local, captionCipher: 'zzzz'}) returned true. Nothing is lost by
-    // dropping them here: on a v2 row every field that matters is inside
-    // `ciphertext`, which is already the second part of this string.
-    if (!recordHasAuthenticatedHeader(row)) {
-      for (const field of Object.keys(row).sort()) {
-        if (field.endsWith('Cipher') && typeof row[field] === 'string') {
-          parts.push(field, row[field]);
-        }
-      }
-    }
+    // ONLY authenticated material. Every field that matters is inside
+    // `ciphertext`, which is sealed, so nothing else needs to be here - and
+    // anything else that WERE here would be attacker-choosable. Unsealed
+    // top-level fields used to be folded in for the older record shape, and on a
+    // sealed row that was a working attack: appending `captionCipher: "zzzz"` to
+    // an otherwise byte-identical replay flipped the tie-break, because
+    // _incomingWins(local, {...local, captionCipher: 'zzzz'}) returned true.
+    const parts = [String(row.v || RECORD_SCHEMA_VERSION), row.ciphertext || '', row.iv || ''];
     // DELIBERATELY NOT the blob's byteLength. It used to be appended here, and
     // that was a working attack: the length is not authenticated, so an attacker
     // could replay a harvested envelope BYTE FOR BYTE - same ciphertext, same iv,
@@ -2391,9 +2366,9 @@ export class PeerSyncManager {
    * and we refused it anyway, because it could not be proved to belong to the id
    * it targets. That IS an event - the partner's edit is gone and the only fix
    * is on their device - and it used to be counted as `stale`, which the caller
-   * then reported as "up to date". A partner on a build older than the re-seal
-   * sweep has EVERY update and EVERY delete land in this bucket, forever,
-   * because the sweep that would fix their rows only exists in this build.
+   * then reported as "up to date". A partner on a build that predates the photo
+   * digest or the table binding has EVERY update and EVERY delete land in this
+   * bucket for as long as they stay on it.
    *
    * @param {Array<{table: string, row: Object, unverifiedBinding: boolean}>} staged
    * @returns {Promise<{ applied: number, stale: number, unverifiable: number }>}
@@ -2411,24 +2386,28 @@ export class PeerSyncManager {
     await db.transaction('rw', tables, async () => {
       for (const { table, row, unverifiedBinding } of staged) {
         const existing = await db.table(table).get(row.id);
-        // Overwriting or deleting an existing row requires a BOUND header, so a
-        // v1 row can only ever create. decryptLegacyRecord cannot detect a
-        // rewritten id / updatedAt / deleted header (see
-        // recordHasAuthenticatedHeader), which would otherwise let a single
-        // ciphertext produced under the vault key be aimed at any id as a
-        // forged tombstone.
-        if (existing && !recordHasAuthenticatedHeader(row)) {
+        // SEALED OR NOTHING, whether or not anything is already here.
+        //
+        // Creating used to be free: an unsealed row was allowed to land at an id
+        // this device had never seen, because the app still had to accept the
+        // older record shape. It does not any more, so a peer cannot put
+        // anything into our tables that it did not seal under the vault key -
+        // and the header of everything that does land is bound to its contents.
+        //
+        // _verifyRecordIntegrity has already refused anything unsealed, so this
+        // is belt and braces. It stays because it is the sentence the rule is
+        // written in, on the one path that writes to the user's library with no
+        // human in the loop at all.
+        if (!recordHasAuthenticatedHeader(row)) {
           unverifiable++;
           continue;
         }
-        // Same rule for a binding that is merely absent: an envelope predating
-        // the photo digest or the table binding cannot prove which bytes or
-        // which table it belongs to, so it may create but never overwrite or
-        // delete. Without this a harvested pre-binding envelope erases a photo
-        // (swap the bytes, or just omit them) with no UI in the way at all,
-        // because the sync path has no confirmation step. The same verdict
-        // covers a row the partner's own sweep re-sealed out of v1
-        // (PROVENANCE_LEGACY -> `_headerUnverified`).
+        // A binding that is merely absent is weaker than sealed: an envelope
+        // predating the photo digest or the table binding cannot prove which
+        // bytes or which table it belongs to, so it may create but never
+        // overwrite or delete. Without this a harvested pre-binding envelope
+        // erases a photo (swap the bytes, or just omit them) with no UI in the
+        // way at all, because the sync path has no confirmation step.
         if (existing && unverifiedBinding === true) {
           unverifiable++;
           continue;
