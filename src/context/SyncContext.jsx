@@ -119,7 +119,25 @@ export function SyncProvider({ children }) {
       setSyncStatus(status);
 
       if (status.peerId) setMyPeerId(status.peerId);
-      if (status.partnerId) {
+
+      // ONLY once the peer has proved it holds the vault key.
+      //
+      // peerSync emits `partnerId` from `channel_open`, which fires the moment a
+      // WebRTC data channel opens - before the challenge/response proves
+      // anything. Persisting it there meant any stranger or bot that probed this
+      // peer id on the public broker immediately overwrote both the React state
+      // and PAIRED_PARTNER_KEY with their own id. Their handshake then failed,
+      // the user saw "connection lost", tapped Reconnect - and reconnect dials
+      // `partnerId` and routes it through trustAndConnect(), which writes
+      // TRUSTED_PARTNER_KEY. So one unauthenticated probe plus one innocent tap
+      // permanently promoted a stranger, destroyed the real partner's stored id,
+      // and made this device dial the stranger over ICE, disclosing its local
+      // and public IP.
+      //
+      // The unproven id is still on `syncStatus.partnerId` for any UI that wants
+      // to show who is dialling; it just never becomes "our partner", never
+      // reaches storage, and can never be what a reconnect dials.
+      if (status.partnerId && AUTHORIZED_STATES.has(status.state)) {
         setPartnerId(status.partnerId);
         writeStored(PAIRED_PARTNER_KEY, status.partnerId);
       }
@@ -284,7 +302,11 @@ export function SyncProvider({ children }) {
   };
 
   const reconnectToPartner = () => {
-    const target = partnerId || readStored(PAIRED_PARTNER_KEY);
+    // Trusted slot first. That one is only ever written by an explicit user
+    // action (trustAndConnect), whereas PAIRED_PARTNER_KEY tracks whoever we
+    // last authenticated with - so preferring it keeps a reconnect aimed at the
+    // partner the user actually chose, even if something else got in between.
+    const target = readStored(TRUSTED_PARTNER_KEY) || partnerId || readStored(PAIRED_PARTNER_KEY);
     if (!target || target === myPeerId) return;
     trustAndConnect(target);
   };
