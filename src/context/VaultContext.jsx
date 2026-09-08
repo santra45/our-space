@@ -15,12 +15,6 @@
  * the JS heap, so the passphrase must be typed again. Navigating inside the
  * app does not.
  *
- * KDF VERSIONING
- * Vaults created before the OWASP bump derive at 250,000 PBKDF2 iterations and
- * keep doing so forever; new vaults use 600,000. Unlock goes through
- * deriveKeyWithVerification(), which tries the recorded count first and falls
- * back, so nobody gets locked out and nothing has to be re-encrypted.
- *
  * DESTRUCTIVE PATHS
  * initializeVault(), initializeFromPartnerInvite() and restoreVaultFromBackup()
  * all write a salt to vaultMeta. Doing that over a live vault makes every
@@ -49,7 +43,6 @@ import {
   generateSalt,
   deriveKeyFromPassphrase,
   deriveKeyWithVerification,
-  resolveKdfIterations,
   normalizePassphrase,
   createCanary,
   readCanary,
@@ -183,72 +176,6 @@ export function VaultProvider({ children }) {
   }, []);
 
   /**
-   * Finishes the v1 -> v2 record migration now that a key exists. Non-fatal:
-   * v1 rows stay readable either way, so a failure is a warning, not a block.
-   *
-   * BOTH counters the sweep returns are rendered, and they mean opposite things.
-   * `failed` is a row this key could not open at all - a filing mistake, almost
-   * always a record written under a different passphrase. `tampered` is a row
-   * that opened perfectly and then disagreed with its own seal, which is a
-   * person. The sweep refuses to re-seal those (db/index.js, the
-   * `plain._headerTampered === true` branch: it increments `stats.tampered` and
-   * `continue`s before the re-encrypt, because re-sealing would rebuild the
-   * envelope around the CURRENT bytes and authenticate the edit).
-   *
-   * This counter went to nowhere at all until now, and the failure mode was the
-   * quietest one in the app: `_headerTampered` folds in a swapped binary field
-   * and a cross-table replay as well as a rewritten header (crypto.js, where
-   * `out._headerTampered` ORs in `binaryCheck.tampered` and `out._tableTampered`),
-   * and every one of the five screens that renders records skips such a row
-   * (BucketList, SecretCapsule, MilestoneTracker, PolaroidWall, DateRoulette all
-   * test `_headerTampered` before displaying). So a photo whose bytes were
-   * swapped in place simply stopped appearing, with nothing anywhere saying why
-   * - indistinguishable from a rendering bug, which is the reading that costs
-   * the user nothing to accept.
-   */
-  const runLegacyMigration = useCallback(async (key) => {
-    try {
-      const stats = await db.migrateLegacyRecords(key);
-      const notes = [];
-
-      if (stats.failed > 0) {
-        const many = stats.failed !== 1;
-        notes.push(
-          `${stats.failed} older ${many ? 'things' : 'thing'} could not be opened with your ` +
-            `passphrase, so we left ${many ? 'them' : 'it'} alone.`
-        );
-      }
-
-      if (stats.tampered > 0) {
-        const many = stats.tampered !== 1;
-        notes.push(
-          `${stats.tampered} older ${many ? 'things look' : 'thing looks'} damaged, so ` +
-            `${many ? 'they are' : 'it is'} hidden rather than shown wrong.`
-        );
-      }
-
-      if (notes.length > 0) setWarning(`${notes.join(' ')} Nothing was deleted.`);
-    } catch (err) {
-      console.error('Legacy record migration failed:', err);
-      setWarning(
-        'We could not finish tidying up your older things. Everything is still here and still ' +
-          'readable — we will try again next time you unlock.'
-      );
-    }
-  }, []);
-
-  /** Records the count we actually unlocked with, so next time is one PBKDF2 run. */
-  const rememberKdfIterations = useCallback(async (meta, iterations) => {
-    if (!Number.isFinite(iterations) || meta.kdfIterations === iterations) return;
-    try {
-      await db.vaultMeta.put({ ...meta, kdfIterations: iterations });
-    } catch (err) {
-      // Purely an optimisation. Losing it costs a few hundred milliseconds.
-      console.warn('Could not record vault KDF iteration count:', err);
-    }
-  }, []);
-
-  /**
    * Unlocks an existing vault.
    * @param {string} passphrase
    * @returns {Promise<boolean>}
@@ -290,7 +217,7 @@ export function VaultProvider({ children }) {
             canaryPayload = payload;
             return true;
           },
-          { iterations: resolveKdfIterations(meta) }
+          { iterations: meta.kdfIterations }
         );
       } catch {
         setError('Incorrect passphrase! Please double-check and try again.');
@@ -303,12 +230,9 @@ export function VaultProvider({ children }) {
         updatedAt: (canaryPayload && canaryPayload.updatedAt) || meta.updatedAt || 0,
       });
 
-      await rememberKdfIterations(meta, derived.iterations);
-      // Deliberately not awaited: the app is usable while old rows are re-sealed.
-      runLegacyMigration(derived.key);
       return true;
     },
-    [adoptKey, rememberKdfIterations, runLegacyMigration]
+    [adoptKey]
   );
 
   const checkCancelledRef = useRef(false);
@@ -321,8 +245,8 @@ export function VaultProvider({ children }) {
    * A FAILED READ RESOLVES TO 'unreadable', NEVER 'absent'. Reporting "no vault"
    * on a read error is what routed a returning user to the CREATE VAULT form,
    * one confirmation phrase away from writing a fresh salt over everything they
-   * own. The most likely cause is not a broken device at all: it is the v1 -> v2
-   * schema upgrade being blocked by another tab still holding the old version,
+   * own. The most likely cause is not a broken device at all: it is another tab
+   * holding the database open at a version this one is trying to move past,
    * which Dexie tells us about explicitly.
    */
   const checkVault = useCallback(async () => {
@@ -401,8 +325,9 @@ export function VaultProvider({ children }) {
    * FAILS CLOSED. The previous version did `catch { existing = null }` and then
    * returned `blocked: false` - so the gate that exists to protect a live vault
    * granted permission precisely when it could not see the vault it was
-   * protecting. A blocked schema upgrade (another tab holding v1 open) makes
-   * that read throw, and the same error routes the user to the create-vault form
+   * protecting. A blocked schema upgrade (another tab holding an older version
+   * open) makes that read throw, and the same error routes the user to the
+   * create-vault form
    * in the first place; once the block cleared, a fresh salt landed on a fully
    * populated vault with no confirmation ever demanded.
    *
@@ -530,7 +455,7 @@ export function VaultProvider({ children }) {
    * @param {string} passphrase
    * @param {string} salt - Partner's base64 vault salt.
    * @param {{ coupleNames?: string, startDate?: string, canary?: string,
-   *           canaryIv?: string, kdfIterations?: number }} [initialSettings]
+   *           canaryIv?: string }} [initialSettings]
    * @param {{ confirmDestroy?: string }} [options]
    * @returns {Promise<boolean>}
    */
@@ -580,8 +505,8 @@ export function VaultProvider({ children }) {
             ? { canary: initialSettings.canary, canaryIv: initialSettings.canaryIv }
             : null;
 
+        const iterations = PBKDF2_ITERATIONS_CURRENT;
         let key;
-        let iterations;
 
         if (partnerMeta) {
           // The invite carries the partner's canary, so a typo is caught HERE,
@@ -592,11 +517,7 @@ export function VaultProvider({ children }) {
               passphrase,
               salt,
               async (candidate) => (await readCanary(candidate, partnerMeta)) !== null,
-              {
-                iterations: Number.isFinite(initialSettings.kdfIterations)
-                  ? initialSettings.kdfIterations
-                  : PBKDF2_ITERATIONS_CURRENT,
-              }
+              { iterations }
             );
           } catch {
             setError(
@@ -606,11 +527,7 @@ export function VaultProvider({ children }) {
             return false;
           }
           key = derived.key;
-          iterations = derived.iterations;
         } else {
-          iterations = Number.isFinite(initialSettings.kdfIterations)
-            ? initialSettings.kdfIterations
-            : PBKDF2_ITERATIONS_CURRENT;
           key = await deriveKeyFromPassphrase(normalized, salt, { iterations });
           // The normal path: invite links deliberately do NOT carry the canary,
           // because publishing a ciphertext under the vault key would hand an
@@ -664,7 +581,6 @@ export function VaultProvider({ children }) {
         if (existing) await wipeSyncedTables();
 
         adoptKey(key, salt, iterations, config);
-        runLegacyMigration(key);
         return true;
       } catch (err) {
         console.error('Failed to initialize from partner invite:', err);
@@ -672,7 +588,7 @@ export function VaultProvider({ children }) {
         return false;
       }
     },
-    [adoptKey, guardDestructiveWrite, runLegacyMigration, unlockVault, wipeSyncedTables]
+    [adoptKey, guardDestructiveWrite, unlockVault, wipeSyncedTables]
   );
 
   /**
@@ -997,8 +913,8 @@ export function VaultProvider({ children }) {
     >
       {children}
 
-      {/* Decryption and migration problems used to go to console.error and
-          nowhere else. They get a face now. */}
+      {/* Decryption problems used to go to console.error and nowhere else.
+          They get a face now. */}
       {warning && (
         <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[100] w-[calc(100%-2rem)] max-w-md">
           <div className="flex items-start gap-2.5 p-3 rounded-2xl bg-amber-50 border border-amber-200 shadow-lg shadow-amber-200/40">

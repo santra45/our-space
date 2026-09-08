@@ -24,7 +24,7 @@ import { Trash2, ImageOff } from 'lucide-react';
 import db from '../../db';
 import peerSync from '../../services/peerSync';
 
-/** v1 rows predate the stored mime and were always canvas-encoded WebP. */
+/** Rows written before the mime was stored were always canvas-encoded WebP. */
 const LEGACY_IMAGE_MIME = 'image/webp';
 
 function PolaroidCardBase({ memory, cryptoKey, onSelect }) {

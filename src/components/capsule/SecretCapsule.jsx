@@ -68,9 +68,9 @@ const NOTICE_TTL_MS = 7000;
  * The retro-seal pass below re-tries a row whose seal did not survive to disk,
  * and each successful write wakes useLiveQuery, which re-runs the pass. Without
  * a ceiling, a row that is being clobbered on every attempt would spin the
- * crypto and the database forever. Three is enough to beat the one racing writer
- * that actually exists (the v1 -> v2 migration, which touches each row once) and
- * small enough that a pathological loop stops on its own.
+ * crypto and the database forever. Three is enough to beat an incoming sync
+ * landing on the same letter, and small enough that a pathological loop stops on
+ * its own.
  */
 const MAX_SEAL_UPGRADE_ATTEMPTS = 3;
 
@@ -253,26 +253,22 @@ export function SecretCapsule() {
    * --------------------------------------------------------------------- */
 
   /**
-   * Letters written before real time locks (and letters carried through the v1
-   * -> v2 migration, which cannot re-shape content it has no key for) hold their
-   * body as ordinary text inside the envelope, guarded only by a clock check.
-   * Any of those that are still pending get sealed properly here.
+   * Letters written before real time locks hold their body as ordinary text
+   * inside the envelope, guarded only by a clock check. Any of those that are
+   * still pending get sealed properly here.
    *
-   * THIS PASS HAS A COMPETITOR AND MUST ASSUME IT LOSES.
-   * db.migrateLegacyRecords() is started un-awaited the moment the vault unlocks
-   * (VaultContext), and it rewrites these exact rows: it reads a row, decrypts
-   * it, and bulkPuts a re-sealed copy some time later. If it read a letter
-   * BEFORE this pass sealed it and its batch lands AFTER, the sealed envelope is
-   * silently replaced by the plaintext-in-envelope body - and the UI goes on
-   * calling that letter "key-wrapped". Three things stop that here:
+   * THIS PASS HAS COMPETITORS AND MUST ASSUME IT LOSES.
+   * A letter is a row like any other, and a partner's sync, a live broadcast or
+   * the user's own edit on another screen can all rewrite it between the moment
+   * this pass reads it and the moment it writes. If a writer that is holding a
+   * PRE-SEAL copy lands after this pass seals, the sealed envelope is silently
+   * replaced by the plaintext-in-envelope body - and the UI goes on calling that
+   * letter "key-wrapped". Two things stop that here:
    *
    *   1. RE-READ    `records` is a snapshot that may already be stale, so the
    *                 row is read and re-checked from disk immediately before the
    *                 write, and the seal is built from THAT copy.
-   *   2. DEFER      a row the migration has not converted yet is left alone for
-   *                 one write cycle rather than raced. Its own bulkPut wakes
-   *                 useLiveQuery and this pass runs again against a v2 row.
-   *   3. VERIFY     after writing, the row is read back. If the seal is not
+   *   2. VERIFY     after writing, the row is read back. If the seal is not
    *                 there, the attempt is not treated as done and may retry.
    *
    * The rewrite no longer preserves updatedAt. Keeping it was what made the race
@@ -293,7 +289,7 @@ export function SecretCapsule() {
      * Writes nothing unless the fresh copy still needs it.
      *
      * @param {string} id
-     * @returns {Promise<'sealed'|'deferred'|'skipped'|'failed'>}
+     * @returns {Promise<'sealed'|'skipped'|'failed'>}
      */
     async function sealOnePendingLock(id) {
       const stored = await db.getDecrypted('letters', id, cryptoKey);
@@ -304,18 +300,6 @@ export function SecretCapsule() {
       if (stored._headerTampered === true) return 'skipped';
       if (stored.sealedContent) return 'skipped';
       if (typeof stored.content !== 'string' || stored.content.length === 0) return 'skipped';
-
-      // Still a v1 row: the legacy migration owns it and is very likely holding
-      // a pre-seal copy of it in a pending bulkPut. Waiting one cycle is free;
-      // writing now is a coin flip whose losing side destroys the seal.
-      //
-      // If the migration never finishes (it throws, and VaultContext turns that
-      // into a warning), this letter is simply not upgraded this session - it
-      // stays exactly as it was, fully readable, and the next unlock tries
-      // again. Choosing that over racing is choosing safety over convenience:
-      // an un-upgraded letter loses nothing, a lost seal loses the lock while
-      // the UI keeps promising it.
-      if (stored._needsReencrypt === true) return 'deferred';
 
       const lockDate = normalizeUnlockDate(stored.unlockDate);
       if (!lockDate) return 'skipped';
@@ -337,8 +321,8 @@ export function SecretCapsule() {
         cryptoKey
       );
 
-      // The migration's batch can still land between the read above and this
-      // write. Read back rather than trusting the put: reporting a letter as
+      // Another writer can still land between the read above and this write.
+      // Read back rather than trusting the put: reporting a letter as
       // key-wrapped when the body is sitting in the envelope in plain text is
       // exactly the failure this whole pass exists to prevent.
       const confirmed = await db.getDecrypted('letters', id, cryptoKey);
@@ -375,11 +359,11 @@ export function SecretCapsule() {
           sealInFlight.current.delete(id);
         }
 
-        // Only a real write attempt burns an attempt. A 'deferred' row never got
-        // as far as a write, so counting it would strand the letter unsealed for
-        // the rest of the session for no reason; a 'skipped' row needed nothing.
-        // A 'sealed' row IS counted, so that if its seal is clobbered after the
-        // read-back the retries are bounded instead of endless.
+        // Only a real write attempt burns an attempt: a 'skipped' row needed
+        // nothing, so counting it would strand the letter unsealed for the rest
+        // of the session for no reason. A 'sealed' row IS counted, so that if its
+        // seal is clobbered after the read-back the retries are bounded instead
+        // of endless.
         if (outcome === 'sealed' || outcome === 'failed') {
           upgradeAttempts.current.set(id, (upgradeAttempts.current.get(id) || 0) + 1);
         }
@@ -443,8 +427,7 @@ export function SecretCapsule() {
       //               it before that date; the clock is not what stops you.
       //   !isSealed - the body is plaintext inside the ordinary vault envelope
       //               and only this app's date check hides it. That is the state
-      //               a letter is in when the retro-seal pass deferred it (the
-      //               legacy migration never finished) or gave up after
+      //               a letter is in when the retro-seal pass gave up after
       //               MAX_SEAL_UPGRADE_ATTEMPTS.
       //
       // The list badge already only says "key-wrapped" for the sealed case; this
