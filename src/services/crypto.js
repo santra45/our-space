@@ -22,9 +22,6 @@
 /** Iteration count used for every vault created from now on. */
 export const PBKDF2_ITERATIONS_CURRENT = 600000;
 
-/** Iteration count used by vaults created before `kdfIterations` was recorded. */
-export const PBKDF2_ITERATIONS_LEGACY = 250000;
-
 /** @deprecated Use PBKDF2_ITERATIONS_CURRENT. Kept so old imports do not break. */
 export const PBKDF2_ITERATIONS = PBKDF2_ITERATIONS_CURRENT;
 
@@ -58,8 +55,6 @@ const INTERNAL_RECORD_FIELDS = new Set([
   '_tableUnverified',
   '_bin',
   '_tbl',
-  '_prov',
-  '_headerUnverified',
 ]);
 
 const getCrypto = () => (typeof window !== 'undefined' ? window.crypto : globalThis.crypto);
@@ -182,20 +177,6 @@ export function normalizePassphrase(passphrase) {
   return passphrase.normalize('NFKC').trim();
 }
 
-/**
- * Reads the KDF iteration count a vault was created with.
- * A vaultMeta row without the field predates it and is therefore 250,000.
- * @param {{ kdfIterations?: number }|null|undefined} meta
- * @returns {number}
- */
-export function resolveKdfIterations(meta) {
-  const value = meta && meta.kdfIterations;
-  if (Number.isFinite(value) && value >= 1000 && value <= 10000000) {
-    return Math.floor(value);
-  }
-  return PBKDF2_ITERATIONS_LEGACY;
-}
-
 async function importPassphraseKey(passphrase) {
   const encoder = new TextEncoder();
   return await getCrypto().subtle.importKey(
@@ -233,7 +214,6 @@ async function deriveUnchecked(passphrase, saltBase64, iterations) {
  * @param {string} saltBase64 - The base64-encoded salt
  * @param {number|{ iterations?: number, normalize?: boolean }} [options] - Iteration
  *   count, or an options object. DEFAULTS TO 600,000. When unlocking an EXISTING
- *   vault you must pass that vault's recorded count (see resolveKdfIterations)
  *   or, better, use deriveKeyWithVerification().
  * @returns {Promise<CryptoKey>} - AES-GCM CryptoKey ready for encryption/decryption
  */
@@ -285,7 +265,7 @@ export async function deriveKeyWithVerification(passphrase, saltBase64, verify, 
 
   const iterationCandidates = [];
   if (Number.isFinite(options.iterations)) iterationCandidates.push(Math.floor(options.iterations));
-  iterationCandidates.push(PBKDF2_ITERATIONS_CURRENT, PBKDF2_ITERATIONS_LEGACY);
+  iterationCandidates.push(PBKDF2_ITERATIONS_CURRENT);
 
   const passphraseCandidates = raw === normalized ? [normalized] : [normalized, raw];
 
@@ -370,7 +350,7 @@ export async function verifyPassphraseAgainstMeta(passphrase, meta) {
       passphrase,
       meta.salt,
       async (key) => (await readCanary(key, meta)) !== null,
-      { iterations: resolveKdfIterations(meta) }
+      { iterations: PBKDF2_ITERATIONS_CURRENT }
     );
     return true;
   } catch {
@@ -534,30 +514,6 @@ const BINARY_DIGEST_FIELD = '_bin';
 const TABLE_BINDING_FIELD = '_tbl';
 
 /**
- * Marks an envelope whose CONTENT was never authenticated by this vault.
- *
- * Sealing a payload proves who sealed it. It does NOT prove where the payload
- * came from, and that distinction is load-bearing: the v1 -> v2 re-seal sweep
- * decrypts a legacy row and encrypts it again, which would otherwise convert an
- * unauthenticated row into an authenticated one. A v1 row's id, updatedAt and
- * deleted flag were never bound to anything (decryptLegacyRecord has no sealed
- * copy to compare against, so it reports no tampering by construction) - so a
- * row an attacker authored and got CREATED on a device would come back out of
- * the sweep indistinguishable from a record the couple actually wrote, and
- * would then be accepted as an authenticated overwrite against the partner.
- *
- * Re-sealing therefore carries this marker forward. The row keeps exactly the
- * trust level it always had: readable, syncable as a create, and never able to
- * overwrite or delete something that already exists. It clears itself the
- * moment the owning device genuinely edits the record, because that write goes
- * through encryptRecord with real content and no marker.
- */
-const PROVENANCE_FIELD = '_prov';
-
-/** The only provenance value: content inherited from an unauthenticated v1 row. */
-export const PROVENANCE_LEGACY = 'legacy';
-
-/**
  * SHA-256 of a binary field's bytes, base64. Accepts the three shapes
  * isBinaryValue() admits. A Uint8Array VIEW hashes only its own window, which is
  * what we want: that window is what gets stored.
@@ -704,11 +660,6 @@ export async function encryptRecord(plainFields, key, options = {}) {
     payload[TABLE_BINDING_FIELD] = options.table;
   }
 
-  // See PROVENANCE_FIELD. Only the re-seal sweep passes this, and only for a row
-  // that arrived as v1 - i.e. one whose header this vault never authenticated.
-  if (options.provenance === PROVENANCE_LEGACY) {
-    payload[PROVENANCE_FIELD] = PROVENANCE_LEGACY;
-  }
 
   const { ciphertext, iv } = await encryptJSON(payload, key);
 
@@ -721,45 +672,6 @@ export async function encryptRecord(plainFields, key, options = {}) {
     iv,
     ...binary,
   };
-}
-
-async function decryptLegacyRecord(record, key) {
-  const out = {};
-
-  for (const [field, value] of Object.entries(record)) {
-    if (INTERNAL_RECORD_FIELDS.has(field)) continue;
-    if (field.endsWith('Cipher')) continue;
-    if (field.endsWith('Iv') && typeof record[`${field.slice(0, -2)}Cipher`] === 'string') continue;
-    out[field] = value;
-  }
-
-  for (const field of Object.keys(record)) {
-    if (!field.endsWith('Cipher')) continue;
-    const base = field.slice(0, -'Cipher'.length);
-    const ciphertext = record[field];
-    const iv = record[`${base}Iv`];
-    if (typeof ciphertext !== 'string' || typeof iv !== 'string') continue;
-    out[base] = await decryptText(ciphertext, iv, key);
-  }
-
-  out.deleted = record.deleted === true;
-  out.updatedAt = Number.isFinite(record.updatedAt) ? record.updatedAt : 0;
-  out._schemaVersion = 1;
-  out._needsReencrypt = true;
-  out._headerTampered = false;
-  out._binaryTampered = false;
-  // v1 has nowhere to put a digest, exactly as it has nowhere to put a bound
-  // header. So a v1 photo is unverified by construction, and the callers'
-  // answer is the same one they already give a v1 header: a v1 row may create,
-  // never overwrite (see recordHasAuthenticatedHeader).
-  out._binaryUnverified = Object.values(record).some(isBinaryValue);
-  // A v1 row has nowhere to put a table binding either, so the table it is
-  // presented as is unprovable. Same answer as the header and the photo: it may
-  // create, never overwrite (recordHasAuthenticatedHeader gates that), so a
-  // misfiled v1 row cannot destroy anything that already exists.
-  out._tableTampered = false;
-  out._tableUnverified = true;
-  return out;
 }
 
 /**
@@ -783,65 +695,20 @@ async function decryptLegacyRecord(record, key) {
  *   attached binary, or the table it is presented as - treat as hostile),
  *   `_binaryTampered` (the binary half of the above, on its own),
  *   `_binaryUnverified` (the row carries binary but its envelope predates
- *   digest binding, or is v1: nothing is wrong, nothing is proven),
+ *   digest binding: nothing is wrong, nothing is proven),
  *   `_tableTampered` (the envelope names a different table than `options.table`),
- *   `_tableUnverified` (the envelope predates table binding, or is v1: same
- *   "nothing wrong, nothing proven" verdict, and what the re-seal sweep drains).
- *
- *   `_headerTampered` is meaningful ONLY for v2 rows. A v1 row has no
- *   authenticated header and no digest map to compare anything against, so
- *   decryptLegacyRecord() stamps both tamper flags false unconditionally.
- *   Callers handling untrusted rows must therefore gate on
- *   recordHasAuthenticatedHeader() as well - a false flag on a v1 row means
- *   "unknowable", not "clean".
+ *   `_tableUnverified` (the envelope predates table binding: same "nothing
+ *   wrong, nothing proven" verdict).
  * @throws {Error} When the payload does not decrypt with this key.
  */
 /**
- * True when `record` actually carries a payload that AES-GCM will authenticate.
+ * True when `record` is a sealed record: a well-formed envelope whose plaintext
+ * header is cryptographically bound to its contents.
  *
- * This is the load-bearing half of every integrity gate, and it exists because
- * decryptRecord() succeeding is NOT evidence that a key was ever exercised.
- * decryptLegacyRecord() only decrypts fields named `<base>Cipher`; a row with
- * none - `{ id, updatedAt, deleted, v }` - walks straight through it, gets
- * `_headerTampered: false` stamped on unconditionally, and resolves. Under the
- * old gates that counted as "decrypted successfully under our key", so a
- * hand-built or foreign row passed the check without holding any key at all.
- *
- * That matters because ids are guessable by construction: the seeded defaults
- * use fixed ids (bkt-default-1, roulette-current) that collide across EVERY
- * vault. An unauthenticated row on a colliding id could therefore overwrite a
- * live encrypted one on both the backup-import and the peer-sync path.
- *
- * So callers handling untrusted rows must require this BEFORE trusting a
- * successful decrypt. A row that carries no ciphertext cannot have come from
- * someone holding the vault key, and is refused rather than merged.
- *
- * @param {unknown} record
- * @returns {boolean}
- */
-/**
- * True only when `record` is a v2 envelope, i.e. its plaintext header is
- * cryptographically bound to its contents.
- *
- * THIS IS THE STRONGER CHECK, and the distinction matters more than the names
- * suggest. recordCarriesAuthenticatedPayload() asks whether SOME ciphertext is
- * present. That is not the same as asking whether the id / updatedAt / deleted
- * header can be trusted, and for a v1 row it never can be:
- * decryptLegacyRecord() decrypts each `<base>Cipher` field independently and
- * has no authenticated copy of the header to compare against, so it stamps
- * `_headerTampered: false` unconditionally. It is not a bug there - v1 simply
- * has nowhere to put a bound header.
- *
- * The consequence is a forgery. One ciphertext produced under the vault key -
- * any content at all, and every backup file ships one in its own vaultMeta
- * canary - can be pasted into a hand-built row as a decoy `<base>Cipher` /
- * `<base>Iv` pair. That row then decrypts "successfully", reports no header
- * tampering, and carries whatever id, updatedAt and `deleted: true` the forger
- * chose. Pointed at a live photo it destroys the imageBlob; the attacker never
- * needed the vault passphrase, only the backup file's own passphrase.
- *
- * So untrusted input paths must require THIS, not merely a payload, before
- * letting a row overwrite or delete something that already exists.
+ * Every untrusted input path requires this before letting a row overwrite or
+ * delete something that already exists. A row that is not sealed cannot have
+ * come from someone holding the vault key, so its id, timestamp and delete flag
+ * prove nothing and must never be allowed to destroy anything.
  *
  * @param {unknown} record
  * @returns {boolean}
@@ -858,37 +725,6 @@ export function recordHasAuthenticatedHeader(record) {
   );
 }
 
-export function recordCarriesAuthenticatedPayload(record) {
-  if (!record || typeof record !== 'object') return false;
-
-  // v2: the whole payload lives in one authenticated envelope.
-  if (
-    record.v === RECORD_SCHEMA_VERSION &&
-    typeof record.ciphertext === 'string' &&
-    record.ciphertext.length > 0 &&
-    typeof record.iv === 'string' &&
-    record.iv.length > 0
-  ) {
-    return true;
-  }
-
-  // v1: at least one complete <base>Cipher / <base>Iv pair must be present.
-  for (const field of Object.keys(record)) {
-    if (!field.endsWith('Cipher')) continue;
-    const base = field.slice(0, -'Cipher'.length);
-    if (
-      typeof record[field] === 'string' &&
-      record[field].length > 0 &&
-      typeof record[`${base}Iv`] === 'string' &&
-      record[`${base}Iv`].length > 0
-    ) {
-      return true;
-    }
-  }
-
-  return false;
-}
-
 export async function decryptRecord(record, key, options = {}) {
   if (!record || typeof record !== 'object') {
     throw new Error('decryptRecord: expected a record object');
@@ -900,7 +736,7 @@ export async function decryptRecord(record, key, options = {}) {
     typeof record.iv === 'string';
 
   if (!isEnvelope) {
-    return await decryptLegacyRecord(record, key);
+    throw new Error('decryptRecord: not a sealed record');
   }
 
   const payload = await decryptJSON(record.ciphertext, record.iv, key);
@@ -940,11 +776,6 @@ export async function decryptRecord(record, key, options = {}) {
   out._binaryTampered = binaryCheck.tampered;
   out._binaryUnverified = binaryCheck.unverified;
   out._tableUnverified = sealedTable === null;
-  // See PROVENANCE_FIELD: this envelope is authentic, but its CONTENT was
-  // inherited from a v1 row whose header nothing ever authenticated. Surfaced as
-  // its own flag so the gates can treat it exactly like a missing binding - may
-  // create, never overwrite or delete - instead of trusting the seal alone.
-  out._headerUnverified = payload[PROVENANCE_FIELD] === PROVENANCE_LEGACY;
   out._tableTampered =
     expectedTable !== null && sealedTable !== null && sealedTable !== expectedTable;
   // `_headerTampered` is the single flag every consumer already gates on, so a
@@ -960,20 +791,6 @@ export async function decryptRecord(record, key, options = {}) {
     out._tableTampered;
 
   return out;
-}
-
-/**
- * True when a stored row still uses the pre-migration plaintext-metadata shape.
- * @param {Object} record
- * @returns {boolean}
- */
-export function isLegacyRecord(record) {
-  if (!record || typeof record !== 'object') return false;
-  return !(
-    record.v === RECORD_SCHEMA_VERSION &&
-    typeof record.ciphertext === 'string' &&
-    typeof record.iv === 'string'
-  );
 }
 
 /* ------------------------------------------------------------------------- *
@@ -1378,7 +1195,7 @@ export async function decryptBackupContainer(container, passphrase) {
 
   const iterations = Number.isFinite(container.kdfIterations)
     ? Math.floor(container.kdfIterations)
-    : PBKDF2_ITERATIONS_LEGACY;
+    : PBKDF2_ITERATIONS_CURRENT;
 
   let decryptedJson = null;
   try {
