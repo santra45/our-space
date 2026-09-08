@@ -321,8 +321,8 @@ function wireFieldsFor(table) {
 function unverifiableWarningText(count) {
   const plural = count === 1 ? '' : 's';
   return (
-    `${count} change${plural} from your partner could not be verified, so ${count === 1 ? 'it was' : 'they were'} not applied. ` +
-    'Make sure both phones are on the same version of Our Space, then unlock and sync again.'
+    `${count} change${plural} from your partner did not come through. ` +
+    'Make sure Our Space is up to date on both phones, then open it again.'
   );
 }
 
@@ -513,7 +513,7 @@ export class PeerSyncManager {
         });
       } catch {
         this.initPromise = null;
-        return reject(new Error('Failed to create WebRTC peer instance'));
+        return reject(new Error('Could not start the connection on this phone.'));
       }
 
       this.peer.on('open', (id) => {
@@ -559,13 +559,13 @@ export class PeerSyncManager {
           return;
         }
 
-        let msg = 'WebRTC peer connection error';
+        let msg = 'Could not reach your partner right now.';
         if (err?.type === 'peer-unavailable') {
           msg =
-            'Partner device not found or offline. Ensure your partner has the app open on their screen.';
+            'Cannot find their phone. Ask them to open Our Space and leave it on screen.';
           this._closeActiveConnection();
         } else if (err?.type === 'network') {
-          msg = 'Network connection issue with signalling server.';
+          msg = 'Trouble with the connection. Check your internet and try again.';
         }
 
         // REG-1, same class: this is the SIGNALLING socket failing, and the
@@ -793,7 +793,7 @@ export class PeerSyncManager {
           this._refuseConnection(
             conn,
             'unknown_peer_rejected',
-            'An unknown device tried to connect and was refused.'
+            'Someone else tried to connect. We said no.'
           );
           return;
         }
@@ -808,7 +808,7 @@ export class PeerSyncManager {
             this._refuseConnection(
               conn,
               'unknown_peer_rejected',
-              'An unknown device tried to connect while pairing and was refused.'
+              'Someone else tried to connect while you were pairing. We said no.'
             );
             return;
           }
@@ -834,8 +834,8 @@ export class PeerSyncManager {
           conn,
           verdict.reason === 'flood' ? 'pairing_flood' : 'peer_rate_limited',
           verdict.reason === 'flood'
-            ? 'Several unknown devices are trying to connect, so new pairing requests are being refused for a minute. Your partner is unaffected.'
-            : 'A device is reconnecting too quickly and was asked to wait.'
+            ? 'A few unknown phones are trying to connect, so pairing is paused for a minute. This does not affect your partner.'
+            : 'A phone is retrying too fast, so we asked it to wait a moment.'
         );
         return;
       }
@@ -874,7 +874,7 @@ export class PeerSyncManager {
           await this._sendAuthChallenge();
         } catch {
           this._closeActiveConnection();
-          this._emitFatal('challenge_failed', 'Could not start the secure handshake.');
+          this._emitFatal('challenge_failed', 'Could not start the connection. Try again.');
         }
       }
     };
@@ -904,7 +904,7 @@ export class PeerSyncManager {
     conn.on('error', () => {
       if (this.activeConnection === conn) {
         this._closeActiveConnection();
-        this._emitFatal('data_channel_error', 'The connection to your partner dropped.');
+        this._emitFatal('data_channel_error', 'The connection dropped.');
       }
     });
   }
@@ -919,13 +919,13 @@ export class PeerSyncManager {
       this._abortAllSessions('storage_full', { silent: true });
       this._emitFatal(
         'storage_full',
-        'This device has run out of storage, so incoming memories could not be saved. Free some space and sync again.'
+        'This phone is out of space, so new memories could not be saved. Free some space and try again.'
       );
       return;
     }
     this._emitWarning(
       'message_failed',
-      `A sync message could not be processed and was skipped${err?.message ? `: ${err.message}` : '.'}`
+      'Something came through that we could not use, so we skipped it.'
     );
   }
 
@@ -946,7 +946,7 @@ export class PeerSyncManager {
         this._closeActiveConnection();
         this._refuseWarn(
           'stranger_auth_timeout',
-          'An unknown device tried to pair and never completed the handshake. It was disconnected.'
+          'Someone else tried to pair and did not finish. We disconnected them.'
         );
         return;
       }
@@ -991,7 +991,7 @@ export class PeerSyncManager {
         this._closeActiveConnection();
         this._refuseWarn(
           'stranger_open_timeout',
-          'An unknown device held the pairing slot without connecting and was disconnected.'
+          'Someone else was holding up pairing, so we disconnected them.'
         );
         return;
       }
@@ -1039,7 +1039,7 @@ export class PeerSyncManager {
       this._closeActiveConnection();
       this._emitFatal(
         'peer_unresponsive',
-        'Lost the connection to your partner - their device stopped responding. Reconnect to try again.'
+        'Lost them - their phone stopped responding. Tap to reconnect.'
       );
       return;
     }
@@ -1264,7 +1264,7 @@ export class PeerSyncManager {
       this._closeActiveConnection();
       this._emitFatal(
         'version_mismatch',
-        'Your partner is running an older version of the app. Both devices need to be updated before they can sync.'
+        'Their Our Space is out of date. Update it on both phones so you can sync.'
       );
       return;
     }
@@ -1278,11 +1278,11 @@ export class PeerSyncManager {
       if (this.isAuthorized) {
         this._emitWarning(
           'oversized_message',
-          'Your partner sent something too large to receive, so it was skipped. It will be retried on the next sync.'
+          'Something was too big to send. We will try it again next time.'
         );
       } else {
         this._closeActiveConnection();
-        this._emitFatal('oversized_message', 'The pairing handshake sent an invalid oversized message.');
+        this._emitFatal('oversized_message', 'Something went wrong while pairing. Try again.');
       }
       return;
     }
@@ -1384,7 +1384,7 @@ export class PeerSyncManager {
       this._closeActiveConnection();
       this._emitFatal(
         'passphrase_mismatch',
-        'Passphrase mismatch! Please verify you both entered the exact same secret passphrase.',
+        'Your passphrases do not match. Check you both typed exactly the same one.',
         'auth_failed'
       );
       return;
@@ -1395,21 +1395,21 @@ export class PeerSyncManager {
       this._closeActiveConnection();
       this._emitFatal(
         'corrupt_stream',
-        'Too many unreadable messages from your partner, so the connection was closed. Reconnect to try again.'
+        'Too much came through that we could not read, so we closed the connection. Tap to reconnect.'
       );
       return;
     }
 
     this._emitWarning(
       'corrupt_frame',
-      'A message from your partner could not be read and was ignored.'
+      'Something came through that we could not read, so we skipped it.'
     );
   }
 
   async _onChallenge(decrypted) {
     if (typeof decrypted.nonce !== 'string' || decrypted.nonce.length < 16) {
       this._closeActiveConnection();
-      this._emitFatal('bad_challenge', 'The pairing handshake was malformed.', 'auth_failed');
+      this._emitFatal('bad_challenge', 'Something went wrong while pairing. Try again.', 'auth_failed');
       return;
     }
 
@@ -1434,7 +1434,7 @@ export class PeerSyncManager {
       this._closeActiveConnection();
       this._emitFatal(
         'challenge_replay',
-        'The pairing handshake failed its integrity check and was rejected.',
+        'Pairing did not go through. Try again.',
         'auth_failed'
       );
       return;
@@ -1455,7 +1455,7 @@ export class PeerSyncManager {
       this._closeActiveConnection();
       this._emitFatal(
         'challenge_replay',
-        'The pairing handshake failed its integrity check and was rejected.',
+        'Pairing did not go through. Try again.',
         'auth_failed'
       );
       return;
@@ -1552,7 +1552,7 @@ export class PeerSyncManager {
       this._closeSession(session.kind, session.id);
       this._emitFatal(
         'sync_timeout',
-        'Sync stalled and was cancelled. Nothing was lost - try syncing again.'
+        'That took too long, so we stopped. Nothing was lost - try again.'
       );
     }, SYNC_SESSION_TIMEOUT_MS);
   }
@@ -1581,7 +1581,7 @@ export class PeerSyncManager {
     }
     this.isSyncing = false;
     if (had && !options.silent) {
-      this._emitWarning(code, 'The sync in progress was cancelled.');
+      this._emitWarning(code, 'That was cancelled.');
     }
   }
 
@@ -1637,7 +1637,7 @@ export class PeerSyncManager {
       this._closeSession('out', sessionId);
       this._emitWarning(
         'sync_start_failed',
-        `Could not start syncing${err?.message ? `: ${err.message}` : '.'}`
+        'Could not start syncing. Try again.'
       );
       return false;
     }
@@ -1668,7 +1668,7 @@ export class PeerSyncManager {
     const remoteManifest = decrypted.manifest;
     if (!remoteManifest || typeof remoteManifest !== 'object' || Array.isArray(remoteManifest)) {
       await this._sendSyncError(sessionId, 'manifest_rejected', 'Manifest was not an object');
-      this._emitWarning('manifest_rejected', 'Your partner sent an unreadable sync manifest.');
+      this._emitWarning('manifest_rejected', 'Something came through that we could not read. Try again.');
       return;
     }
 
@@ -1679,7 +1679,10 @@ export class PeerSyncManager {
       await this._sendSyncError(sessionId, 'manifest_rejected', 'Could not read the local manifest');
       this._emitWarning(
         'manifest_rejected',
-        `Could not compare notes with your partner${err?.message ? `: ${err.message}` : '.'}`
+        // Deliberately does NOT interpolate err.message: these read like
+        // "Cannot verify which copy of a record is newer" and this string goes
+        // on screen in a couple's app, not into a log.
+        'Could not compare notes with your partner. Try again.'
       );
       return;
     }
@@ -1695,7 +1698,7 @@ export class PeerSyncManager {
         this._closeSession('in', sessionId);
         this._emitWarning(
           'sync_request_failed',
-          `Could not ask your partner for updates${err?.message ? `: ${err.message}` : '.'}`
+          'Could not ask your partner for updates. Try again.'
         );
         return;
       }
@@ -1811,7 +1814,7 @@ export class PeerSyncManager {
         fatal: true,
       });
       this._closeSession('out', sessionId);
-      this._emitWarning('too_many_requests', 'Your partner asked for an unreasonable number of items.');
+      this._emitWarning('too_many_requests', 'That was more than we can send at once. Try again.');
       return;
     }
 
@@ -1881,7 +1884,7 @@ export class PeerSyncManager {
       await this._sendSyncError(sessionId, 'send_failed', 'Could not send records', { fatal: true });
       this._emitWarning(
         'send_failed',
-        `Could not send your memories to your partner${err?.message ? `: ${err.message}` : '.'} They will be retried on the next sync.`
+        'Could not send your memories right now. We will try again next time.'
       );
     }
   }
@@ -1910,7 +1913,7 @@ export class PeerSyncManager {
       });
       this._emitWarning(
         'out_of_order',
-        'Sync data arrived out of order and was discarded. Try syncing again.'
+        'Things arrived out of order, so we stopped. Try again.'
       );
       return;
     }
@@ -2460,7 +2463,7 @@ export class PeerSyncManager {
       if (bytes > MAX_SINGLE_RECORD_BYTES) {
         this._emitWarning(
           'record_too_large',
-          'That item is too large to send to your partner. Try adding the photo again at a smaller size.'
+          'That one is too big to send. Try adding the photo again a bit smaller.'
         );
         return false;
       }
@@ -2470,7 +2473,7 @@ export class PeerSyncManager {
     } catch (err) {
       this._emitWarning(
         'broadcast_failed',
-        `Could not send that update to your partner right now${err?.message ? `: ${err.message}` : '.'} It will sync the next time you connect.`
+        'Could not send that just now. It will go through next time you connect.'
       );
       return false;
     }
@@ -2490,7 +2493,7 @@ export class PeerSyncManager {
         const code = [...reasons.keys()][0] || 'record_rejected';
         this._emitWarning(
           code,
-          'An update from your partner could not be read and was skipped.'
+          'One update could not be read, so we skipped it.'
         );
       }
       return;
@@ -2542,7 +2545,7 @@ export class PeerSyncManager {
    */
   _onSyncConfig(config) {
     if (!config || typeof config !== 'object' || Array.isArray(config)) {
-      this._emitWarning('bad_config', 'Your partner sent unreadable relationship settings.');
+      this._emitWarning('bad_config', 'We could not read their details. Try again.');
       return;
     }
 
@@ -2565,7 +2568,7 @@ export class PeerSyncManager {
     }
 
     if (!coupleNames && !startDate) {
-      this._emitWarning('bad_config', 'Your partner sent empty relationship settings, so nothing changed.');
+      this._emitWarning('bad_config', 'Nothing to update from their side.');
       return;
     }
 

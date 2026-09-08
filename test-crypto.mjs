@@ -1926,11 +1926,14 @@ async function run() {
     Boolean(spWarned) && spWarned.unverifiable === 1
   );
   check(
-    'the warning text names the count and the actual remedy',
+    'the warning text names the count and the actual remedy, in plain words',
     typeof spWarned?.warning === 'string' &&
       spWarned.warning.includes('1 change') &&
-      spWarned.warning.includes('could not be verified') &&
-      spWarned.warning.includes('same version')
+      spWarned.warning.includes('did not come through') &&
+      spWarned.warning.includes('up to date on both phones') &&
+      // This copy is read by a couple, not an auditor. Guard the tone too, or it
+      // drifts back the next time someone edits the message.
+      !/verif|authenticat|integrity|unverifiable/i.test(spWarned.warning)
   );
   check(
     'and it is a WARNING, so it cannot paint the live connection as dead',
