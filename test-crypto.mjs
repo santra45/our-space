@@ -17,12 +17,42 @@
  *   8. Time locks            seal/unseal, and that the date is BOUND, not checked
  *   9. Backups               v2 containers, and v1 containers still opening
  *  10. Invites               a stranger's link cannot choose our PBKDF2 salt
+ *  11. Foreign backups       a stranger's file cannot overwrite a colliding id
+ *  12. Merge precedence      an older backup does not revert newer local work
+ *  13. Rescue restore        adopt an identity, unlock with the ORIGINAL phrase
+ *  14. Import sanitising     a restored clock artefact cannot win forever
+ *  15. Tamper isolation      one bad record does not poison the whole restore
  *
- * WHAT THIS SUITE CANNOT COVER
- * `src/db/index.js` is Dexie on top of IndexedDB, neither of which exists in
- * Node. Section 7 therefore exercises the record reshaping that
- * `db.migrateLegacyRecords()` performs - the part that can lose data - but not
- * the Dexie `version(2).upgrade()` callback around it. That one needs a browser.
+ * HOW SECTIONS 11-15 REACH db/index.js WITHOUT A BROWSER
+ * `planBackupMerge`, `applyBackupMerge`, `restoreVaultIdentity`,
+ * `readVaultIdentity` and `exportRawDataForBackup` are methods on a Dexie
+ * subclass, but the only Dexie surface they touch is `table(name)` with
+ * get/put/toArray/bulkGet/bulkPut, `transaction()` and `vaultMeta`. So
+ * `FakeVaultStore` below supplies exactly that in memory and the SHIPPED methods
+ * are then borrowed onto it verbatim. The storage underneath is fake; none of
+ * the logic on top of it is. The precedence rule really is fetched out of
+ * peerSync at call time - section 12 proves that with a spy rather than assuming
+ * it.
+ *
+ * WHAT THIS SUITE CANNOT COVER (nothing below is stubbed to look covered)
+ *  - Dexie's own `version(2).upgrade()` callback and the `blocked` event that
+ *    drives isUpgradeBlocked()/subscribeUpgradeBlocked(). Both need a real
+ *    IndexedDB with two live connections. Section 7 covers the record reshaping
+ *    `db.migrateLegacyRecords()` performs - the part that can lose data - but
+ *    not the schema upgrade around it.
+ *  - The `_del` tombstone hooks, which are Dexie CRUD hooks.
+ *  - Every React gate: LockScreen's restore mode and unreadable panel,
+ *    SyncHubModal's ImportPreview, VaultContext's guardDestructiveWrite,
+ *    vaultCheckState/retryVaultCheck, wipeSyncedTables ordering and the
+ *    DESTROY_CONFIRMATION_PHRASE prompt. Section 13 reproduces the crypto
+ *    sequence VaultContext.restoreVaultFromBackup performs, not the UI that
+ *    decides to call it.
+ *  - peerSync's transport half: admission control, per-peer backoff, the flood
+ *    breaker and _emitFatal closing the connection. Those need PeerJS/WebRTC.
+ *    Only the pure merge rule (_incomingWins/_fingerprint) is exercised here.
+ *  - getSyncSafeTimestamp()'s localStorage high-water floor, and therefore
+ *    softDelete()'s use of it.
+ *  - SecretCapsule's retro-seal re-read/verify loop, which is React + Dexie.
  */
 import {
   // primitives
@@ -70,6 +100,13 @@ import {
   decryptBackupContainer,
 } from './src/services/crypto.js';
 import { buildInviteUrl, parseInvite } from './src/utils/invite.js';
+import {
+  SweetheartDatabase,
+  EXPORTED_TABLES,
+  readBackupVaultIdentity,
+  compareVaultIdentity,
+} from './src/db/index.js';
+import peerSync from './src/services/peerSync.js';
 
 /* ------------------------------------------------------------------ harness */
 
@@ -111,6 +148,78 @@ const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 
 /** Fast key for tests that are not about the KDF itself. */
 const fastKey = (passphrase, salt) => deriveKeyFromPassphrase(passphrase, salt, { iterations: 2000 });
+
+/* -------------------------------------------------- a device, without Dexie */
+
+/**
+ * The minimum Dexie surface db/index.js's backup and identity code actually
+ * uses, backed by plain Maps.
+ *
+ * This exists so the REAL methods can run in Node. It deliberately implements
+ * storage only - no timestamp comparison, no validation, no precedence - so a
+ * bug in the shipped logic cannot be masked by a helpful reimplementation here.
+ * The methods themselves are copied onto the prototype below, straight off
+ * SweetheartDatabase, so these tests fail if that code changes behaviour.
+ */
+class FakeVaultStore {
+  /** @param {Record<string, Object[]>} [seed] Rows per table, keyed by table name. */
+  constructor(seed = {}) {
+    this._tables = new Map();
+    for (const name of EXPORTED_TABLES) {
+      this._tables.set(name, new Map((seed[name] || []).map((row) => [row.id, row])));
+    }
+    /** Set to make every read throw, standing in for a blocked/failed IndexedDB. */
+    this.failReads = false;
+  }
+
+  table(name) {
+    const rows = this._tables.get(name);
+    if (!rows) throw new Error(`FakeVaultStore: unknown table "${name}"`);
+    const store = this;
+    return {
+      async get(id) {
+        if (store.failReads) throw new Error('simulated IndexedDB failure');
+        return rows.get(id);
+      },
+      async put(row) {
+        rows.set(row.id, row);
+      },
+      async toArray() {
+        return Array.from(rows.values());
+      },
+      async bulkGet(ids) {
+        if (store.failReads) throw new Error('simulated IndexedDB failure');
+        return ids.map((id) => rows.get(id));
+      },
+      async bulkPut(list) {
+        for (const row of list) rows.set(row.id, row);
+      },
+    };
+  }
+
+  get vaultMeta() {
+    return this.table('vaultMeta');
+  }
+
+  // Dexie serialises writes here; in memory there is nothing to serialise, so the
+  // body simply runs. applyBackupMerge's re-check inside it is what is under test.
+  async transaction(mode, tables, body) {
+    return body();
+  }
+}
+
+for (const method of [
+  'readVaultIdentity',
+  'exportRawDataForBackup',
+  'planBackupMerge',
+  'applyBackupMerge',
+  'restoreVaultIdentity',
+]) {
+  if (typeof SweetheartDatabase.prototype[method] !== 'function') {
+    throw new Error(`test harness is stale: SweetheartDatabase has no ${method}()`);
+  }
+  FakeVaultStore.prototype[method] = SweetheartDatabase.prototype[method];
+}
 
 /* ------------------------------------------------------------------- suite */
 
@@ -667,6 +776,562 @@ async function run() {
     parseInvite(`#connect=love-abcdefgh&names=${'x'.repeat(500)}`).coupleNames.length === 120
   );
 
+  /* ------------------------------- 11. foreign backups (stable-id collision) */
+  section('11. A foreign vault cannot overwrite a colliding live record');
+
+  const NOW = Date.now();
+  const MINUTE = 60 * 1000;
+
+  // The two ids every vault built by this app shares, because they are derived
+  // rather than random. They are the exact rows a blind bulkPut would destroy.
+  const liveBucket = await encryptRecord(
+    {
+      id: 'bkt-default-1',
+      updatedAt: NOW - 10 * MINUTE,
+      deleted: false,
+      text: 'Watch the sunrise from the roof',
+      completed: false,
+    },
+    key
+  );
+  const liveRoulette = await encryptRecord(
+    { id: 'roulette-current', updatedAt: NOW - 10 * MINUTE, deleted: false, idea: 'Pizza and a bad film' },
+    key
+  );
+
+  const foreignSalt = generateSalt();
+  const foreignKey = await fastKey('an-entirely-different-couples-passphrase', foreignSalt);
+  const foreignMeta = {
+    salt: foreignSalt,
+    kdfIterations: 2000,
+    ...(await createCanary(foreignKey, { coupleNames: 'Someone Else', startDate: '2020-01-01' })),
+  };
+  // Stamped NEWER than the live rows on purpose: if precedence were the only
+  // gate, the stranger's copy would win on merit. It has to be refused because
+  // it does not decrypt, not because it happened to be older.
+  const foreignBucket = await encryptRecord(
+    { id: 'bkt-default-1', updatedAt: NOW, deleted: false, text: 'Not your list', completed: true },
+    foreignKey
+  );
+  const foreignRoulette = await encryptRecord(
+    { id: 'roulette-current', updatedAt: NOW, deleted: false, idea: 'Not your date' },
+    foreignKey
+  );
+
+  const foreignTables = {
+    vaultMeta: [{ id: 'config', ...foreignMeta, updatedAt: NOW }],
+    bucketList: [foreignBucket],
+    dateIdeas: [foreignRoulette],
+  };
+  const liveStore = new FakeVaultStore({ bucketList: [liveBucket], dateIdeas: [liveRoulette] });
+
+  const foreignIdentity = readBackupVaultIdentity(foreignTables);
+  check('a container carries a readable vault identity', foreignIdentity?.salt === foreignSalt);
+  check(
+    'a backup from another vault is classified FOREIGN',
+    compareVaultIdentity(foreignIdentity, { ok: true, meta: { salt } }) === 'foreign'
+  );
+  check(
+    'the same file against its own vault is classified SAME',
+    compareVaultIdentity(foreignIdentity, { ok: true, meta: { salt: foreignSalt } }) === 'same'
+  );
+  check(
+    'a FAILED local read is `unknown`, never `no-local-vault`',
+    compareVaultIdentity(foreignIdentity, { ok: false, meta: null }) === 'unknown'
+  );
+  check(
+    "the stranger's row is newer, so timestamp precedence alone would let it win",
+    peerSync._incomingWins(liveBucket, foreignBucket) === true
+  );
+
+  const foreignPlan = await liveStore.planBackupMerge(foreignTables, key);
+  check(
+    'both colliding foreign rows are refused as undecryptable',
+    foreignPlan.totals.undecryptable === 2
+  );
+  check(
+    'nothing from a foreign vault is added or updated',
+    foreignPlan.totals.added === 0 && foreignPlan.totals.updated === 0
+  );
+  check('the plan queues no writes at all', foreignPlan.writes.length === 0);
+  check(
+    'vaultMeta is never a merge target, even in a foreign file',
+    foreignPlan.skippedTables.includes('vaultMeta')
+  );
+
+  const foreignApplied = await liveStore.applyBackupMerge(foreignPlan);
+  check(
+    'applying an all-refused plan writes nothing',
+    Object.keys(foreignApplied.written).length === 0
+  );
+  const survivingBucket = await liveStore.table('bucketList').get('bkt-default-1');
+  const survivingPlain = await decryptRecord(survivingBucket, key);
+  check(
+    'the live bkt-default-1 is untouched and still readable',
+    survivingPlain.text === 'Watch the sunrise from the roof' && survivingPlain.completed === false
+  );
+  const survivingRoulette = await decryptRecord(
+    await liveStore.table('dateIdeas').get('roulette-current'),
+    key
+  );
+  check('the live roulette-current is untouched', survivingRoulette.idea === 'Pizza and a bad film');
+
+  /* --------------------------------- 12. merge precedence is peerSync's rule */
+  section("12. An older backup does not revert newer local work (peerSync's own rule)");
+
+  const liveLetterA = await encryptRecord(
+    { id: 'let-merge-a', updatedAt: NOW, deleted: false, title: 'Newer local edit' },
+    key
+  );
+  const liveLetterB = await encryptRecord(
+    { id: 'let-merge-b', updatedAt: NOW - 30 * MINUTE, deleted: false, title: 'Older local copy' },
+    key
+  );
+  const backupLetterA = await encryptRecord(
+    { id: 'let-merge-a', updatedAt: NOW - 60 * MINUTE, deleted: false, title: 'Stale backup copy' },
+    key
+  );
+  const backupLetterB = await encryptRecord(
+    { id: 'let-merge-b', updatedAt: NOW - 5 * MINUTE, deleted: false, title: 'Newer backup copy' },
+    key
+  );
+  const backupLetterC = await encryptRecord(
+    { id: 'let-merge-c', updatedAt: NOW - 90 * MINUTE, deleted: false, title: 'Only in the backup' },
+    key
+  );
+
+  const mergeStore = new FakeVaultStore({ letters: [liveLetterA, liveLetterB] });
+  const olderBackup = { letters: [backupLetterA, backupLetterB, backupLetterC] };
+
+  // Proof it is not a second rule: swap peerSync's method for a spy and watch
+  // the merge call it. A local copy of the comparison would not touch this.
+  const realIncomingWins = peerSync._incomingWins;
+  let ruleCalls = 0;
+  let mergePlan;
+  try {
+    peerSync._incomingWins = function spy(existing, incoming) {
+      ruleCalls++;
+      return realIncomingWins.call(this, existing, incoming);
+    };
+    mergePlan = await mergeStore.planBackupMerge(olderBackup, key);
+  } finally {
+    peerSync._incomingWins = realIncomingWins;
+  }
+  check(
+    'planBackupMerge calls peerSync._incomingWins itself, once per collision',
+    ruleCalls === 2
+  );
+
+  check('the stale backup row is counted stale', mergePlan.perTable.letters.stale === 1);
+  check('the newer backup row is counted as an update', mergePlan.perTable.letters.updated === 1);
+  check('the missing row is counted as an addition', mergePlan.perTable.letters.added === 1);
+  check(
+    'a same-vault backup produces no invalid or undecryptable rows',
+    mergePlan.totals.invalid === 0 && mergePlan.totals.undecryptable === 0
+  );
+  check(
+    'the stale row is never queued for writing',
+    !mergePlan.writes.some((entry) => entry.row.id === 'let-merge-a')
+  );
+
+  await mergeStore.applyBackupMerge(mergePlan);
+  const afterA = await decryptRecord(await mergeStore.table('letters').get('let-merge-a'), key);
+  const afterB = await decryptRecord(await mergeStore.table('letters').get('let-merge-b'), key);
+  const afterC = await decryptRecord(await mergeStore.table('letters').get('let-merge-c'), key);
+  check('THE POINT: restoring an old backup did not revert the newer letter', afterA.title === 'Newer local edit');
+  check('a genuinely newer backup copy does replace the local one', afterB.title === 'Newer backup copy');
+  check('a letter only in the backup is restored', afterC.title === 'Only in the backup');
+
+  // The rule the plan carries must agree with the sync rule everywhere, not just
+  // on the easy "newer wins" case - including both documented tie-breaks.
+  const agrees = (existing, incoming) =>
+    mergePlan.incomingWins(existing, incoming) === realIncomingWins.call(peerSync, existing, incoming);
+  const tiedDeletion = { ...backupLetterA, updatedAt: liveLetterA.updatedAt, deleted: true };
+  const tiedEdit = { ...backupLetterA, updatedAt: liveLetterA.updatedAt };
+  check('plan and sync agree that a missing local row loses', agrees(undefined, backupLetterC));
+  check('plan and sync agree on newer-wins', agrees(liveLetterB, backupLetterB));
+  check('plan and sync agree on older-loses', agrees(liveLetterA, backupLetterA));
+  check(
+    'plan and sync agree that a same-instant deletion is not resurrected',
+    agrees(liveLetterA, tiedDeletion) && mergePlan.incomingWins(liveLetterA, tiedDeletion) === true
+  );
+  check(
+    'plan and sync break an exact tie the same way, and deterministically',
+    agrees(liveLetterA, tiedEdit) &&
+      mergePlan.incomingWins(liveLetterA, tiedEdit) !== mergePlan.incomingWins(tiedEdit, liveLetterA)
+  );
+
+  // Fail closed: no rule, no merge. A home-grown fallback is exactly what would
+  // let a merge and a sync disagree about which copy of a letter is newer.
+  try {
+    peerSync._incomingWins = undefined;
+    await checkThrows(
+      'the merge REFUSES to run when the sync rule cannot be loaded',
+      async () => mergeStore.planBackupMerge(olderBackup, key),
+      (err) => /which copy of a record is newer/.test(err.message)
+    );
+  } finally {
+    peerSync._incomingWins = realIncomingWins;
+  }
+  await checkThrows(
+    'the merge refuses to plan while the vault is locked (nothing can be verified)',
+    async () => mergeStore.planBackupMerge(olderBackup, null),
+    (err) => /locked/.test(err.message)
+  );
+
+  // A live sync landing a newer copy between the preview and the confirmation.
+  const raceStore = new FakeVaultStore();
+  const racePlan = await raceStore.planBackupMerge({ letters: [backupLetterC] }, key);
+  const arrivedMidPreview = await encryptRecord(
+    { id: 'let-merge-c', updatedAt: NOW, deleted: false, title: 'Landed from the partner mid-preview' },
+    key
+  );
+  await raceStore.table('letters').put(arrivedMidPreview);
+  const raceApplied = await raceStore.applyBackupMerge(racePlan);
+  check('a row superseded after the preview is reported, not silently written', raceApplied.supersededSincePreview === 1);
+  check('and it is not counted as written', raceApplied.written.letters === 0);
+  const raceRow = await decryptRecord(await raceStore.table('letters').get('let-merge-c'), key);
+  check(
+    'the copy that arrived during the preview survives the confirmation',
+    raceRow.title === 'Landed from the partner mid-preview'
+  );
+
+  /* ------------------------------------------------ 13. rescue restore */
+  section('13. Rescue restore — adopt an identity, unlock with the ORIGINAL passphrase');
+
+  const rescuePassphrase = 'the-passphrase-she-actually-remembers-2026';
+  const filePassphrase = 'a-different-file-passphrase-entirely';
+  const rescueSalt = generateSalt();
+  const rescueKey = await fastKey(rescuePassphrase, rescueSalt);
+  const rescueMeta = {
+    id: 'config',
+    salt: rescueSalt,
+    kdfIterations: 2000,
+    updatedAt: NOW - 5 * MINUTE,
+    ...(await createCanary(rescueKey, { coupleNames: 'Alex & Sam', startDate: '2021-06-14' })),
+  };
+
+  const rescuePhoto = new Uint8Array(512).map((_, i) => (i * 7) % 256);
+  const sourceDevice = new FakeVaultStore({
+    vaultMeta: [rescueMeta],
+    memories: [
+      await encryptRecord(
+        {
+          id: 'mem-rescue-1',
+          updatedAt: NOW - 20 * MINUTE,
+          deleted: false,
+          caption: 'The morning we moved in',
+          date: '2024-02-11',
+          imageBlob: rescuePhoto,
+        },
+        rescueKey
+      ),
+    ],
+    letters: [
+      await encryptRecord(
+        {
+          id: 'let-rescue-1',
+          updatedAt: NOW - 21 * MINUTE,
+          deleted: false,
+          title: 'For your thirtieth',
+          content: 'Still yours.',
+        },
+        rescueKey
+      ),
+    ],
+  });
+
+  const exported = await sourceDevice.exportRawDataForBackup();
+  check(
+    'the export carries the vault identity, which is what makes rescue possible',
+    Array.isArray(exported.tables.vaultMeta) && exported.tables.vaultMeta.length === 1
+  );
+  check(
+    'a photo leaves as base64, not a live blob',
+    typeof exported.tables.memories[0].imageBlobBase64 === 'string' &&
+      exported.tables.memories[0].imageBlob === undefined
+  );
+
+  const rescueContainer = await createEncryptedBackup(exported, filePassphrase);
+  const reopened = await decryptBackupContainer(rescueContainer, filePassphrase);
+  const rescueIdentity = readBackupVaultIdentity(reopened.tables);
+  check(
+    'the identity survives the container round-trip intact',
+    rescueIdentity.salt === rescueSalt &&
+      rescueIdentity.canary === rescueMeta.canary &&
+      rescueIdentity.kdfIterations === 2000
+  );
+  check(
+    'TWO PASSPHRASES: the file passphrase does NOT open the vault it contains',
+    (await verifyPassphraseAgainstMeta(filePassphrase, rescueIdentity)) === false
+  );
+  check(
+    "the vault passphrase is proved against the backup's own canary before any write",
+    (await verifyPassphraseAgainstMeta(rescuePassphrase, rescueIdentity)) === true
+  );
+  check(
+    'a container with no vaultMeta cannot be used to restore an identity',
+    readBackupVaultIdentity({ letters: [] }) === null
+  );
+  check(
+    'a vaultMeta row with no canary is refused: the passphrase could not be proved',
+    readBackupVaultIdentity({ vaultMeta: [{ id: 'config', salt: rescueSalt }] }) === null
+  );
+
+  const derived = await deriveKeyWithVerification(
+    rescuePassphrase,
+    rescueIdentity.salt,
+    async (candidate) => (await readCanary(candidate, rescueIdentity)) !== null,
+    { iterations: rescueIdentity.kdfIterations }
+  );
+
+  const freshDevice = new FakeVaultStore();
+  const emptyRead = await freshDevice.readVaultIdentity();
+  check('a blank device reports ok:true with no vault', emptyRead.ok === true && emptyRead.meta === null);
+  freshDevice.failReads = true;
+  const brokenRead = await freshDevice.readVaultIdentity();
+  check(
+    'a FAILED read reports ok:false — never "there is nothing here to lose"',
+    brokenRead.ok === false && brokenRead.meta === null && brokenRead.error instanceof Error
+  );
+  check(
+    'and that failure is `unknown` to compareVaultIdentity, so callers stop',
+    compareVaultIdentity(rescueIdentity, brokenRead) === 'unknown'
+  );
+  freshDevice.failReads = false;
+
+  await freshDevice.restoreVaultIdentity({ ...rescueIdentity, kdfIterations: derived.iterations });
+  const adopted = (await freshDevice.readVaultIdentity()).meta;
+  check('the adopted row carries the salt', adopted.salt === rescueSalt);
+  check(
+    'the adopted row carries the canary pair',
+    adopted.canary === rescueIdentity.canary && adopted.canaryIv === rescueIdentity.canaryIv
+  );
+  check('the adopted row records the count that actually worked', adopted.kdfIterations === 2000);
+
+  // The whole promise of the rescue file: a cold unlock from the stored row alone.
+  const coldUnlock = await deriveKeyWithVerification(
+    rescuePassphrase,
+    adopted.salt,
+    async (candidate) => (await readCanary(candidate, adopted)) !== null,
+    { iterations: resolveKdfIterations(adopted) }
+  );
+  const coldPayload = await readCanary(coldUnlock.key, adopted);
+  check('the ORIGINAL vault passphrase unlocks the rescued device', coldPayload.coupleNames === 'Alex & Sam');
+  check('and the couple config comes back with it', coldPayload.startDate === '2021-06-14');
+  await checkThrows(
+    'a wrong passphrase is still refused on the rescued device',
+    async () =>
+      deriveKeyWithVerification(
+        'not-the-vault-passphrase-at-all',
+        adopted.salt,
+        async (candidate) => (await readCanary(candidate, adopted)) !== null,
+        { iterations: resolveKdfIterations(adopted) }
+      ),
+    (err) => /Incorrect passphrase/.test(err.message)
+  );
+
+  const restorePlan = await freshDevice.planBackupMerge(reopened.tables, coldUnlock.key);
+  check(
+    'every record in the rescue file is accepted by the re-derived key',
+    restorePlan.totals.added === 2 &&
+      restorePlan.totals.undecryptable === 0 &&
+      restorePlan.totals.invalid === 0
+  );
+  check('the identity table is not merged as ordinary data', restorePlan.skippedTables.includes('vaultMeta'));
+  await freshDevice.applyBackupMerge(restorePlan);
+  const restoredMemory = await decryptRecord(
+    await freshDevice.table('memories').get('mem-rescue-1'),
+    coldUnlock.key
+  );
+  check('a rescued photo caption is readable again', restoredMemory.caption === 'The morning we moved in');
+  check('a rescued photo date survived inside the envelope', restoredMemory.date === '2024-02-11');
+  check(
+    'the rescued photo bytes survived base64 and back, byte for byte',
+    eq(Array.from(restoredMemory.imageBlob), Array.from(rescuePhoto))
+  );
+  const restoredLetter = await decryptRecord(
+    await freshDevice.table('letters').get('let-rescue-1'),
+    coldUnlock.key
+  );
+  check('a rescued letter is readable again', restoredLetter.content === 'Still yours.');
+
+  // The same rescue, from a vault created before the 600,000 bump. If the count
+  // is not carried out of the file, the passphrase is "wrong" forever.
+  const legacyRescueSalt = generateSalt();
+  const legacyRescueKey = await deriveKeyFromPassphrase(rescuePassphrase, legacyRescueSalt, {
+    iterations: PBKDF2_ITERATIONS_LEGACY,
+  });
+  const legacyRescueRow = {
+    id: 'config',
+    salt: legacyRescueSalt,
+    // No kdfIterations: an old build never wrote one.
+    ...(await createCanary(legacyRescueKey, { coupleNames: 'Old Build', startDate: '2019-05-05' })),
+  };
+  const legacyIdentity = readBackupVaultIdentity({ vaultMeta: [legacyRescueRow] });
+  check(
+    'a backup with no kdfIterations is read as a 250,000-iteration vault',
+    legacyIdentity.kdfIterations === PBKDF2_ITERATIONS_LEGACY
+  );
+  const legacyDerived = await deriveKeyWithVerification(
+    rescuePassphrase,
+    legacyIdentity.salt,
+    async (candidate) => (await readCanary(candidate, legacyIdentity)) !== null,
+    { iterations: legacyIdentity.kdfIterations }
+  );
+  const legacyDevice = new FakeVaultStore();
+  await legacyDevice.restoreVaultIdentity({ ...legacyIdentity, kdfIterations: legacyDerived.iterations });
+  const legacyAdopted = (await legacyDevice.readVaultIdentity()).meta;
+  check(
+    'the rescued legacy row PINS 250,000 rather than inheriting the new default',
+    legacyAdopted.kdfIterations === PBKDF2_ITERATIONS_LEGACY &&
+      resolveKdfIterations(legacyAdopted) === PBKDF2_ITERATIONS_LEGACY
+  );
+  const legacyCold = await deriveKeyFromPassphrase(rescuePassphrase, legacyAdopted.salt, {
+    iterations: resolveKdfIterations(legacyAdopted),
+  });
+  check(
+    'the original passphrase opens the rescued legacy vault',
+    (await readCanary(legacyCold, legacyAdopted)) !== null
+  );
+  const legacyAtCurrent = await deriveKeyFromPassphrase(rescuePassphrase, legacyAdopted.salt, {
+    iterations: PBKDF2_ITERATIONS_CURRENT,
+  });
+  check(
+    'WHY THE COUNT MUST BE CARRIED: at 600,000 the same passphrase does not open it',
+    (await readCanary(legacyAtCurrent, legacyAdopted)) === null
+  );
+
+  /* ------------------------------------------------ 14. import sanitising */
+  section('14. Import sanitising — a restored clock artefact must not win forever');
+
+  const SKEW_LIMIT = 48 * 60 * 60 * 1000;
+  const clockOk = await encryptRecord(
+    { id: 'bkt-clock-ok', updatedAt: NOW + 60 * MINUTE, deleted: false, text: 'Written on a slightly fast phone' },
+    key
+  );
+  const clockNegative = await encryptRecord(
+    { id: 'bkt-clock-negative', updatedAt: -1, deleted: false, text: 'Stamped before the epoch' },
+    key
+  );
+  const clockFuture = await encryptRecord(
+    {
+      id: 'bkt-clock-future',
+      updatedAt: NOW + SKEW_LIMIT + 60 * MINUTE,
+      deleted: false,
+      text: 'Stamped in the far future',
+    },
+    key
+  );
+  const badVersion = {
+    ...(await encryptRecord({ id: 'bkt-bad-version', updatedAt: NOW, deleted: false, text: 'x' }, key)),
+    v: 3,
+  };
+  const badId = {
+    ...(await encryptRecord({ id: 'bkt-bad-id', updatedAt: NOW, deleted: false, text: 'x' }, key)),
+    id: '',
+  };
+
+  /** Plans one record against an empty device and returns just the counters. */
+  const planOne = async (record) =>
+    (await new FakeVaultStore().planBackupMerge({ bucketList: [record] }, key)).totals;
+
+  const negativeTotals = await planOne(clockNegative);
+  check(
+    'a negative updatedAt is refused at the STRUCTURE gate',
+    negativeTotals.invalid === 1 && negativeTotals.added === 0 && negativeTotals.undecryptable === 0
+  );
+  const futureTotals = await planOne(clockFuture);
+  check(
+    'an updatedAt more than 48h ahead is refused at the STRUCTURE gate',
+    futureTotals.invalid === 1 && futureTotals.added === 0 && futureTotals.undecryptable === 0
+  );
+  check(
+    'WHY: either stamp, if restored, would beat every real edit forever',
+    peerSync._incomingWins(liveBucket, clockNegative) === false &&
+      peerSync._incomingWins(liveBucket, clockFuture) === true
+  );
+  check('an unknown schema version is refused', (await planOne(badVersion)).invalid === 1);
+  check('an empty id is refused', (await planOne(badId)).invalid === 1);
+  check(
+    'a plausible fast clock (+1h) is still accepted — the gate is a ceiling, not a ban',
+    (await planOne(clockOk)).added === 1
+  );
+
+  const clockStore = new FakeVaultStore();
+  const clockPlan = await clockStore.planBackupMerge(
+    { bucketList: [clockOk, clockNegative, clockFuture, badVersion, badId] },
+    key
+  );
+  check(
+    'in a mixed file the four bad rows are dropped and the good one is kept',
+    clockPlan.totals.invalid === 4 && clockPlan.totals.added === 1
+  );
+  check(
+    'only the acceptable row is queued',
+    clockPlan.writes.length === 1 && clockPlan.writes[0].row.id === 'bkt-clock-ok'
+  );
+
+  /* ---------------------------------------------- 15. tamper isolation */
+  section('15. One tampered record does not poison the rest of the restore');
+
+  const goodOne = await encryptRecord(
+    { id: 'mem-intact-1', updatedAt: NOW - 3 * MINUTE, deleted: false, caption: 'Intact one' },
+    key
+  );
+  const goodTwo = await encryptRecord(
+    { id: 'mem-intact-2', updatedAt: NOW - 2 * MINUTE, deleted: false, caption: 'Intact two' },
+    key
+  );
+  const goodThree = await encryptRecord(
+    { id: 'mem-intact-3', updatedAt: NOW - 1 * MINUTE, deleted: false, caption: 'Intact three' },
+    key
+  );
+  const victim = await encryptRecord(
+    { id: 'mem-tampered', updatedAt: NOW - 4 * MINUTE, deleted: false, caption: 'Header rewritten' },
+    key
+  );
+  // A peer that cannot decrypt can still edit the plaintext header it can see.
+  const headerTampered = { ...victim, updatedAt: victim.updatedAt + 5000 };
+  const corrupted = {
+    ...(await encryptRecord({ id: 'mem-corrupt', updatedAt: NOW - 5 * MINUTE, deleted: false, caption: 'Bit rot' }, key)),
+  };
+  corrupted.ciphertext =
+    corrupted.ciphertext.slice(0, -8) + (corrupted.ciphertext.slice(-8) === 'AAAAAAAA' ? 'BBBBBBBB' : 'AAAAAAAA');
+
+  check(
+    'the tampered row DOES decrypt — it is caught by _headerTampered, not by GCM',
+    (await decryptRecord(headerTampered, key))._headerTampered === true
+  );
+
+  const tamperStore = new FakeVaultStore();
+  const tamperPlan = await tamperStore.planBackupMerge(
+    { memories: [goodOne, headerTampered, goodTwo, corrupted, goodThree] },
+    key
+  );
+  check('the three intact records are still accepted', tamperPlan.totals.added === 3);
+  check(
+    'the tampered and the corrupt rows are both refused',
+    tamperPlan.totals.undecryptable === 2 && tamperPlan.totals.invalid === 0
+  );
+  check(
+    'a bad record does not abort the merge for the good ones',
+    tamperPlan.writes.length === 3 &&
+      eq(
+        tamperPlan.writes.map((entry) => entry.row.id).sort(),
+        ['mem-intact-1', 'mem-intact-2', 'mem-intact-3']
+      )
+  );
+
+  await tamperStore.applyBackupMerge(tamperPlan);
+  check(
+    'the tampered record was never written',
+    (await tamperStore.table('memories').get('mem-tampered')) === undefined &&
+      (await tamperStore.table('memories').get('mem-corrupt')) === undefined
+  );
+  const survivor = await decryptRecord(await tamperStore.table('memories').get('mem-intact-2'), key);
+  check('and the intact ones landed, readable', survivor.caption === 'Intact two');
+
   /* ------------------------------------------------------- verdict */
   console.log('\n' + '='.repeat(64));
   if (failures.length > 0) {
@@ -676,8 +1341,19 @@ async function run() {
     return;
   }
   console.log(`ALL ${passed} ASSERTIONS PASSED`);
-  console.log('Note: the Dexie/IndexedDB half of the v1->v2 migration is browser-only');
-  console.log('and is NOT covered here. Section 7 covers the record reshaping itself.');
+  console.log('');
+  console.log('NOT COVERED HERE (needs a browser, and is not faked above):');
+  console.log('  - Dexie version(2).upgrade() and the blocked-upgrade event/listeners.');
+  console.log('  - The _del tombstone hooks (Dexie CRUD hooks).');
+  console.log('  - The React gates: LockScreen restore/unreadable modes, SyncHubModal');
+  console.log('    ImportPreview, VaultContext guardDestructiveWrite / vaultCheckState /');
+  console.log('    wipeSyncedTables ordering, and the destroy-confirmation prompt.');
+  console.log('  - peerSync transport: admission control, backoff, flood breaker, fatal close.');
+  console.log('  - getSyncSafeTimestamp() localStorage floor, and softDelete() using it.');
+  console.log('  - SecretCapsule retro-seal re-read/verify loop.');
+  console.log('Sections 11-15 run the SHIPPED db/index.js methods against an in-memory');
+  console.log('table store; only the storage is fake, and the precedence rule is proved');
+  console.log("to be peerSync's own by spying on it.");
 }
 
 run().catch((err) => {

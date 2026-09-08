@@ -31,6 +31,10 @@
  * is the ONLY thing UI should use to decide "are we connected". Non-fatal problems
  * are emitted as WARNINGS: they carry the CURRENT state plus a `warning` string, so
  * surfacing a problem never makes a live connection look dead.
+ *
+ * The relative imports below spell out `.js` on purpose: Vite does not need it,
+ * plain Node does, and `node test-crypto.mjs` loads this module to check that the
+ * backup merge really uses _incomingWins rather than a second copy of the rule.
  */
 import Peer from 'peerjs';
 import {
@@ -40,9 +44,9 @@ import {
   bufferToBase64,
   base64ToBuffer,
   decryptRecord,
-} from './crypto';
-import { PEER_ID_REGEX } from '../utils/invite';
-import db, { SYNCED_TABLES, MAX_IMAGE_BLOB_BYTES, MAX_RECORDS_PER_TABLE } from '../db';
+} from './crypto.js';
+import { PEER_ID_REGEX } from '../utils/invite.js';
+import db, { SYNCED_TABLES, MAX_IMAGE_BLOB_BYTES, MAX_RECORDS_PER_TABLE } from '../db/index.js';
 
 /* ------------------------------------------------------------------------- *
  * Protocol constants

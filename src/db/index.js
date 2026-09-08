@@ -21,6 +21,13 @@
  * hooks below so no calling code has to know about it. It is what makes
  * getManifest() able to report tombstones from a key cursor, without loading
  * every encrypted photo into memory.
+ *
+ * WHY THE IMPORT SPECIFIERS BELOW CARRY `.js`
+ * Vite resolves extensionless relative imports; plain Node does not. Spelling
+ * the extension keeps this module (and peerSync, which it is cyclic with)
+ * loadable by `node test-crypto.mjs`, which is how the backup-merge and
+ * identity-restore paths that guard irreplaceable data get tested at all. Do not
+ * strip them for tidiness - that silently removes those paths from the suite.
  */
 import Dexie from 'dexie';
 import {
@@ -31,7 +38,7 @@ import {
   decryptRecord,
   encryptRecord,
   isLegacyRecord,
-} from '../services/crypto';
+} from '../services/crypto.js';
 
 /** Tables that participate in P2P sync and in backups. */
 export const SYNCED_TABLES = Object.freeze([
@@ -719,7 +726,7 @@ async function verifyRowIntegrity(row, key) {
  */
 async function syncSafeNow() {
   try {
-    const mod = await import('../services/peerSync');
+    const mod = await import('../services/peerSync.js');
     const engine = mod && mod.default;
     if (engine && typeof engine.getSyncSafeTimestamp === 'function') {
       return engine.getSyncSafeTimestamp();
@@ -731,7 +738,7 @@ async function syncSafeNow() {
 }
 
 async function loadPrecedenceRule() {
-  const mod = await import('../services/peerSync');
+  const mod = await import('../services/peerSync.js');
   const engine = mod && mod.default;
   if (!engine || typeof engine._incomingWins !== 'function') {
     throw new Error(
