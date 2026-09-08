@@ -83,9 +83,21 @@ const BULK_WRITE_CHUNK = 100;
 
 /**
  * A record stamped further ahead than this is a clock artefact, not history.
- * Matches the ceiling peerSync applies to inbound records.
+ *
+ * This MUST stay equal to peerSync's MAX_CLOCK_SKEW_MS (peerSync.js), and it was
+ * not: this was 48h while the wire gate was 24h, and the comment claimed they
+ * matched. The gap was a real trap rather than a cosmetic one - a row stamped
+ * +30h was accepted by planBackupMerge and then refused by _validateWireRecord
+ * as `future_timestamp`, so a row a user had just restored from their own rescue
+ * backup could not reach their partner until the clock caught up, with nothing
+ * anywhere saying why. The two numbers are duplicated rather than imported
+ * because peerSync.js already imports this module at the top level
+ * (`import db from '../db/index.js'`), which is why this module reaches
+ * peerSync only through a deferred dynamic import (loadPrecedenceRule, below).
+ * A top-level import back the other way would make that cycle eager. So: if you
+ * change one of these two constants, change the other.
  */
-const MAX_BACKUP_CLOCK_SKEW_MS = 48 * 60 * 60 * 1000;
+const MAX_BACKUP_CLOCK_SKEW_MS = 24 * 60 * 60 * 1000;
 
 export class SweetheartDatabase extends Dexie {
   constructor() {
@@ -345,13 +357,25 @@ export class SweetheartDatabase extends Dexie {
    * binary digest map, and a v2 row with no table binding - so neither is
    * permanent. It drains PER DEVICE and only for rows this device holds: until
    * a given device has completed one sweep, its own older rows still verify on
-   * fewer dimensions, and a partner still on an older build keeps sending
-   * unbound rows until that partner sweeps.
+   * fewer dimensions. A partner still on a build that predates this sweep never
+   * runs it at all, so it keeps sending unbound rows indefinitely, and every
+   * update and delete it sends is refused (see _commitStagedRecords). That is
+   * the intended trade and it is reported to the user rather than hidden - see
+   * the `unverifiable` counter on the sync status.
+   *
+   * The v1 carve-out is NOT drained in the same sense. A v1 row is re-sealed so
+   * it reads like every other v2 row, but the seal records that its content came
+   * from a header this vault never authenticated (PROVENANCE_LEGACY), so it
+   * keeps the same create-only standing it had as a v1 row. That is deliberate:
+   * see the laundry note inside the loop.
    *
    * @param {CryptoKey} key
    * @param {{ chunkSize?: number }} [options]
    * @returns {Promise<{ scanned: number, migrated: number, failed: number,
-   *                     tampered: number }>}
+   *                     tampered: number }>} `tampered` counts rows left
+   *   untouched because some unauthenticated part of them disagrees with their
+   *   envelope - including a fully-bound row whose photo bytes were swapped.
+   *   `failed` counts rows that would not decrypt at all.
    */
   async migrateLegacyRecords(key, options = {}) {
     if (!key) throw new Error('migrateLegacyRecords: vault is locked');
@@ -401,31 +425,45 @@ export class SweetheartDatabase extends Dexie {
           // but rows it wrote before that are unbound and are bound here at the
           // next unlock.
           //
-          // Note what this sweep does NOT do, because an earlier version of this
-          // comment got it wrong: it re-seals rows this device HOLDS, while the
-          // integrity gates decrypt the row ARRIVING. Sweeping therefore does
-          // nothing about an envelope harvested before binding existed. That is
-          // handled where it has to be - by refusing an unverified row an
-          // overwrite in planBackupMerge and _commitStagedRecords.
+          // Note what this sweep does NOT do: it re-seals rows this device
+          // HOLDS, while the integrity gates decrypt the row ARRIVING. Sweeping
+          // therefore does nothing about an envelope an attacker harvested
+          // before binding existed. That is handled where it has to be - by
+          // refusing an unverified row an overwrite in planBackupMerge and
+          // _commitStagedRecords.
+          //
+          // WHAT THE SWEEP IS NOT, since it used to be exactly this: it is not
+          // a laundry. Re-sealing takes the row's CURRENT top-level header and
+          // bytes and authenticates them, so re-sealing an attacker-authored v1
+          // row would have turned it into a fully-bound v2 envelope over the
+          // attacker's chosen id, updatedAt and delete flag - a create-only
+          // capability promoted into an overwrite-anything one. Two things stop
+          // that now, and both are load-bearing: a row reporting tampering is
+          // never re-sealed at all (below), and a row that arrived as v1 is
+          // re-sealed carrying PROVENANCE_LEGACY, which decryptRecord surfaces
+          // as `_headerUnverified` and both gates treat exactly like a missing
+          // binding - may create, never overwrite or delete.
           const isLegacy = isLegacyRecord(row);
 
           try {
             const plain = await decryptRecord(row, key, { table: tableName });
+            // NEVER re-seal a row that reports tampering - see the laundry note
+            // above. Leave it exactly as it is, still refused by those gates,
+            // and report it separately from `failed` (which VaultContext renders
+            // as "written with a different passphrase", and this is not that).
+            //
+            // This check runs BEFORE the "already bound, skip" test below on
+            // purpose. It used to run after, which meant a FULLY bound row whose
+            // photo bytes had been swapped underneath it took the skip and was
+            // never counted: stats.tampered stayed 0 for the one row shape that
+            // proves someone went at the database directly.
+            if (plain._headerTampered === true) {
+              stats.tampered++;
+              continue;
+            }
             // A v2 row already bound on both dimensions is done - re-encrypting
             // it would burn CPU on every row at every unlock for nothing.
             if (!isLegacy && plain._binaryUnverified !== true && plain._tableUnverified !== true) {
-              continue;
-            }
-            // NEVER re-seal a row that reports tampering. Re-sealing rebuilds the
-            // envelope around the row's CURRENT top-level header and bytes, which
-            // for a tampered row would authenticate the tampering - the sweep
-            // would launder it into a perfectly valid v2 record and every gate
-            // downstream would then accept it. Leave it exactly as it is, still
-            // refused by those gates, and report it separately from `failed`
-            // (which VaultContext renders as "written with a different
-            // passphrase", and this is not that).
-            if (plain._headerTampered === true) {
-              stats.tampered++;
               continue;
             }
             delete plain._schemaVersion;
@@ -449,10 +487,18 @@ export class SweetheartDatabase extends Dexie {
             // against the partner's irreplaceable data. The marker preserves the
             // weakness instead of laundering it away, and clears itself when the
             // owning device genuinely edits the record.
+            //
+            // `_headerUnverified` is carried forward as well as `isLegacy`. An
+            // already-re-sealed legacy row takes the skip above today, so this
+            // second condition is unreachable on the current build - but if a
+            // future binding is added, that row starts needing a re-seal again,
+            // and dropping the marker at that point would launder it after all.
+            const inheritsLegacyProvenance = isLegacy || plain._headerUnverified === true;
+            delete plain._headerUnverified;
             rewritten.push(
               await encryptRecord(plain, key, {
                 table: tableName,
-                ...(isLegacy ? { provenance: PROVENANCE_LEGACY } : {}),
+                ...(inheritsLegacyProvenance ? { provenance: PROVENANCE_LEGACY } : {}),
               })
             );
           } catch {
@@ -567,17 +613,47 @@ export class SweetheartDatabase extends Dexie {
    *                  field - see verifyRowIntegrity for why that is weaker than
    *                  it looks, and step 2b below for what covers the gap.
    *  2b. AUTHORITY   overwriting or tombstoning a row that ALREADY EXISTS
-   *                  additionally requires recordHasAuthenticatedHeader(), i.e.
-   *                  a v2 envelope. A v1 row may create and nothing else.
+   *                  additionally requires that verifyRowIntegrity() returned
+   *                  'ok' rather than 'unverified', AND
+   *                  recordHasAuthenticatedHeader(), i.e. a v2 envelope. A v1
+   *                  row, or a v2 row whose binding is merely absent, may create
+   *                  and nothing else.
    *   3. PRECEDENCE  the winner is chosen by peerSync's OWN _incomingWins rule
    *                  (loaded below, deliberately not reimplemented), so a merge
    *                  and a sync can never disagree about which copy is newer.
    *                  Restoring an older backup of the same vault therefore adds
    *                  what is missing and leaves newer local edits alone.
    *
+   * WHAT THE COUNTERS MEAN, because step 2b refuses two very different files
+   * with the same verdict and the preview has to be able to tell them apart:
+   *
+   *   `unauthenticated`  every row refused by step 2b. The umbrella total. It is
+   *                      the number the preview has always shown.
+   *   `unverifiable`     the SUBSET of those refused because the row's binding is
+   *                      ABSENT rather than wrong - a v1 row, or an envelope
+   *                      sealed before the photo digest / table binding existed,
+   *                      or a v1 row the sweep re-sealed under PROVENANCE_LEGACY.
+   *                      This is the ordinary, innocent case: a rescue backup
+   *                      taken before the binding shipped. Such a file can still
+   *                      ADD everything this device is missing; it simply cannot
+   *                      repair a row the device already holds.
+   *   `unverifiableNewer` the SUBSET of `unverifiable` whose file copy would
+   *                      actually have WON on precedence - i.e. the user's own
+   *                      backup is genuinely newer than what is on the device and
+   *                      is still being refused. This is the count worth putting
+   *                      in front of a user, because it is the one that means
+   *                      "your restore did not do what you expected".
+   *
+   * `unverifiable` and `unverifiableNewer` are subsets of `unauthenticated`, not
+   * additions to it; summing all three double-counts.
+   *
    * @param {Record<string, Object[]>} tables - `tables` from a decrypted container.
    * @param {CryptoKey} key - The key the RESULTING vault will be read with.
-   * @returns {Promise<Object>} A plan; hand it to applyBackupMerge() to write.
+   * @returns {Promise<{ writes: Array<{table: string, row: Object}>,
+   *   perTable: Record<string, Object>, totals: Object, skippedTables: string[],
+   *   incomingWins: Function, key: CryptoKey }>} A plan; hand it to
+   *   applyBackupMerge() to write. `key` is carried so applyBackupMerge can
+   *   re-run the integrity check itself instead of trusting the plan.
    */
   async planBackupMerge(tables, key) {
     if (!tables || typeof tables !== 'object' || Array.isArray(tables)) {
@@ -603,6 +679,8 @@ export class SweetheartDatabase extends Dexie {
       undecryptable: 0,
       tampered: 0,
       unauthenticated: 0,
+      unverifiable: 0,
+      unverifiableNewer: 0,
     };
 
     for (const [tableName, records] of Object.entries(tables)) {
@@ -626,6 +704,8 @@ export class SweetheartDatabase extends Dexie {
         undecryptable: 0,
         tampered: 0,
         unauthenticated: 0,
+        unverifiable: 0,
+        unverifiableNewer: 0,
       };
       const table = this.table(tableName);
 
@@ -663,11 +743,17 @@ export class SweetheartDatabase extends Dexie {
           if (!existing) {
             // A tombstone for an id we have never seen deletes nothing, and it is
             // not harmless: it is invisible in every list (they all filter on
-            // `deleted`), so the user cannot see or remove it, and a seeded table
-            // checks only `count() > 0` before seeding - so one forged tombstone
-            // at bkt-default-1 permanently suppresses all six starter items on
-            // that device. sanitizeImportedRecord also allows a stamp up to 48h
-            // ahead, letting it outrank genuine later writes at that id. Nothing
+            // `deleted`), so the user can neither see nor remove it, and it sits
+            // on a primary key that is identical in every vault by construction.
+            // The seed guard is no longer the `count() > 0` this comment used to
+            // describe - seedDefaultItems() now counts only LIVE rows
+            // (`where('_del').equals(0)`), so one forged tombstone no longer
+            // suppresses all six starter items. It still costs one: the seed
+            // skips any of the six fixed ids that is already present rather than
+            // overwriting it, because a local seed is not allowed to clobber a
+            // row it cannot prove it authored either. sanitizeImportedRecord also
+            // allows a stamp up to MAX_BACKUP_CLOCK_SKEW_MS (24h) ahead, letting
+            // such a row outrank genuine later writes at that id. Nothing
             // legitimate needs to insert a delete, so refuse it.
             if (row.deleted === true) {
               stats.invalid++;
@@ -694,8 +780,18 @@ export class SweetheartDatabase extends Dexie {
           // overwrite or delete. Otherwise a single harvested pre-binding
           // envelope erases a photo (swap the bytes, or just omit them) or
           // deletes a letter from another table, on a fully-swept device.
+          //
+          // Refusing is correct. Refusing INVISIBLY is not: the only counter
+          // this used to land in reads "not sealed to the record it targets",
+          // which tells a user restoring their own pre-binding rescue backup
+          // nothing about what happened or what to do. So the innocent case is
+          // counted apart - see the counter contract on this method - and the
+          // sub-case that actually cost the user something (their file copy was
+          // NEWER and was still refused) is counted apart again.
           if (!verified) {
             stats.unauthenticated++;
+            stats.unverifiable++;
+            if (incomingWins(existing, row)) stats.unverifiableNewer++;
             continue;
           }
 
@@ -724,7 +820,10 @@ export class SweetheartDatabase extends Dexie {
       for (const field of Object.keys(totals)) totals[field] += stats[field];
     }
 
-    return { writes, perTable, totals, skippedTables, incomingWins };
+    // `key` travels with the plan so applyBackupMerge can re-derive the
+    // integrity verdict itself rather than trusting a caller-supplied object.
+    // A CryptoKey is not extractable and never leaves this process.
+    return { writes, perTable, totals, skippedTables, incomingWins, key };
   }
 
   /**
@@ -736,8 +835,34 @@ export class SweetheartDatabase extends Dexie {
    * regress that. Comparison is pure, so it is safe inside the transaction;
    * decryption already happened during planning.
    *
+   * THE INTEGRITY RE-CHECK IS REAL, and it used to only look real. The comment
+   * here claimed "a plan is a caller-supplied object, so this must not rely on
+   * planBackupMerge having filtered" while checking recordHasAuthenticatedHeader
+   * and nothing else - which passes any well-formed v2 envelope, including one
+   * sealed for a different table or around different photo bytes. A hand-built
+   * plan could therefore write a cross-table envelope over a live letter. The
+   * two missing dimensions live INSIDE the ciphertext, so proving them needs
+   * Web Crypto, and awaiting Web Crypto inside a Dexie transaction lets the
+   * transaction commit out from under you. So the verdicts are recomputed here,
+   * BEFORE the transaction opens, using the key the plan carries; the
+   * transaction body then does nothing but pure comparisons and writes.
+   *
+   * A plan with no `key` (only a hand-built one has none) is not trusted at all:
+   * every row in it is treated as unverifiable, so it may create and may never
+   * overwrite or delete. Fail closed, and the honest restore path is unaffected
+   * because planBackupMerge always supplies the key.
+   *
+   * The cost, stated rather than hidden: this opens every ACCEPTED row a second
+   * time (planning opened them once), plus one SHA-256 pass per attached photo.
+   * It is paid once, on an explicit confirmation the user has just read, on a
+   * path that is already about to rewrite their library.
+   *
    * @param {Object} plan
-   * @returns {Promise<{ written: Record<string, number>, supersededSincePreview: number }>}
+   * @returns {Promise<{ written: Record<string, number>,
+   *   supersededSincePreview: number, refusedSincePreview: number }>}
+   *   `supersededSincePreview` is every planned write that did not happen;
+   *   `refusedSincePreview` is the subset refused because the row could not be
+   *   proved to belong here (a subset, not an addition).
    */
   async applyBackupMerge(plan) {
     if (!plan || !Array.isArray(plan.writes) || typeof plan.incomingWins !== 'function') {
@@ -745,7 +870,22 @@ export class SweetheartDatabase extends Dexie {
     }
     const written = {};
     let supersededSincePreview = 0;
-    if (plan.writes.length === 0) return { written, supersededSincePreview };
+    let refusedSincePreview = 0;
+    if (plan.writes.length === 0) {
+      return { written, supersededSincePreview, refusedSincePreview };
+    }
+
+    // Recompute the verdict per write entry, outside the transaction. Keyed by
+    // the entry object itself so two writes at the same id in different tables
+    // cannot be confused for one another.
+    const verifiedEntries = new Set();
+    if (plan.key) {
+      for (const entry of plan.writes) {
+        if (!entry || typeof entry !== 'object' || !entry.row) continue;
+        const verdict = await verifyRowIntegrity(entry.row, plan.key, entry.table);
+        if (verdict === 'ok') verifiedEntries.add(entry);
+      }
+    }
 
     const tableNames = [...new Set(plan.writes.map((entry) => entry.table))];
     const tables = tableNames.map((name) => this.table(name));
@@ -753,34 +893,37 @@ export class SweetheartDatabase extends Dexie {
     await this.transaction('rw', tables, async () => {
       for (const name of tableNames) {
         const table = this.table(name);
-        const rows = plan.writes.filter((entry) => entry.table === name).map((entry) => entry.row);
+        const entries = plan.writes.filter((entry) => entry.table === name);
 
-        for (let offset = 0; offset < rows.length; offset += BULK_WRITE_CHUNK) {
-          const chunk = rows.slice(offset, offset + BULK_WRITE_CHUNK);
-          const existingRows = await table.bulkGet(chunk.map((row) => row.id));
-          const stillWins = chunk.filter((row, i) => {
-            const existing = existingRows[i];
-            if (!existing) return true;
-            // Re-assert the plan-time invariant here too. A row that would
-            // overwrite or delete an existing one must carry a bound header, and
-            // a sync landing between preview and confirm can turn an "added"
-            // into an overwrite. Belt and braces: a plan is a caller-supplied
-            // object, so this must not rely on planBackupMerge having filtered.
-            if (!recordHasAuthenticatedHeader(row)) {
+        for (let offset = 0; offset < entries.length; offset += BULK_WRITE_CHUNK) {
+          const chunk = entries.slice(offset, offset + BULK_WRITE_CHUNK);
+          const existingRows = await table.bulkGet(chunk.map((entry) => entry.row.id));
+          const stillWins = chunk
+            .filter((entry, i) => {
+              const existing = existingRows[i];
+              const row = entry.row;
+              if (!existing) return true;
+              // Re-assert the plan-time invariant. A row that would overwrite or
+              // delete an existing one must be provably ours on every dimension,
+              // and a sync landing between preview and confirm can turn an
+              // "added" into an overwrite.
+              if (!verifiedEntries.has(entry) || !recordHasAuthenticatedHeader(row)) {
+                supersededSincePreview++;
+                refusedSincePreview++;
+                return false;
+              }
+              if (plan.incomingWins(existing, row)) return true;
               supersededSincePreview++;
               return false;
-            }
-            if (plan.incomingWins(existing, row)) return true;
-            supersededSincePreview++;
-            return false;
-          });
+            })
+            .map((entry) => entry.row);
           if (stillWins.length > 0) await table.bulkPut(stillWins);
           written[name] = (written[name] || 0) + stillWins.length;
         }
       }
     });
 
-    return { written, supersededSincePreview };
+    return { written, supersededSincePreview, refusedSincePreview };
   }
 
   /**
@@ -895,24 +1038,41 @@ export function compareVaultIdentity(backupIdentity, localRead) {
  *    demands recordHasAuthenticatedHeader() before letting anything overwrite
  *    or tombstone an existing row.
  *
- * The residual window, stated rather than papered over: the two `unverified`
- * carve-outs above are not permanent, but they are not instant either.
- * db.migrateLegacyRecords() re-seals such rows at unlock - both carve-outs, one
- * sweep - so a device drains its own. Until that sweep has completed on a given
- * device, that device's older photos are still swappable and its older rows
- * still movable between tables; and a partner still on an older build keeps
- * sending unbound rows until that partner has swept too.
+ * A fourth case joins them: a row this device's own sweep re-sealed out of a v1
+ * row carries PROVENANCE_LEGACY, which surfaces as `_headerUnverified`. The
+ * envelope is genuine; its CONTENT came from a header nothing ever
+ * authenticated. Same verdict, same standing: may create, never overwrite.
+ *
+ * The residual window, stated rather than papered over: the digest and table
+ * carve-outs are not permanent on a device that runs the sweep, but they are not
+ * instant either. db.migrateLegacyRecords() re-seals such rows at unlock - both
+ * carve-outs, one sweep - so a device drains its own. Until that sweep has
+ * completed on a given device, that device's older photos are still swappable
+ * and its older rows still movable between tables.
+ *
+ * A PARTNER ON A BUILD OLDER THAN THAT SWEEP NEVER DRAINS AT ALL, because the
+ * sweep is what ships in this build. Their rows keep arriving unverified
+ * forever, which means every update and every delete they send is refused. That
+ * is the deliberate trade; what is not acceptable is doing it silently, so both
+ * gates count those refusals apart from ordinary staleness and the caller says
+ * so - see `unverifiable` on planBackupMerge's totals and on the sync status.
  *
  * @param {Object} row
  * @param {CryptoKey} key
  * @param {string} [tableName] - The table the row is being presented as. Omit it
  *   and the table dimension is simply not checked.
- * @returns {Promise<'ok'|'undecryptable'|'tampered'>} A REASON, not a boolean.
- *   The two failures are separated because the import preview reports them
- *   separately: 'undecryptable' means "this file belongs to another vault, or
- *   the bytes rotted"; 'tampered' means "this row opened under YOUR key and was
- *   then edited". Reporting the second as the first told the user "wrong key"
- *   about the one row that proves someone went at their file deliberately.
+ * @returns {Promise<'ok'|'unverified'|'undecryptable'|'tampered'>} A REASON, not
+ *   a boolean, and FOUR of them - planBackupMerge branches on 'unverified'
+ *   specifically, so leaving it out of this list was not a documentation nit.
+ *   'ok': proved on every dimension this build checks; may overwrite or delete.
+ *   'unverified': opened cleanly, but at least one binding is ABSENT (v1 row,
+ *   pre-digest photo, pre-table-binding envelope, or a sweep-re-sealed v1 row);
+ *   may create, never overwrite or delete.
+ *   'undecryptable': "this file belongs to another vault, or the bytes rotted".
+ *   'tampered': "this row opened under YOUR key and was then edited".
+ *   The last two are separated because the import preview reports them
+ *   separately - reporting 'tampered' as 'undecryptable' told the user "wrong
+ *   key" about the one row that proves someone went at their file deliberately.
  */
 async function verifyRowIntegrity(row, key, tableName) {
   // A successful decrypt is not on its own proof the key was used: a row with no

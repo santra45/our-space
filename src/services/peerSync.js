@@ -305,6 +305,27 @@ function wireFieldsFor(table) {
   return new Set([...WIRE_FIELDS_COMMON, ...(WIRE_FIELDS_BY_TABLE[table] || [])]);
 }
 
+/**
+ * The user-facing sentence for a refusal that is NOT staleness.
+ *
+ * Kept here, in one place, because the same fact reaches the user from two
+ * directions (we refused their rows; they refused ours) and the two messages
+ * must not drift into contradicting each other. It names the actual remedy: the
+ * refusal is caused by the SENDER's rows predating the integrity binding, and
+ * only the sender's device can fix that, by running a build that has the re-seal
+ * sweep and unlocking once.
+ *
+ * @param {number} count
+ * @returns {string}
+ */
+function unverifiableWarningText(count) {
+  const plural = count === 1 ? '' : 's';
+  return (
+    `${count} change${plural} from your partner could not be verified, so ${count === 1 ? 'it was' : 'they were'} not applied. ` +
+    'Make sure both phones are on the same version of Our Space, then unlock and sync again.'
+  );
+}
+
 export class PeerSyncManager {
   constructor() {
     this.peer = null;
@@ -1492,6 +1513,12 @@ export class PeerSyncManager {
       startedAt: Date.now(),
       applied: 0,
       rejected: 0,
+      // Rows the partner sent that we refused an overwrite or a delete because
+      // their binding could not be verified. Tracked apart from `rejected`
+      // (unreadable) and from staleness (our copy is genuinely newer) because it
+      // is the only one of the three the user can act on - see
+      // _commitStagedRecords.
+      unverifiable: 0,
       expectedSeq: 0,
       timer: null,
       ...extra,
@@ -1681,9 +1708,18 @@ export class PeerSyncManager {
     }
   }
 
-  async _sendSyncComplete(sessionId, applied, rejected) {
+  /**
+   * @param {string} sessionId
+   * @param {number} applied
+   * @param {number} rejected
+   * @param {number} [unverifiable] - How many of the partner's rows we refused
+   *   an overwrite or delete because we could not verify them. A build that
+   *   predates this field ignores it, which is exactly the build most likely to
+   *   be on the receiving end of it.
+   */
+  async _sendSyncComplete(sessionId, applied, rejected, unverifiable = 0) {
     try {
-      await this._send({ type: 'SYNC_COMPLETE', sessionId, applied, rejected });
+      await this._send({ type: 'SYNC_COMPLETE', sessionId, applied, rejected, unverifiable });
     } catch {
       // The provider's session timer will clean up.
     }
@@ -1884,18 +1920,28 @@ export class PeerSyncManager {
     const result = await this._applyRemoteRecords(decrypted.records);
     session.applied += result.applied;
     session.rejected += result.rejected;
+    session.unverifiable += result.unverifiable;
 
     if (decrypted.final === true) {
       const applied = session.applied;
       const rejected = session.rejected;
+      const unverifiable = session.unverifiable;
       this._closeSession('in', sessionId);
 
-      await this._sendSyncComplete(sessionId, applied, rejected);
+      await this._sendSyncComplete(sessionId, applied, rejected, unverifiable);
 
+      // "All memories up to date!" is a claim, and with `unverifiable > 0` it is
+      // a false one: the partner made changes, we received them, and we threw
+      // them away. Emit no message at all in that case and let the warning below
+      // carry the news, rather than printing a reassurance and a contradiction
+      // in two banners at once. (SyncContext only records `message` when it is
+      // truthy, so a null here leaves the previous notice to expire on its own.)
       const message =
         applied > 0
           ? `Synced ${applied} update${applied === 1 ? '' : 's'} from your partner!`
-          : 'All memories up to date!';
+          : unverifiable > 0
+            ? null
+            : 'All memories up to date!';
 
       this.emit('status', {
         state: this.isSyncing ? 'syncing' : 'synced',
@@ -1903,6 +1949,7 @@ export class PeerSyncManager {
         message,
         applied,
         rejected,
+        unverifiable,
         partnerId: this.activeConnection?.peer || null,
         connectionType: this.connectionType,
         isDirect: this.connectionType === 'direct',
@@ -1917,21 +1964,51 @@ export class PeerSyncManager {
           `${rejected} item(s) from your partner could not be read and were skipped.`
         );
       }
+      if (unverifiable > 0) {
+        this._emitWarning('records_unverifiable', unverifiableWarningText(unverifiable), {
+          unverifiable,
+        });
+      }
     }
   }
 
-  /** Provider side: the consumer is done, so this direction is finished. */
+  /**
+   * Provider side: the consumer is done, so this direction is finished.
+   *
+   * "Your partner is up to date!" was printed here whenever `applied` came back
+   * 0, which included the case where the partner had received our changes and
+   * refused all of them. From THIS side that is the more likely direction of the
+   * problem - we are the ones whose rows cannot be verified - so the count is
+   * read off the wire and reported. A partner on an older build sends no
+   * `unverifiable` field at all; it reads as 0 and this behaves exactly as it
+   * did, which is the best that can be done from this end.
+   */
   _onSyncComplete(decrypted) {
     const sessionId = decrypted.sessionId;
     if (typeof sessionId !== 'string' || !this._outSessions.has(sessionId)) return;
 
     const applied = Number.isFinite(decrypted.applied) ? decrypted.applied : 0;
+    const unverifiable =
+      Number.isFinite(decrypted.unverifiable) && decrypted.unverifiable > 0
+        ? Math.min(decrypted.unverifiable, MAX_REQUESTS_PER_SESSION)
+        : 0;
+
     const message =
       applied > 0
         ? `Sent ${applied} update${applied === 1 ? '' : 's'} to your partner!`
-        : 'Your partner is up to date!';
+        : unverifiable > 0
+          ? null
+          : 'Your partner is up to date!';
 
-    this._finishSession('out', sessionId, message, { sent: applied });
+    this._finishSession('out', sessionId, message, { sent: applied, unverifiable });
+
+    if (unverifiable > 0) {
+      this._emitWarning(
+        'records_unverifiable_remote',
+        `Your partner's phone could not verify ${unverifiable} of your change${unverifiable === 1 ? '' : 's'} and did not apply ${unverifiable === 1 ? 'it' : 'them'}. Make sure both phones are on the same version of Our Space, then unlock this vault again and sync.`,
+        { unverifiable }
+      );
+    }
   }
 
   _onSyncError(decrypted) {
@@ -2088,19 +2165,37 @@ export class PeerSyncManager {
    *    "unknowable". That is why _commitStagedRecords additionally refuses any
    *    v1 row aimed at an id that already exists: it may create, never destroy.
    *
-   * Two cases stay unverified on purpose, and they are the SAME case twice: an
-   * envelope sealed before the digest map existed, and one sealed before the
-   * table binding existed, are accepted as-is rather than rejected. Refusing
-   * them would break every photo already in the vault and cut off every partner
-   * still on an older build. Each drains: db.migrateLegacyRecords() re-seals
-   * such rows at unlock, so a device fixes its own, and rows keep arriving
-   * unverified from a partner only until that partner has swept. See
-   * BINARY_DIGEST_FIELD and TABLE_BINDING_FIELD in crypto.js.
+   * Three cases stay unverified on purpose, and they are the SAME case three
+   * times: an envelope sealed before the digest map existed, one sealed before
+   * the table binding existed, and one the sender's own sweep re-sealed out of a
+   * v1 row (PROVENANCE_LEGACY, surfaced as `_headerUnverified`). All are
+   * accepted as-is rather than rejected outright, because refusing them would
+   * break every photo already in the vault and cut a partner off completely
+   * rather than partially. See BINARY_DIGEST_FIELD, TABLE_BINDING_FIELD and
+   * PROVENANCE_FIELD in crypto.js.
+   *
+   * BUT `unverified` IS NOT `ok`, AND THE DIFFERENCE IS NOT TEMPORARY FOR
+   * EVERYONE. db.migrateLegacyRecords() re-seals the first two kinds at unlock,
+   * so a device on THIS build drains its own rows. A partner on an older build
+   * never runs that sweep - it ships in this build - so their rows keep arriving
+   * unverified indefinitely, and _commitStagedRecords refuses every update and
+   * every delete they send for as long as that lasts. Their creates still land.
+   * The third kind never drains at all, by design: a v1 row's header was never
+   * authenticated and re-sealing must not pretend otherwise.
+   *
+   * Callers must therefore report an `unverified` refusal as its own outcome
+   * (`unverifiable`), not as staleness - the partner is NOT up to date, and the
+   * only fix is on their device.
    *
    * @param {Object} row
    * @param {string} [table] - The table the peer filed this row under. Omit it
    *   and the table dimension is simply not checked.
-   * @returns {Promise<{ ok: boolean, code?: string }>}
+   * @returns {Promise<{ ok: boolean, code?: string, unverified?: boolean }>}
+   *   `{ok:false, code}` refuses the row outright. `{ok:true, unverified:false}`
+   *   is proved on every dimension. `{ok:true, unverified:true}` opened cleanly
+   *   but carries at least one ABSENT binding: it may create, never overwrite or
+   *   delete. `unverified` is present on every ok verdict and is the field
+   *   _stageIncomingRecords carries onto the staged entry.
    */
   async _verifyRecordIntegrity(row, table) {
     if (!this.cryptoKey) return { ok: false, code: 'locked' };
@@ -2224,9 +2319,23 @@ export class PeerSyncManager {
 
   _fingerprint(row) {
     const parts = [String(row.v || 1), row.ciphertext || '', row.iv || ''];
-    for (const field of Object.keys(row).sort()) {
-      if (field.endsWith('Cipher') && typeof row[field] === 'string') {
-        parts.push(field, row[field]);
+    // The `<base>Cipher` fields are folded in ONLY for a row that has no
+    // authenticated envelope, i.e. a v1 row, where they are the only content
+    // there is and dropping them would make every v1 row at a given id
+    // fingerprint identically.
+    //
+    // On a v2 row they are exactly the bug class removed below for the blob's
+    // byteLength: leftover, unauthenticated, attacker-choosable. A v2 envelope
+    // does not seal them, so appending `captionCipher: "zzzz"` to an otherwise
+    // byte-identical replay used to flip the tie-break - _incomingWins(local,
+    // {...local, captionCipher: 'zzzz'}) returned true. Nothing is lost by
+    // dropping them here: on a v2 row every field that matters is inside
+    // `ciphertext`, which is already the second part of this string.
+    if (!recordHasAuthenticatedHeader(row)) {
+      for (const field of Object.keys(row).sort()) {
+        if (field.endsWith('Cipher') && typeof row[field] === 'string') {
+          parts.push(field, row[field]);
+        }
       }
     }
     // DELIBERATELY NOT the blob's byteLength. It used to be appended here, and
@@ -2248,15 +2357,30 @@ export class PeerSyncManager {
    * Writes staged records, skipping anything the merge rule says is stale.
    * The transaction is scoped to the tables actually being touched - `vaultMeta`
    * is never among them, so a photo import cannot block a salt read.
+   *
+   * TWO KINDS OF "NOT WRITTEN", AND THEY MUST NOT SHARE A COUNTER.
+   * `stale` means the merge rule looked at both copies and ours is newer. That
+   * is a non-event: nothing is missing and there is nothing for anyone to do.
+   * `unverifiable` means the partner's copy might well have been the newer one
+   * and we refused it anyway, because it could not be proved to belong to the id
+   * it targets. That IS an event - the partner's edit is gone and the only fix
+   * is on their device - and it used to be counted as `stale`, which the caller
+   * then reported as "up to date". A partner on a build older than the re-seal
+   * sweep has EVERY update and EVERY delete land in this bucket, forever,
+   * because the sweep that would fix their rows only exists in this build.
+   *
+   * @param {Array<{table: string, row: Object, unverifiedBinding: boolean}>} staged
+   * @returns {Promise<{ applied: number, stale: number, unverifiable: number }>}
    */
   async _commitStagedRecords(staged) {
-    if (staged.length === 0) return { applied: 0, stale: 0 };
+    if (staged.length === 0) return { applied: 0, stale: 0, unverifiable: 0 };
 
     const tableNames = [...new Set(staged.map((s) => s.table))];
     const tables = tableNames.map((name) => db.table(name));
 
     let applied = 0;
     let stale = 0;
+    let unverifiable = 0;
 
     await db.transaction('rw', tables, async () => {
       for (const { table, row, unverifiedBinding } of staged) {
@@ -2266,10 +2390,9 @@ export class PeerSyncManager {
         // rewritten id / updatedAt / deleted header (see
         // recordHasAuthenticatedHeader), which would otherwise let a single
         // ciphertext produced under the vault key be aimed at any id as a
-        // forged tombstone. A partner mid-migration still syncs: rows we do not
-        // have yet are unaffected, and their own sweep re-seals the rest as v2.
+        // forged tombstone.
         if (existing && !recordHasAuthenticatedHeader(row)) {
-          stale++;
+          unverifiable++;
           continue;
         }
         // Same rule for a binding that is merely absent: an envelope predating
@@ -2277,9 +2400,11 @@ export class PeerSyncManager {
         // which table it belongs to, so it may create but never overwrite or
         // delete. Without this a harvested pre-binding envelope erases a photo
         // (swap the bytes, or just omit them) with no UI in the way at all,
-        // because the sync path has no confirmation step.
+        // because the sync path has no confirmation step. The same verdict
+        // covers a row the partner's own sweep re-sealed out of v1
+        // (PROVENANCE_LEGACY -> `_headerUnverified`).
         if (existing && unverifiedBinding === true) {
-          stale++;
+          unverifiable++;
           continue;
         }
         if (!this._incomingWins(existing, row)) {
@@ -2297,15 +2422,17 @@ export class PeerSyncManager {
       if (row.updatedAt > this._observedRemoteMax) this._observedRemoteMax = row.updatedAt;
     }
 
-    return { applied, stale };
+    return { applied, stale, unverifiable };
   }
 
   async _applyRemoteRecords(records) {
-    if (!this.isAuthorized || !Array.isArray(records)) return { applied: 0, rejected: 0, stale: 0 };
+    if (!this.isAuthorized || !Array.isArray(records)) {
+      return { applied: 0, rejected: 0, stale: 0, unverifiable: 0 };
+    }
 
     const { staged, rejected } = await this._stageIncomingRecords(records);
-    const { applied, stale } = await this._commitStagedRecords(staged);
-    return { applied, rejected, stale };
+    const { applied, stale, unverifiable } = await this._commitStagedRecords(staged);
+    return { applied, rejected, stale, unverifiable };
   }
 
   /* ----------------------------------------------------------------------- *
@@ -2370,10 +2497,17 @@ export class PeerSyncManager {
     }
 
     // A stale broadcast is silently ignored: our copy is simply newer, and that is
-    // a race the user can neither see nor act on.
-    const { applied } = await this._commitStagedRecords(staged);
+    // a race the user can neither see nor act on. An UNVERIFIABLE one is the
+    // opposite - the partner's live edit was discarded and only their device can
+    // fix it - so it is surfaced, on the same wording the batched path uses.
+    const { applied, unverifiable } = await this._commitStagedRecords(staged);
     if (applied > 0) {
       this.emit('data-updated', { single: true, count: applied, table: record.table });
+    }
+    if (unverifiable > 0) {
+      this._emitWarning('records_unverifiable', unverifiableWarningText(unverifiable), {
+        unverifiable,
+      });
     }
   }
 

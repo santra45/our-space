@@ -24,6 +24,11 @@
  *                           both the import and the sync gate
  * 11e. Table binding       an envelope sealed for one table cannot be replayed
  *                           into another, and the pre-binding carve-out drains
+ * 11septies. Honest refusals  a row refused for an unverifiable binding is
+ *                           counted and reported as that, never as staleness
+ * 11octies.  Restore preview  the same split on the import path, and
+ *                           applyBackupMerge's re-check re-derives the verdict
+ * 11nonies.  Sweep counters   a swapped photo under a bound envelope is counted
  *  12. Merge precedence      an older backup does not revert newer local work
  *  13. Rescue restore        adopt an identity, unlock with the ORIGINAL phrase
  *  14. Import sanitising     a restored clock artefact cannot win forever
@@ -58,9 +63,13 @@
  *    DESTROY_CONFIRMATION_PHRASE prompt. Section 13 reproduces the crypto
  *    sequence VaultContext.restoreVaultFromBackup performs, not the UI that
  *    decides to call it.
- *  - peerSync's transport half: admission control, per-peer backoff, the flood
+ *  - peerSync's TRANSPORT half: admission control, per-peer backoff, the flood
  *    breaker and _emitFatal closing the connection. Those need PeerJS/WebRTC.
- *    Only the pure merge rule (_incomingWins/_fingerprint) is exercised here.
+ *    Its APPLY half is covered: section 11septies runs the shipped
+ *    _stageIncomingRecords / _verifyRecordIntegrity / _commitStagedRecords /
+ *    _applySingleLiveRecord on the shipped singleton, with the `db` singleton's
+ *    `table` and `transaction` pointed at a FakeVaultStore for the duration.
+ *    The pure merge rule (_incomingWins/_fingerprint) is exercised directly.
  *  - getSyncSafeTimestamp()'s localStorage high-water floor, and therefore
  *    softDelete()'s use of it.
  *  - SecretCapsule's retro-seal re-read/verify loop, which is React + Dexie.
@@ -113,7 +122,7 @@ import {
   recordHasAuthenticatedHeader,
 } from './src/services/crypto.js';
 import { buildInviteUrl, parseInvite } from './src/utils/invite.js';
-import {
+import db, {
   SweetheartDatabase,
   EXPORTED_TABLES,
   readBackupVaultIdentity,
@@ -1171,10 +1180,10 @@ async function run() {
     survivedSmuggle.deleted !== true && survivedSmuggle.imageBlob?.length === 4
   );
 
-  // The wire path enforces the same invariant in _commitStagedRecords, which
-  // talks to real Dexie and so cannot run here (no IndexedDB in plain node).
-  // What IS testable is the predicate that gate depends on, asserted above.
-  // The guard itself is peerSync.js: `if (existing && !recordHasAuthenticatedHeader(row))`.
+  // The wire path enforces the same invariant in _commitStagedRecords, on the
+  // same predicate: `if (existing && !recordHasAuthenticatedHeader(row))`.
+  // That method is executed against a fake store in section 11septies; here we
+  // pin the predicate it turns on.
   check(
     'the wire gate keys off the same predicate this suite pins down',
     recordHasAuthenticatedHeader(forgedTombstone) === false &&
@@ -1790,6 +1799,311 @@ async function run() {
   const sxHonestAfter = await sxHonestStore.table('letters').get('let-mine-from-v1');
   check('and is still readable afterwards', sxHonestAfter.v === 2);
 
+  section('11septies. A refusal we cannot verify is NOT staleness and must not read as "up to date"');
+
+  // HOW THE WIRE PATH RUNS IN PLAIN NODE, stated so nobody mistakes it for a
+  // mock: _stageIncomingRecords, _verifyRecordIntegrity and _commitStagedRecords
+  // below are the SHIPPED methods on the shipped singleton. Only their storage
+  // moves - _commitStagedRecords reaches the `db` singleton, so that singleton's
+  // `table` and `transaction` are pointed at a FakeVaultStore for the duration
+  // and put back afterwards. The gate, the counters and the merge rule are real.
+  const withFakeDb = async (store, fn) => {
+    const hadTable = Object.prototype.hasOwnProperty.call(db, 'table');
+    const hadTransaction = Object.prototype.hasOwnProperty.call(db, 'transaction');
+    const savedTable = db.table;
+    const savedTransaction = db.transaction;
+    db.table = (name) => store.table(name);
+    db.transaction = (mode, tables, body) => body();
+    try {
+      return await fn();
+    } finally {
+      if (hadTable) db.table = savedTable;
+      else delete db.table;
+      if (hadTransaction) db.transaction = savedTransaction;
+      else delete db.transaction;
+    }
+  };
+
+  const spSavedKey = peerSync.cryptoKey;
+  const spSavedAuth = peerSync.isAuthorized;
+  peerSync.cryptoKey = key;
+  peerSync.isAuthorized = true;
+
+  // The victim device is fully swept: its own letter is bound on every
+  // dimension. The partner is on the PREVIOUS build, so everything it sends is
+  // sealed without a table binding - `unverified`, not tampered.
+  const spLive = await encryptRecord(
+    { id: 'let-sp', updatedAt: NOW, deleted: false, content: 'Local copy' },
+    key,
+    { table: 'letters' }
+  );
+  const spOldBuildEdit = await encryptRecord(
+    { id: 'let-sp', updatedAt: NOW + 60 * MINUTE, deleted: false, content: 'Their newer edit' },
+    key
+  );
+  const spOldBuildDelete = await encryptRecord(
+    { id: 'let-sp', updatedAt: NOW + 90 * MINUTE, deleted: true },
+    key
+  );
+  const spOldBuildCreate = await encryptRecord(
+    { id: 'let-sp-new', updatedAt: NOW + 60 * MINUTE, deleted: false, content: 'Something new' },
+    key
+  );
+  const spBoundNewer = await encryptRecord(
+    { id: 'let-sp', updatedAt: NOW + 120 * MINUTE, deleted: false, content: 'A swept edit' },
+    key,
+    { table: 'letters' }
+  );
+  const spBoundOlder = await encryptRecord(
+    { id: 'let-sp', updatedAt: NOW - 60 * MINUTE, deleted: false, content: 'Genuinely older' },
+    key,
+    { table: 'letters' }
+  );
+
+  /** Runs the real staging + commit for one wire record against a fresh store. */
+  const spCommit = async (wireRow) => {
+    const store = new FakeVaultStore({ letters: [spLive] });
+    const { staged, rejected } = await peerSync._stageIncomingRecords([
+      { table: 'letters', data: wireRow },
+    ]);
+    const result = await withFakeDb(store, () => peerSync._commitStagedRecords(staged));
+    return { ...result, rejected, staged: staged.length, store };
+  };
+
+  const spEdit = await spCommit(spOldBuildEdit);
+  check(
+    'an edit from a partner on the previous build is staged, then refused',
+    spEdit.staged === 1 && spEdit.rejected === 0 && spEdit.applied === 0
+  );
+  check(
+    'REGRESSION FIXED: it is counted as `unverifiable`, never as `stale`',
+    spEdit.unverifiable === 1 && spEdit.stale === 0
+  );
+
+  const spDelete = await spCommit(spOldBuildDelete);
+  check(
+    'their delete is refused the same way, and counted the same way',
+    spDelete.applied === 0 && spDelete.unverifiable === 1 && spDelete.stale === 0
+  );
+
+  // The distinction has to cut both ways or it is just a rename.
+  const spStale = await spCommit(spBoundOlder);
+  check(
+    'a genuinely older BOUND row is still `stale`, and not `unverifiable`',
+    spStale.applied === 0 && spStale.stale === 1 && spStale.unverifiable === 0
+  );
+  const spWins = await spCommit(spBoundNewer);
+  check(
+    'a newer BOUND row still applies - the gate did not get stricter',
+    spWins.applied === 1 && spWins.unverifiable === 0
+  );
+  const spCreate = await spCommit(spOldBuildCreate);
+  check(
+    'and an unverifiable CREATE still lands: may create, never overwrite',
+    spCreate.applied === 1 && spCreate.unverifiable === 0
+  );
+
+  // The whole point of the split is what the user is told. `status.warning` is
+  // rendered verbatim by Header.jsx and SyncHubModal.jsx with no allowlist of
+  // codes, so emitting one is enough to put it on screen.
+  const spStatuses = [];
+  const spCapture = (status) => spStatuses.push(status);
+  peerSync.on('status', spCapture);
+  const spBroadcastStore = new FakeVaultStore({ letters: [spLive] });
+  await withFakeDb(spBroadcastStore, () =>
+    peerSync._applySingleLiveRecord({ table: 'letters', data: spOldBuildEdit })
+  );
+  peerSync.off('status', spCapture);
+
+  const spWarned = spStatuses.find((status) => status.code === 'records_unverifiable');
+  check(
+    'a discarded live edit raises a warning instead of passing in silence',
+    Boolean(spWarned) && spWarned.unverifiable === 1
+  );
+  check(
+    'the warning text names the count and the actual remedy',
+    typeof spWarned?.warning === 'string' &&
+      spWarned.warning.includes('1 change') &&
+      spWarned.warning.includes('could not be verified') &&
+      spWarned.warning.includes('same version')
+  );
+  check(
+    'and it is a WARNING, so it cannot paint the live connection as dead',
+    spWarned?.error === undefined && spWarned?.state !== 'error'
+  );
+  const spSurvivor = await decryptRecord(
+    await spBroadcastStore.table('letters').get('let-sp'),
+    key,
+    { table: 'letters' }
+  );
+  check('the local copy is untouched by the refused broadcast', spSurvivor.content === 'Local copy');
+
+  /* ---- the tie-break must not be decided by an unauthenticated field ------ */
+
+  // Same bug class as the blob byteLength d00b7c1 removed: a v2 envelope does
+  // not seal the leftover `<base>Cipher` fields, so appending one used to hand
+  // an attacker the tie-break on a byte-for-byte replay.
+  const spTieBase = await encryptRecord(
+    { id: 'let-tie', updatedAt: NOW, deleted: false, content: 'Mine' },
+    key,
+    { table: 'letters' }
+  );
+  check(
+    'a stray Cipher field on a v2 replay no longer wins the tie-break',
+    peerSync._incomingWins(spTieBase, { ...spTieBase, contentCipher: 'zzzz' }) === false
+  );
+  check(
+    'and the fingerprint of a v2 row ignores it entirely',
+    peerSync._fingerprint(spTieBase) === peerSync._fingerprint({ ...spTieBase, contentCipher: 'zzzz' })
+  );
+  // v1 rows keep folding them in: there they are the only content, and both
+  // devices must still reach the SAME verdict rather than flipping a coin.
+  const spV1A = { id: 'let-tie', updatedAt: NOW, deleted: false, v: 1, contentCipher: 'aaaa', contentIv: 'i' };
+  const spV1B = { ...spV1A, contentCipher: 'bbbb' };
+  check(
+    'a v1 tie is still broken deterministically, and both ways round',
+    peerSync._incomingWins(spV1A, spV1B) === true && peerSync._incomingWins(spV1B, spV1A) === false
+  );
+
+  peerSync.cryptoKey = spSavedKey;
+  peerSync.isAuthorized = spSavedAuth;
+
+  section('11octies. Refusals on the RESTORE path are legible, and the re-check is real');
+
+  // R2: restoring a backup taken before the binding shipped can only add rows.
+  // The refusal is right; landing it in one counter labelled "not sealed to the
+  // record it targets" told a user restoring their own rescue file nothing.
+  const soLive = await encryptRecord(
+    { id: 'let-so', updatedAt: NOW, deleted: false, content: 'On the device' },
+    key,
+    { table: 'letters' }
+  );
+  const soOldBackupNewer = await encryptRecord(
+    { id: 'let-so', updatedAt: NOW + 60 * MINUTE, deleted: false, content: 'Newer, in the file' },
+    key
+  );
+  const soOldBackupOlder = await encryptRecord(
+    { id: 'let-so', updatedAt: NOW - 60 * MINUTE, deleted: false, content: 'Older, in the file' },
+    key
+  );
+
+  const soStore = new FakeVaultStore({ letters: [soLive] });
+  const soNewerPlan = await soStore.planBackupMerge({ letters: [soOldBackupNewer] }, key);
+  check(
+    'a pre-binding backup row still cannot repair a row the device holds',
+    soNewerPlan.totals.updated === 0 && soNewerPlan.totals.unauthenticated === 1
+  );
+  check(
+    'but the innocent case is now counted apart, not just refused',
+    soNewerPlan.totals.unverifiable === 1 && soNewerPlan.perTable.letters.unverifiable === 1
+  );
+  check(
+    'and the sub-case that actually cost the user something is named: the file copy was NEWER',
+    soNewerPlan.totals.unverifiableNewer === 1
+  );
+  const soOlderPlan = await new FakeVaultStore({ letters: [soLive] }).planBackupMerge(
+    { letters: [soOldBackupOlder] },
+    key
+  );
+  check(
+    'an OLDER unverifiable row is unverifiable but not `unverifiableNewer` - nothing was lost',
+    soOlderPlan.totals.unverifiable === 1 && soOlderPlan.totals.unverifiableNewer === 0
+  );
+  check(
+    'the umbrella counter the preview already renders is unchanged',
+    soOlderPlan.totals.unauthenticated === 1
+  );
+
+  // R4: applyBackupMerge's in-transaction re-check tested only
+  // recordHasAuthenticatedHeader, which passes ANY well-formed v2 envelope -
+  // including one sealed for a different table. A hand-built plan wrote a
+  // bucketList envelope straight over a live letter.
+  const soCrossTable = await encryptRecord(
+    { id: 'let-so', updatedAt: NOW + 120 * MINUTE, deleted: false, text: 'Sealed for bucketList' },
+    key,
+    { table: 'bucketList' }
+  );
+  check(
+    'the smuggled row does carry a well-formed v2 header - that check alone was never enough',
+    recordHasAuthenticatedHeader(soCrossTable) === true
+  );
+  const soHandBuiltStore = new FakeVaultStore({ letters: [soLive] });
+  const soHandBuilt = await soHandBuiltStore.applyBackupMerge({
+    writes: [{ table: 'letters', row: soCrossTable }],
+    incomingWins: () => true,
+  });
+  check(
+    'a hand-built plan with no key cannot overwrite an existing row at all',
+    (soHandBuilt.written.letters || 0) === 0 && soHandBuilt.refusedSincePreview === 1
+  );
+  const soKeyedStore = new FakeVaultStore({ letters: [soLive] });
+  const soKeyed = await soKeyedStore.applyBackupMerge({
+    key,
+    writes: [{ table: 'letters', row: soCrossTable }],
+    incomingWins: () => true,
+  });
+  check(
+    'and with a key the cross-table envelope is refused on its own merits',
+    (soKeyed.written.letters || 0) === 0 && soKeyed.refusedSincePreview === 1
+  );
+  const soIntact = await decryptRecord(await soKeyedStore.table('letters').get('let-so'), key, {
+    table: 'letters',
+  });
+  check('the live letter survived both hand-built plans', soIntact.content === 'On the device');
+
+  // The honest path must still work end to end, or this is just a lock on the
+  // front door of an empty house.
+  const soHonestStore = new FakeVaultStore({ letters: [soLive] });
+  const soHonestNewer = await encryptRecord(
+    { id: 'let-so', updatedAt: NOW + 60 * MINUTE, deleted: false, content: 'A real newer copy' },
+    key,
+    { table: 'letters' }
+  );
+  const soHonestPlan = await soHonestStore.planBackupMerge({ letters: [soHonestNewer] }, key);
+  check('a fully bound newer backup row still plans an update', soHonestPlan.totals.updated === 1);
+  const soHonestApplied = await soHonestStore.applyBackupMerge(soHonestPlan);
+  check(
+    'and the real re-check lets it through',
+    (soHonestApplied.written.letters || 0) === 1 && soHonestApplied.refusedSincePreview === 0
+  );
+
+  section('11nonies. The sweep counts a swapped photo it refuses to re-seal');
+
+  // R6: the "already bound on both dimensions, skip" continue used to fire
+  // BEFORE the tampering counter, so the one row shape that proves someone went
+  // at the database directly - fully bound, photo bytes swapped underneath -
+  // was skipped and counted as nothing at all.
+  const snBytes = new Uint8Array(32).map((_, i) => (i * 7) % 256);
+  const snBound = await encryptRecord(
+    { id: 'mem-sn', updatedAt: NOW, deleted: false, caption: 'Bound on every dimension', imageBlob: snBytes },
+    key,
+    { table: 'memories' }
+  );
+  const snSwapped = { ...snBound, imageBlob: new Uint8Array(32).fill(9) };
+  const snStore = new FakeVaultStore({ memories: [snSwapped] });
+  const snStats = await snStore.migrateLegacyRecords(key);
+  check(
+    'a fully bound row with swapped bytes is now COUNTED as tampered',
+    snStats.tampered === 1
+  );
+  check(
+    'it is still not re-sealed - counting it must not launder it',
+    snStats.migrated === 0 && snStats.failed === 0
+  );
+  const snAfter = await snStore.table('memories').get('mem-sn');
+  check(
+    'and the row is left byte-identical, so the gates keep refusing it',
+    eq(Array.from(snAfter.imageBlob), Array.from(snSwapped.imageBlob)) &&
+      snAfter.ciphertext === snBound.ciphertext
+  );
+  // The clean fully-bound row must still take the cheap skip.
+  const snCleanStore = new FakeVaultStore({ memories: [snBound] });
+  const snCleanStats = await snCleanStore.migrateLegacyRecords(key);
+  check(
+    'a clean fully bound row is still skipped, not re-encrypted every unlock',
+    snCleanStats.migrated === 0 && snCleanStats.tampered === 0 && snCleanStats.scanned === 1
+  );
+
   section('11c. A backup whose origin cannot be established is `unknown`, not `same`');
 
   // ImportPreview had branches for 'foreign' and 'no-local-vault' and none for
@@ -2176,7 +2490,11 @@ async function run() {
   /* ------------------------------------------------ 14. import sanitising */
   section('14. Import sanitising — a restored clock artefact must not win forever');
 
-  const SKEW_LIMIT = 48 * 60 * 60 * 1000;
+  // The import ceiling (db MAX_BACKUP_CLOCK_SKEW_MS) and the wire ceiling
+  // (peerSync MAX_CLOCK_SKEW_MS) must be the SAME number. They were 48h and 24h
+  // while a comment claimed they matched, and the gap was not cosmetic - see the
+  // +30h case at the end of this section.
+  const SKEW_LIMIT = 24 * 60 * 60 * 1000;
   const clockOk = await encryptRecord(
     { id: 'bkt-clock-ok', updatedAt: NOW + 60 * MINUTE, deleted: false, text: 'Written on a slightly fast phone' },
     key
@@ -2214,7 +2532,7 @@ async function run() {
   );
   const futureTotals = await planOne(clockFuture);
   check(
-    'an updatedAt more than 48h ahead is refused at the STRUCTURE gate',
+    'an updatedAt past the skew ceiling is refused at the STRUCTURE gate',
     futureTotals.invalid === 1 && futureTotals.added === 0 && futureTotals.undecryptable === 0
   );
   check(
@@ -2241,6 +2559,33 @@ async function run() {
   check(
     'only the acceptable row is queued',
     clockPlan.writes.length === 1 && clockPlan.writes[0].row.id === 'bkt-clock-ok'
+  );
+
+  // THE TWO CEILINGS MUST AGREE. At 48h import / 24h wire, a row stamped +30h
+  // was accepted by planBackupMerge and then refused by _validateWireRecord as
+  // `future_timestamp` - so a row the user had just restored from their own
+  // rescue backup sat on their device unable to reach their partner until the
+  // clock caught up, with nothing anywhere saying why.
+  const clockThirtyHours = await encryptRecord(
+    {
+      id: 'bkt-clock-30h',
+      updatedAt: NOW + 30 * 60 * MINUTE,
+      deleted: false,
+      text: 'Thirty hours ahead',
+    },
+    key
+  );
+  check(
+    'a +30h stamp is refused on the IMPORT path',
+    (await planOne(clockThirtyHours)).invalid === 1
+  );
+  check(
+    'and on the WIRE path, for the same reason and with the same verdict',
+    peerSync._validateWireRecord(clockThirtyHours).code === 'future_timestamp'
+  );
+  check(
+    'while a +1h stamp is accepted by BOTH, so the ceiling is still a ceiling',
+    (await planOne(clockOk)).added === 1 && peerSync._validateWireRecord(clockOk).ok === true
   );
 
   /* ---------------------------------------------- 15. tamper isolation */
