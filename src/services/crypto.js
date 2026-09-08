@@ -846,6 +846,25 @@ export async function decryptRecord(record, key) {
  * @param {Object} record
  * @returns {boolean}
  */
+/**
+ * True when `record` has a top-level binary field (a photo blob) attached.
+ *
+ * Used to decide which rows the re-seal sweep has to open. A v2 row with no
+ * binary cannot be binary-unverified - verifyBinaryDigests only reports
+ * `unverified` when something is attached - so rows without one can be skipped
+ * without decrypting them, which keeps the sweep off the whole photo table.
+ *
+ * @param {unknown} record
+ * @returns {boolean}
+ */
+export function recordHasAttachedBinary(record) {
+  if (!record || typeof record !== 'object') return false;
+  for (const value of Object.values(record)) {
+    if (isBinaryValue(value)) return true;
+  }
+  return false;
+}
+
 export function isLegacyRecord(record) {
   if (!record || typeof record !== 'object') return false;
   return !(

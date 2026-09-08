@@ -2194,7 +2194,18 @@ export class PeerSyncManager {
         parts.push(field, row[field]);
       }
     }
-    if (row.imageBlob) parts.push(`blob:${row.imageBlob.byteLength || 0}`);
+    // DELIBERATELY NOT the blob's byteLength. It used to be appended here, and
+    // that was a working attack: the length is not authenticated, so an attacker
+    // could replay a harvested envelope BYTE FOR BYTE - same ciphertext, same iv,
+    // same updatedAt, no forgery needed - with a garbage photo whose length in
+    // decimal happens to sort high ('900...' beats '64'). Every other part of the
+    // fingerprint matched, so this one attacker-chosen string decided the
+    // tie-break and the real photo was overwritten.
+    //
+    // Nothing is lost by dropping it. For a row sealed by the current
+    // encryptRecord the blob's digest lives INSIDE the encrypted payload, so a
+    // different blob necessarily means different ciphertext, which is already in
+    // the fingerprint above. For an older row the length proves nothing at all.
     return parts.join('|');
   }
 

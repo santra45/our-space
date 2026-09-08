@@ -40,6 +40,7 @@ import {
   isLegacyRecord,
   recordCarriesAuthenticatedPayload,
   recordHasAuthenticatedHeader,
+  recordHasAttachedBinary,
 } from '../services/crypto.js';
 
 /** Tables that participate in P2P sync and in backups. */
@@ -354,10 +355,29 @@ export class SweetheartDatabase extends Dexie {
           const row = await table.get(id);
           if (!row) continue;
           stats.scanned++;
-          if (!isLegacyRecord(row)) continue;
+
+          // Two kinds of row need re-sealing.
+          //
+          // 1. v1 rows, which is what this sweep was originally for.
+          // 2. v2 rows written BEFORE photo bytes were bound into the envelope.
+          //    Those carry no digest map, so verifyBinaryDigests reports them
+          //    `unverified` rather than tampered - which means the blob on a
+          //    pre-digest photo can still be swapped and every gate will pass it.
+          //    Skipping them here left that carve-out permanent: no other code
+          //    path re-seals a v2 row, so every photo already in a live vault
+          //    would have stayed swappable forever. Draining it is the whole
+          //    point, so they are opened too.
+          //
+          // A v2 row with no binary attached cannot be binary-unverified, so it
+          // is skipped without being decrypted and the sweep stays cheap.
+          const isLegacy = isLegacyRecord(row);
+          if (!isLegacy && !recordHasAttachedBinary(row)) continue;
 
           try {
             const plain = await decryptRecord(row, key);
+            // A v2 row whose binary already verifies is done - re-encrypting it
+            // would burn CPU on every photo at every unlock for nothing.
+            if (!isLegacy && plain._binaryUnverified !== true) continue;
             delete plain._schemaVersion;
             delete plain._needsReencrypt;
             delete plain._headerTampered;

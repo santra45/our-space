@@ -1277,6 +1277,70 @@ async function run() {
       restoredPier._binaryTampered === false
   );
 
+  /* ------------- 11ter. blob-length tie-break replay (no forgery needed) --- */
+  section('11ter. A replayed envelope with a swapped photo cannot win the tie-break');
+
+  // The third working exploit an adversarial reviewer built, kept as a guard.
+  //
+  // This one needed NO forgery at all. _fingerprint used to append
+  // `blob:${imageBlob.byteLength}` and _incomingWins tie-break 2 compares
+  // fingerprints lexicographically. So an attacker could replay a harvested
+  // envelope byte for byte - same ciphertext, same iv, same updatedAt, nothing
+  // re-encrypted, no vault passphrase - attach a garbage photo whose length in
+  // decimal sorts high ('900' > '64'), and win the tie. The real photo was
+  // overwritten and it landed in the `updated` counter, so every deletion
+  // warning in the preview was bypassed too.
+  const tieReplayBase = await encryptRecord(
+    { id: 'mem-replay', updatedAt: NOW, deleted: false, caption: 'Real photo' },
+    key
+  );
+  const tieRealPhoto = { ...tieReplayBase, imageBlob: new Uint8Array(64) };
+  // Byte-for-byte identical envelope; only the unauthenticated blob differs.
+  const tieSwappedPhoto = { ...tieReplayBase, imageBlob: new Uint8Array(900) };
+
+  check(
+    'the two rows differ ONLY in the attached blob',
+    tieSwappedPhoto.ciphertext === tieRealPhoto.ciphertext &&
+      tieSwappedPhoto.iv === tieRealPhoto.iv &&
+      tieSwappedPhoto.updatedAt === tieRealPhoto.updatedAt
+  );
+  check(
+    'a longer garbage blob no longer wins the tie-break',
+    peerSync._incomingWins(tieRealPhoto, tieSwappedPhoto) === false
+  );
+  check(
+    'and the comparison is symmetric - neither side flips on blob length',
+    peerSync._incomingWins(tieSwappedPhoto, tieRealPhoto) === false
+  );
+  check(
+    'blob length is gone from the fingerprint entirely',
+    peerSync._fingerprint(tieRealPhoto) === peerSync._fingerprint(tieSwappedPhoto)
+  );
+
+  // End to end through the shipped merge.
+  await liveStore.table('memories').put(tieRealPhoto);
+  const tieReplayPlan = await liveStore.planBackupMerge({ memories: [tieSwappedPhoto] }, key);
+  check(
+    'the replay is counted stale, never as an update',
+    tieReplayPlan.totals.updated === 0 && tieReplayPlan.totals.deleted === 0
+  );
+  await liveStore.applyBackupMerge(tieReplayPlan);
+  const tieSurvived = await liveStore.table('memories').get('mem-replay');
+  check(
+    'the real photo bytes survived the replay',
+    tieSurvived.imageBlob?.length === 64
+  );
+
+  // A genuinely newer edit must still win - the fix must not freeze records.
+  const tieGenuineEdit = await encryptRecord(
+    { id: 'mem-replay', updatedAt: NOW + MINUTE, deleted: false, caption: 'Edited' },
+    key
+  );
+  check(
+    'a genuinely newer edit still wins',
+    peerSync._incomingWins(tieRealPhoto, tieGenuineEdit) === true
+  );
+
   section('11c. A backup whose origin cannot be established is `unknown`, not `same`');
 
   // ImportPreview had branches for 'foreign' and 'no-local-vault' and none for
