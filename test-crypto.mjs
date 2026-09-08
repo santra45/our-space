@@ -13,11 +13,15 @@
  *   4. Canary                passphrase proof used by unlock, pairing and backup
  *   5. AEAD                  associated data actually binds
  *   6. Record envelopes      schema v2, metadata genuinely encrypted at rest
+ *  6b. Bound photo bytes    a swapped blob under a valid envelope is detected,
+ *                           and a pre-digest row still opens
  *   7. v1 -> v2 migration    round-trip of the exact reshaping db does
  *   8. Time locks            seal/unseal, and that the date is BOUND, not checked
  *   9. Backups               v2 containers, and v1 containers still opening
  *  10. Invites               a stranger's link cannot choose our PBKDF2 salt
  *  11. Foreign backups       a stranger's file cannot overwrite a colliding id
+ * 11d. Photo-swap forgery   a kept envelope plus swapped bytes is refused on
+ *                           both the import and the sync gate
  *  12. Merge precedence      an older backup does not revert newer local work
  *  13. Rescue restore        adopt an identity, unlock with the ORIGINAL phrase
  *  14. Import sanitising     a restored clock artefact cannot win forever
@@ -468,6 +472,101 @@ async function run() {
     decryptRecord(row, wrongKey)
   );
   await checkThrows('encryptRecord demands a string id', async () => encryptRecord({ caption: 'x' }, key));
+
+  /* ------------------------------ 6b. the photo bytes are bound too */
+  section('6b. Photo bytes are bound into the envelope');
+
+  // The hole this closes: the envelope authenticates the JSON payload, and the
+  // photo is NOT in that payload - `imageBlob` rides at the top level so
+  // IndexedDB stores real bytes. So one valid envelope for a memory id was
+  // enough to destroy the photo under it: keep the envelope, swap the bytes, and
+  // the row decrypted, reported an untampered header, and passed every gate.
+  // Binding the header (0fa7116) did not touch this, because nothing about the
+  // header changes when only the bytes do.
+  check('an untouched row reports its binary as verified', back._binaryTampered === false);
+  check('and not as merely unverified', back._binaryUnverified === false);
+  check('the digest is not readable at rest', row._bin === undefined && row.imageBlob === blobBytes);
+
+  const swappedBytes = new Uint8Array([9, 9, 9, 9, 9]); // same length, different content
+  const swappedPhoto = await decryptRecord({ ...row, imageBlob: swappedBytes }, key);
+  check('swapping the photo bytes is DETECTED (_binaryTampered)', swappedPhoto._binaryTampered === true);
+  check(
+    'and it is surfaced as _headerTampered, so every existing gate refuses it',
+    swappedPhoto._headerTampered === true
+  );
+
+  const strippedPhoto = await decryptRecord(
+    (({ imageBlob, ...rest }) => rest)(row),
+    key
+  );
+  check('stripping the photo out of a row that had one is DETECTED', strippedPhoto._binaryTampered === true);
+
+  // A tombstone is sealed with no binary at all, so its digest map is EMPTY -
+  // which is why bolting a photo onto one is detectable. An absent map means
+  // something entirely different (see the legacy case below).
+  const tombstone = await encryptRecord({ id: 'mem-abc123', updatedAt: 1750000000001, deleted: true }, key);
+  const bolted = await decryptRecord({ ...tombstone, imageBlob: blobBytes }, key);
+  check(
+    'bolting a photo onto an envelope sealed without one is DETECTED',
+    bolted._binaryTampered === true
+  );
+
+  // A caller cannot pre-supply the digest map: `_bin` is an internal field, so
+  // encryptRecord drops it and hashes the real bytes itself.
+  const forgedDigest = await encryptRecord(
+    { id: 'mem-forged-digest', updatedAt: 1750000000002, deleted: false, imageBlob: blobBytes, _bin: { imageBlob: 'not-a-real-digest' } },
+    key
+  );
+  const forgedDigestBack = await decryptRecord(forgedDigest, key);
+  check(
+    'a caller-supplied _bin is ignored, not trusted',
+    forgedDigestBack._binaryTampered === false && forgedDigestBack._bin === undefined
+  );
+  check(
+    'and swapping THAT row still trips the real digest',
+    (await decryptRecord({ ...forgedDigest, imageBlob: swappedBytes }, key))._binaryTampered === true
+  );
+
+  // BACKWARD COMPATIBILITY. Every v2 row already in a live vault was sealed
+  // before this field existed and carries no digest map. Those must keep
+  // opening, photo attached: a missing map is old, not forged. Only a WRONG map
+  // is forged. Hand-built here because encryptRecord can no longer produce one.
+  const preDigestPayload = {
+    id: 'mem-pre-digest',
+    updatedAt: 1750000000003,
+    deleted: false,
+    caption: 'Sealed before digests existed',
+    date: '2024-01-01',
+  };
+  const preDigestSealed = await encryptJSON(preDigestPayload, key);
+  const preDigestRow = {
+    id: preDigestPayload.id,
+    updatedAt: preDigestPayload.updatedAt,
+    deleted: false,
+    v: RECORD_SCHEMA_VERSION,
+    ciphertext: preDigestSealed.ciphertext,
+    iv: preDigestSealed.iv,
+    imageBlob: blobBytes,
+  };
+  const preDigestBack = await decryptRecord(preDigestRow, key);
+  check('a v2 row sealed before digests still opens', preDigestBack.caption === 'Sealed before digests existed');
+  check('its photo still comes back attached', eq(Array.from(preDigestBack.imageBlob), Array.from(blobBytes)));
+  check('it is NOT flagged as tampered', preDigestBack._binaryTampered === false && preDigestBack._headerTampered === false);
+  check('but it is honestly reported as unverified', preDigestBack._binaryUnverified === true);
+  check(
+    'a partner still on the older build is therefore accepted, not rejected',
+    recordHasAuthenticatedHeader(preDigestRow) === true
+  );
+
+  // v1 has nowhere to put a digest, exactly as it has nowhere to put a bound
+  // header. Both tamper flags are false because nothing is knowable, which is
+  // why v1 rows may only ever CREATE (see 11bis).
+  const v1WithPhoto = await decryptRecord(
+    { id: 'mem-v1-photo', updatedAt: 1690000000000, deleted: false, v: 1, imageBlob: blobBytes },
+    key
+  );
+  check('a v1 photo is reported unverified, never verified', v1WithPhoto._binaryUnverified === true);
+  check('and never falsely flagged as tampered', v1WithPhoto._binaryTampered === false);
 
   /* -------------------------------------- 7. v1 -> v2 migration path */
   section('7. v1 → v2 migration round-trip (DECISION 2)');
@@ -988,11 +1087,21 @@ async function run() {
   //
   // The attacker needs the backup FILE passphrase and never the vault
   // passphrase. It is destroy-only - they still cannot read anything.
+  // The photo is sealed INTO the envelope (its digest is inside the payload),
+  // exactly as db.putEncrypted writes it. Attaching the bytes to the row after
+  // the fact would build a fixture the integrity check now correctly rejects.
+  const livePhotoBytes = new Uint8Array([1, 2, 3, 4]);
   const liveMemory = await encryptRecord(
-    { id: 'mem-1', updatedAt: NOW - 10 * MINUTE, deleted: false, caption: 'Us on the roof' },
+    {
+      id: 'mem-1',
+      updatedAt: NOW - 10 * MINUTE,
+      deleted: false,
+      caption: 'Us on the roof',
+      imageBlob: livePhotoBytes,
+    },
     key
   );
-  await liveStore.table('memories').put({ ...liveMemory, imageBlob: new Uint8Array([1, 2, 3, 4]) });
+  await liveStore.table('memories').put(liveMemory);
 
   // A real ciphertext under the vault key, standing in for the lifted canary.
   const decoy = await encryptText('anything at all', key);
@@ -1072,6 +1181,100 @@ async function run() {
   check(
     'a v1 row for an id we do not have is still allowed to create',
     createPlan.totals.added === 1 && createPlan.totals.unauthenticated === 0
+  );
+
+  /* -------- 11d. the photo-swap forgery, end to end on the import path ----- */
+  section('11d. A swapped photo cannot ride in on a valid envelope');
+
+  // The attacker here holds ONE genuine envelope for a memory id - lifted from
+  // an old .vault file whose own file passphrase they know, or replayed by a
+  // paired partner. They cannot edit it (AES-GCM), so they keep it verbatim and
+  // replace only the bytes beside it. Before the digest binding, that row
+  // decrypted, reported a clean header, passed sanitising and integrity, and
+  // overwrote the only copy of the photo with garbage.
+  const pierBytes = new Uint8Array(64).map((_, i) => (i * 13) % 256);
+  const pierRow = await encryptRecord(
+    {
+      id: 'mem-pier',
+      updatedAt: NOW - 30 * MINUTE,
+      deleted: false,
+      caption: 'The pier at night',
+      imageBlob: pierBytes,
+    },
+    key
+  );
+  const photoStore = new FakeVaultStore({ memories: [pierRow] });
+
+  /** The shape a row actually has inside a container: bytes as base64. */
+  const asContainerRow = (storedRow) => {
+    const { imageBlob, ...rest } = storedRow;
+    return imageBlob ? { ...rest, imageBlobBase64: bufferToBase64(imageBlob) } : rest;
+  };
+
+  const swappedWire = {
+    ...asContainerRow(pierRow),
+    imageBlobBase64: bufferToBase64(new Uint8Array(64).fill(255)),
+  };
+
+  const swapPlan = await photoStore.planBackupMerge({ memories: [swappedWire] }, key);
+  check(
+    'the swapped photo is refused by the integrity gate',
+    swapPlan.totals.undecryptable === 1 &&
+      swapPlan.totals.added === 0 &&
+      swapPlan.totals.updated === 0
+  );
+  check('it queues no write', swapPlan.writes.length === 0);
+  await photoStore.applyBackupMerge(swapPlan);
+  const survivingPhoto = await decryptRecord(await photoStore.table('memories').get('mem-pier'), key);
+  check(
+    'the live photo bytes are still the originals, byte for byte',
+    eq(Array.from(survivingPhoto.imageBlob), Array.from(pierBytes))
+  );
+
+  // The wire path runs the same gate. _commitStagedRecords itself needs real
+  // Dexie and cannot run here, but _verifyRecordIntegrity is pure and is what
+  // decides whether a record is ever staged at all.
+  const savedPeerKey = peerSync.cryptoKey;
+  peerSync.cryptoKey = key;
+  try {
+    const swappedIncoming = { ...pierRow, imageBlob: new Uint8Array(64).fill(255) };
+    const wireVerdict = await peerSync._verifyRecordIntegrity(swappedIncoming);
+    check(
+      'the sync path refuses a swapped photo and names the reason',
+      wireVerdict.ok === false && wireVerdict.code === 'binary_tampered'
+    );
+    const honestVerdict = await peerSync._verifyRecordIntegrity(pierRow);
+    check('and still accepts the genuine row', honestVerdict.ok === true);
+    const preDigestVerdict = await peerSync._verifyRecordIntegrity(preDigestRow);
+    check(
+      'a partner on the older build is still accepted (unverified, not refused)',
+      preDigestVerdict.ok === true
+    );
+  } finally {
+    peerSync.cryptoKey = savedPeerKey;
+  }
+
+  // An honest restore of the very same rows still works - including a row
+  // sealed before digest binding existed, which is the case that would brick
+  // real photos if a missing digest were treated as a failure.
+  const freshPhotoDevice = new FakeVaultStore({});
+  const honestPlan = await freshPhotoDevice.planBackupMerge(
+    { memories: [asContainerRow(pierRow), asContainerRow(preDigestRow)] },
+    key
+  );
+  check(
+    'an untouched photo row and a pre-digest one both restore',
+    honestPlan.totals.added === 2 && honestPlan.totals.undecryptable === 0
+  );
+  await freshPhotoDevice.applyBackupMerge(honestPlan);
+  const restoredPier = await decryptRecord(
+    await freshPhotoDevice.table('memories').get('mem-pier'),
+    key
+  );
+  check(
+    'the restored photo survives base64 and the digest check together',
+    eq(Array.from(restoredPier.imageBlob), Array.from(pierBytes)) &&
+      restoredPier._binaryTampered === false
   );
 
   section('11c. A backup whose origin cannot be established is `unknown`, not `same`');

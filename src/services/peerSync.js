@@ -2062,10 +2062,30 @@ export class PeerSyncManager {
    * Proves an inbound record is genuinely ours before it is written.
    *
    * peerSync holds the vault key, and the envelope is a small JSON blob (the photo
-   * itself stays binary and untouched), so this is one cheap AES-GCM open per
-   * record. It buys two things: garbage can never poison the manifest, and
-   * `_headerTampered` catches a peer that rewrote the plaintext id / updatedAt /
-   * deleted header while leaving the authenticated copy inside the envelope alone.
+   * itself stays binary and is opened only when it is displayed), so this is one
+   * cheap AES-GCM open per record, plus - only when a record carries a photo -
+   * one SHA-256 pass over those bytes.
+   *
+   * WHAT IT PROVES DEPENDS ON THE ROW'S SCHEMA, and the difference is the whole
+   * reason the commit gate exists as well as this one:
+   *
+   *  - v2: the key opened the envelope, and the envelope agrees with everything
+   *    on the row it does not itself contain - the plaintext id / updatedAt /
+   *    deleted header (`_headerTampered`) and the SHA-256 of the attached photo
+   *    bytes (`_binaryTampered`). So a peer cannot rewrite the header, and
+   *    cannot keep a valid envelope while swapping the photo underneath it.
+   *  - v1: the key opened SOME `<base>Cipher` field, and that is all.
+   *    decryptLegacyRecord() stamps both tamper flags false unconditionally
+   *    because v1 carries no authenticated header and no digest - there is
+   *    nothing to compare against. A clean verdict on a v1 row means
+   *    "unknowable". That is why _commitStagedRecords additionally refuses any
+   *    v1 row aimed at an id that already exists: it may create, never destroy.
+   *
+   * One case stays unverified on purpose: a v2 envelope sealed before digest
+   * binding shipped has no digest map, so its bytes are accepted as-is rather
+   * than rejected. Refusing them would break every photo already in the vault
+   * and every partner still on the older build. See BINARY_DIGEST_FIELD in
+   * crypto.js for the full reasoning.
    *
    * @returns {Promise<{ ok: boolean, code?: string }>}
    */
@@ -2080,6 +2100,11 @@ export class PeerSyncManager {
     }
     try {
       const plain = await decryptRecord(row, this.cryptoKey);
+      // Reported separately from header_tampered only so the rejection counter
+      // names the real reason; both verdicts refuse the write.
+      if (plain && plain._binaryTampered === true) {
+        return { ok: false, code: 'binary_tampered' };
+      }
       if (plain && plain._headerTampered === true) {
         return { ok: false, code: 'header_tampered' };
       }

@@ -361,6 +361,8 @@ export class SweetheartDatabase extends Dexie {
             delete plain._schemaVersion;
             delete plain._needsReencrypt;
             delete plain._headerTampered;
+            delete plain._binaryTampered;
+            delete plain._binaryUnverified;
             // Preserve identity and ordering exactly: a migration is not an edit.
             plain.id = row.id;
             plain.updatedAt = Number.isFinite(row.updatedAt) ? row.updatedAt : 0;
@@ -467,9 +469,15 @@ export class SweetheartDatabase extends Dexie {
    *   1. STRUCTURE   sanitizeImportedRecord() drops unknown fields and rejects a
    *                  malformed header, mirroring peerSync._validateWireRecord.
    *   2. INTEGRITY   every row must decrypt under THIS vault's key and must not
-   *                  report `_headerTampered`, mirroring
+   *                  report `_headerTampered` / `_binaryTampered`, mirroring
    *                  peerSync._verifyRecordIntegrity. A backup from a different
    *                  vault fails here, record by record, and writes nothing.
+   *                  On a v1 row this proves only that the key opened a cipher
+   *                  field - see verifyRowIntegrity for why that is weaker than
+   *                  it looks, and step 2b below for what covers the gap.
+   *  2b. AUTHORITY   overwriting or tombstoning a row that ALREADY EXISTS
+   *                  additionally requires recordHasAuthenticatedHeader(), i.e.
+   *                  a v2 envelope. A v1 row may create and nothing else.
    *   3. PRECEDENCE  the winner is chosen by peerSync's OWN _incomingWins rule
    *                  (loaded below, deliberately not reimplemented), so a merge
    *                  and a sync can never disagree about which copy is newer.
@@ -730,10 +738,32 @@ export function compareVaultIdentity(backupIdentity, localRead) {
  * Proves a row from a backup is genuinely readable by THIS vault before it is
  * ever written.
  *
- * Mirrors peerSync._verifyRecordIntegrity deliberately: same check, same
- * `_headerTampered` rejection. It is duplicated rather than imported because
- * that method reads peerSync's own key, which is null when no partner is
- * connected - and a backup restore must work offline.
+ * Mirrors peerSync._verifyRecordIntegrity deliberately: same checks, same
+ * rejections. It is duplicated rather than imported because that method reads
+ * peerSync's own key, which is null when no partner is connected - and a backup
+ * restore must work offline.
+ *
+ * WHAT THIS PROVES, AND WHAT IT DOES NOT - the rule is two-tier, and the tiers
+ * are NOT interchangeable:
+ *
+ *  - For a v2 row it proves the key opened an envelope AND that the envelope
+ *    agrees with the unauthenticated parts of the row: the plaintext
+ *    id/updatedAt/deleted header, and the SHA-256 of every attached binary
+ *    field. A rewritten header or a swapped photo fails here.
+ *  - For a v1 row it proves ONLY that some `<base>Cipher` field opened under
+ *    this key. decryptLegacyRecord() stamps `_headerTampered: false` and
+ *    `_binaryTampered: false` unconditionally, because v1 has no authenticated
+ *    header and no digest to compare against. A clean verdict on a v1 row
+ *    therefore means "unknowable", not "clean", which is exactly why one lifted
+ *    ciphertext used as a decoy pair passed this check (test 11bis) and why
+ *    planBackupMerge separately demands recordHasAuthenticatedHeader() before
+ *    letting anything overwrite or tombstone an existing row.
+ *
+ * The residual gap, stated rather than papered over: a v2 envelope sealed
+ * before digest binding existed carries no digest map, so its photo bytes are
+ * accepted unverified. That is the deliberate backward-compatibility choice
+ * (see BINARY_DIGEST_FIELD in crypto.js) - refusing them would make old photos
+ * unrestorable.
  *
  * @returns {Promise<boolean>}
  */
@@ -745,7 +775,10 @@ async function verifyRowIntegrity(row, key) {
   if (!recordCarriesAuthenticatedPayload(row)) return false;
   try {
     const plain = await decryptRecord(row, key);
-    if (plain && plain._headerTampered === true) return false;
+    if (!plain) return false;
+    // `_headerTampered` already covers `_binaryTampered`; both are named here so
+    // that decoupling them later cannot silently reopen the photo-swap hole.
+    if (plain._headerTampered === true || plain._binaryTampered === true) return false;
     return true;
   } catch {
     return false;

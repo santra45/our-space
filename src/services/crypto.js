@@ -52,6 +52,9 @@ const INTERNAL_RECORD_FIELDS = new Set([
   '_schemaVersion',
   '_needsReencrypt',
   '_headerTampered',
+  '_binaryTampered',
+  '_binaryUnverified',
+  '_bin',
 ]);
 
 const getCrypto = () => (typeof window !== 'undefined' ? window.crypto : globalThis.crypto);
@@ -452,6 +455,107 @@ function isBinaryValue(value) {
 }
 
 /**
+ * Payload key holding SHA-256 digests of the row's top-level binary fields.
+ *
+ * WHY THIS EXISTS
+ * A v2 envelope authenticates its JSON payload and nothing else. The photo does
+ * not travel inside that payload: `imageBlob` is separately AES-GCM sealed by
+ * encryptBlob() and rides at the TOP LEVEL so IndexedDB stores real bytes
+ * instead of a base64 string inflated through JSON. That made the bytes
+ * unauthenticated *as part of this record*. Anyone holding one valid envelope
+ * for a memory id - a stale backup file whose own file passphrase they know, or
+ * a paired partner - could keep the envelope and swap the blob for garbage. The
+ * row still decrypted, still reported an untampered header, passed every gate,
+ * and the photo was gone for good. Binding the header in commit 0fa7116 did not
+ * touch this, because nothing about the header changes when only the bytes do.
+ *
+ * The fix is deliberately the cheapest one that closes it: hash the bytes and
+ * carry the digest INSIDE the encrypted payload. The digest is therefore
+ * covered by the same AES-GCM tag as everything else, so it cannot be edited,
+ * stripped or recomputed without the vault key - only replayed wholesale, and a
+ * replayed envelope carries the digest of the photo it was sealed with.
+ *
+ * Rejected alternatives, and why:
+ *  - AAD (pass the blob digest as additionalData to the envelope). Same strength,
+ *    but a pre-digest row then fails to DECRYPT rather than failing a check, so
+ *    there is no way to distinguish "old row" from "forged row" and every photo
+ *    written before this commit becomes unreadable. Unacceptable.
+ *  - Hashing the plaintext image instead of the sealed bytes. Requires the key
+ *    and a full blob decrypt on every read, for no extra guarantee: the bytes we
+ *    hash are the bytes we store, and swapping them is exactly the attack.
+ *  - Encrypting the blob into the payload. Correct, and enormous - it would
+ *    base64-inflate every photo into the JSON envelope and rewrite every row.
+ */
+const BINARY_DIGEST_FIELD = '_bin';
+
+/**
+ * SHA-256 of a binary field's bytes, base64. Accepts the three shapes
+ * isBinaryValue() admits. A Uint8Array VIEW hashes only its own window, which is
+ * what we want: that window is what gets stored.
+ * @param {Uint8Array|ArrayBuffer|Blob} value
+ * @returns {Promise<string>}
+ */
+async function digestBinaryValue(value) {
+  let bytes;
+  if (typeof Blob !== 'undefined' && value instanceof Blob) {
+    bytes = await value.arrayBuffer();
+  } else {
+    bytes = value;
+  }
+  const hash = await getCrypto().subtle.digest('SHA-256', bytes);
+  return bufferToBase64(hash);
+}
+
+/**
+ * Compares a row's attached binary against the digests its envelope carries.
+ *
+ * Returns `unverified` (NOT `tampered`) when there is no digest map at all. That
+ * is the backward-compatibility decision, and it is deliberate: every v2 row
+ * written before this commit has no map, and treating those as hostile would
+ * hide - and, on the import path, refuse to restore - photos that are perfectly
+ * genuine. A missing map is old, not forged; a WRONG map is forged.
+ *
+ * Both directions are checked, because both are attacks:
+ *  - an attached blob whose digest disagrees (the photo was swapped),
+ *  - an attached blob the map does not mention at all (a blob bolted onto an
+ *    envelope sealed without one, e.g. onto a tombstone),
+ *  - a blob the map DOES mention that is no longer attached (the photo was
+ *    stripped in transit). No honest path does this: oversized rows are skipped
+ *    whole by peerSync, and both the backup export and the wire form carry the
+ *    bytes across as base64 and rebuild them.
+ *
+ * @param {Object} record - The raw row (binary lives at its top level).
+ * @param {unknown} digestMap - `payload[BINARY_DIGEST_FIELD]`, whatever it is.
+ * @returns {Promise<{ tampered: boolean, unverified: boolean }>}
+ */
+async function verifyBinaryDigests(record, digestMap) {
+  const attached = [];
+  for (const [field, value] of Object.entries(record)) {
+    if (isBinaryValue(value)) attached.push(field);
+  }
+
+  const hasMap = Boolean(digestMap) && typeof digestMap === 'object' && !Array.isArray(digestMap);
+  if (!hasMap) {
+    return { tampered: false, unverified: attached.length > 0 };
+  }
+
+  for (const field of attached) {
+    const expected = digestMap[field];
+    if (typeof expected !== 'string' || expected.length === 0) {
+      return { tampered: true, unverified: false };
+    }
+    if ((await digestBinaryValue(record[field])) !== expected) {
+      return { tampered: true, unverified: false };
+    }
+  }
+  for (const field of Object.keys(digestMap)) {
+    if (!attached.includes(field)) return { tampered: true, unverified: false };
+  }
+
+  return { tampered: false, unverified: false };
+}
+
+/**
  * Packs an entire record into a single encrypted envelope.
  *
  * Everything the caller passes is encrypted, EXCEPT:
@@ -463,7 +567,10 @@ function isBinaryValue(value) {
  *  - binary fields (Uint8Array / ArrayBuffer / Blob, e.g. `imageBlob`), which are
  *    already independently AES-GCM encrypted by encryptBlob() and are passed
  *    through at the top level so IndexedDB stores them as binary rather than
- *    inflating them through JSON.
+ *    inflating them through JSON. Their BYTES are not in the envelope, but a
+ *    SHA-256 of each of them is (see BINARY_DIGEST_FIELD), so swapping a photo
+ *    under an otherwise valid envelope is detectable: decryptRecord reports
+ *    `_binaryTampered`.
  *
  * Fields that used to sit in plaintext and be indexed (`date`, `category`,
  * `unlockDate`, `completed`, `completedAt`, `isOpened`) now live inside the
@@ -502,6 +609,18 @@ export async function encryptRecord(plainFields, key) {
   payload.updatedAt = updatedAt;
   payload.deleted = deleted;
 
+  // Always written, even when it is empty. Emptiness is meaningful: it says
+  // "this record was sealed with no binary attached", which is what makes a blob
+  // bolted onto a tombstone detectable. An ABSENT map means something else
+  // entirely - a row sealed before this field existed - and only the absent case
+  // is treated as unverified. `_bin` is in INTERNAL_RECORD_FIELDS, so a caller
+  // cannot supply its own.
+  const digests = {};
+  for (const [field, value] of Object.entries(binary)) {
+    digests[field] = await digestBinaryValue(value);
+  }
+  payload[BINARY_DIGEST_FIELD] = digests;
+
   const { ciphertext, iv } = await encryptJSON(payload, key);
 
   return {
@@ -539,6 +658,12 @@ async function decryptLegacyRecord(record, key) {
   out._schemaVersion = 1;
   out._needsReencrypt = true;
   out._headerTampered = false;
+  out._binaryTampered = false;
+  // v1 has nowhere to put a digest, exactly as it has nowhere to put a bound
+  // header. So a v1 photo is unverified by construction, and the callers'
+  // answer is the same one they already give a v1 header: a v1 row may create,
+  // never overwrite (see recordHasAuthenticatedHeader).
+  out._binaryUnverified = Object.values(record).some(isBinaryValue);
   return out;
 }
 
@@ -554,8 +679,19 @@ async function decryptLegacyRecord(record, key) {
  * @param {CryptoKey} key
  * @returns {Promise<Object>} The logical record, plus:
  *   `_schemaVersion` (1 or 2), `_needsReencrypt` (true for v1 rows),
- *   `_headerTampered` (true when the plaintext id/updatedAt/deleted disagree
- *   with the authenticated copies inside the envelope - treat as hostile).
+ *   `_headerTampered` (true when some unauthenticated part of the row disagrees
+ *   with the authenticated envelope: the plaintext id/updatedAt/deleted, or the
+ *   attached binary - treat as hostile),
+ *   `_binaryTampered` (the binary half of the above, on its own),
+ *   `_binaryUnverified` (the row carries binary but its envelope predates
+ *   digest binding, or is v1: nothing is wrong, nothing is proven).
+ *
+ *   `_headerTampered` is meaningful ONLY for v2 rows. A v1 row has no
+ *   authenticated header and no digest map to compare anything against, so
+ *   decryptLegacyRecord() stamps both tamper flags false unconditionally.
+ *   Callers handling untrusted rows must therefore gate on
+ *   recordHasAuthenticatedHeader() as well - a false flag on a v1 row means
+ *   "unknowable", not "clean".
  * @throws {Error} When the payload does not decrypt with this key.
  */
 /**
@@ -686,12 +822,21 @@ export async function decryptRecord(record, key) {
   out.updatedAt = innerUpdatedAt !== null ? innerUpdatedAt : record.updatedAt;
   out.deleted = innerDeleted !== null ? innerDeleted : record.deleted === true;
 
+  const binaryCheck = await verifyBinaryDigests(record, payload[BINARY_DIGEST_FIELD]);
+
   out._schemaVersion = RECORD_SCHEMA_VERSION;
   out._needsReencrypt = false;
+  out._binaryTampered = binaryCheck.tampered;
+  out._binaryUnverified = binaryCheck.unverified;
+  // `_headerTampered` is the single flag every consumer already gates on, so a
+  // swapped photo is folded into it rather than needing five UI components to
+  // learn a new field. Read it as "some unauthenticated part of this row
+  // disagrees with the authenticated envelope"; `_binaryTampered` says which.
   out._headerTampered =
     (typeof payload.id === 'string' && payload.id !== record.id) ||
     (innerUpdatedAt !== null && innerUpdatedAt !== record.updatedAt) ||
-    (innerDeleted !== null && innerDeleted !== (record.deleted === true));
+    (innerDeleted !== null && innerDeleted !== (record.deleted === true)) ||
+    binaryCheck.tampered;
 
   return out;
 }
