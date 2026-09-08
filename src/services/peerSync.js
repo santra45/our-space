@@ -1746,7 +1746,11 @@ export class PeerSyncManager {
       if (!ALLOWED_TABLES.has(table) || !Array.isArray(remoteItems)) continue;
       if (remoteItems.length > MAX_RECORDS_PER_TABLE) continue;
 
-      const localMap = new Map((localManifest[table] || []).map((i) => [i.id, i.updatedAt]));
+      // Carries `deleted` as well as `updatedAt`: the equal-timestamp tie-break
+      // below needs both.
+      const localMap = new Map(
+        (localManifest[table] || []).map((i) => [i.id, { updatedAt: i.updatedAt, deleted: i.deleted === true }])
+      );
 
       for (const rItem of remoteItems) {
         if (!rItem || typeof rItem.id !== 'string' || rItem.id.length > 128) continue;
@@ -1760,8 +1764,33 @@ export class PeerSyncManager {
           continue;
         }
 
-        const localUpdatedAt = localMap.get(rItem.id);
-        if (localUpdatedAt === undefined || rItem.updatedAt > localUpdatedAt) {
+        const local = localMap.get(rItem.id);
+
+        // Equal timestamps used to be skipped outright, to stop two devices
+        // requesting the same record from each other forever. But _incomingWins
+        // has a tie-break for exactly this case - a deletion beats an edit made
+        // in the same millisecond - and skipping here meant that rule never got
+        // the chance to run. If one phone edited an item while the other deleted
+        // it at the same instant, NEITHER side asked for the other's copy and
+        // the two stayed permanently out of step on that record.
+        //
+        // So mirror tie-break 1 here, and only that one. If the remote copy is a
+        // tombstone and ours is not, the remote wins and we pull it. The reverse
+        // case needs no request: from the other device's point of view OUR copy
+        // is the tombstone, so it pulls from us. Exactly one side asks, both
+        // converge on the deletion, and there is no ping-pong.
+        //
+        // Not mirrored: _incomingWins' second tie-break, the fingerprint
+        // comparison for two same-instant EDITS. The manifest carries only id,
+        // updatedAt and deleted, so there is nothing here to compare - detecting
+        // that case would mean putting a content fingerprint on the wire. Same
+        // millisecond, same delete flag, different content stays unreconciled.
+        const wantsRemote =
+          local === undefined ||
+          rItem.updatedAt > local.updatedAt ||
+          (rItem.updatedAt === local.updatedAt && rItem.deleted === true && !local.deleted);
+
+        if (wantsRemote) {
           requests.push({ table, id: rItem.id });
           if (requests.length >= MAX_REQUESTS_PER_SESSION) break;
         }

@@ -2222,6 +2222,54 @@ async function run() {
     spCleanTombPlain._headerUnverified !== true
   );
 
+  /* ------- 11decies. equal-timestamp delete vs edit must still reconcile ---- */
+  section('11decies. A same-instant delete is pulled instead of diverging forever');
+
+  // Reported by the project owner. _diffManifest skipped equal timestamps
+  // outright to avoid two devices requesting from each other forever - but
+  // _incomingWins has a tie-break saying a deletion beats a same-instant edit,
+  // and that rule never got the chance to run. Phone A edits an item, phone B
+  // deletes it in the same millisecond, neither asks for the other's copy, and
+  // the two stay out of step on that record permanently.
+  const dmLocal = [{ id: 'x1', updatedAt: NOW, deleted: false }];
+  const dmRemoteDeleted = [{ id: 'x1', updatedAt: NOW, deleted: true }];
+
+  // _diffManifest is the SHIPPED method; only the local manifest it reads is
+  // supplied here, the same way withFakeDb swaps db.table for the write tests.
+  const dmDiff = async (localRows, remoteRows) => {
+    const saved = db.getManifest;
+    db.getManifest = async () => ({ letters: localRows });
+    try {
+      return await peerSync._diffManifest({ letters: remoteRows });
+    } finally {
+      db.getManifest = saved;
+    }
+  };
+
+  const dmPull = await dmDiff(dmLocal, dmRemoteDeleted);
+  check(
+    'a same-instant tombstone IS requested, so the deletion converges',
+    dmPull.length === 1 && dmPull[0].id === 'x1'
+  );
+
+  // The mirror case must NOT request, or the two devices ping-pong forever.
+  const dmNoPull = await dmDiff(
+    [{ id: 'x1', updatedAt: NOW, deleted: true }],
+    [{ id: 'x1', updatedAt: NOW, deleted: false }]
+  );
+  check(
+    'the reverse case asks for nothing - exactly one side pulls, so no ping-pong',
+    dmNoPull.length === 0
+  );
+
+  // Two same-instant edits still must not request, for the same reason.
+  const dmBothLive = await dmDiff(dmLocal, [{ id: 'x1', updatedAt: NOW, deleted: false }]);
+  check('two same-instant edits still do not loop', dmBothLive.length === 0);
+
+  // And genuinely newer still wins, as before.
+  const dmNewer = await dmDiff(dmLocal, [{ id: 'x1', updatedAt: NOW + 1000, deleted: false }]);
+  check('a genuinely newer remote row is still requested', dmNewer.length === 1);
+
   section('11c. A backup whose origin cannot be established is `unknown`, not `same`');
 
   // ImportPreview had branches for 'foreign' and 'no-local-vault' and none for
