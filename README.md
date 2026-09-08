@@ -179,7 +179,7 @@ src/
     peerSync.js    WebRTC transport, pairing handshake, replication protocol
     vaultKey.js    In-memory key holder
     limits.js      Size ceilings shared by storage and the wire
-  db/index.js      Dexie schema, migrations, backup import/export
+  db/index.js      Dexie schema, backup import/export, record integrity gates
   context/         VaultContext (lock/unlock), SyncContext (pairing lifecycle)
   components/      One folder per screen, plus layout/ common/ sync/
   utils/           Dates, image compression, invite links
@@ -192,7 +192,7 @@ test-crypto.mjs    Test suite — runs in plain node, no browser needed
 
 `npm test` runs the whole suite in node with no browser. It exercises the real shipped
 functions rather than reimplementations — the database methods are bound to an in-memory
-store so the actual merge, integrity and migration code runs.
+store so the actual merge and integrity code runs.
 
 A few invariants the tests hold in place, worth knowing before changing anything in
 `services/` or `db/`:
