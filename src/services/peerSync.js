@@ -45,6 +45,7 @@ import {
   base64ToBuffer,
   decryptRecord,
   recordCarriesAuthenticatedPayload,
+  recordHasAuthenticatedHeader,
 } from './crypto.js';
 import { PEER_ID_REGEX } from '../utils/invite.js';
 import db, { SYNCED_TABLES, MAX_IMAGE_BLOB_BYTES, MAX_RECORDS_PER_TABLE } from '../db/index.js';
@@ -2189,6 +2190,17 @@ export class PeerSyncManager {
     await db.transaction('rw', tables, async () => {
       for (const { table, row } of staged) {
         const existing = await db.table(table).get(row.id);
+        // Overwriting or deleting an existing row requires a BOUND header, so a
+        // v1 row can only ever create. decryptLegacyRecord cannot detect a
+        // rewritten id / updatedAt / deleted header (see
+        // recordHasAuthenticatedHeader), which would otherwise let a single
+        // ciphertext produced under the vault key be aimed at any id as a
+        // forged tombstone. A partner mid-migration still syncs: rows we do not
+        // have yet are unaffected, and their own sweep re-seals the rest as v2.
+        if (existing && !recordHasAuthenticatedHeader(row)) {
+          stale++;
+          continue;
+        }
         if (!this._incomingWins(existing, row)) {
           stale++;
           continue;

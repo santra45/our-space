@@ -581,6 +581,45 @@ async function decryptLegacyRecord(record, key) {
  * @param {unknown} record
  * @returns {boolean}
  */
+/**
+ * True only when `record` is a v2 envelope, i.e. its plaintext header is
+ * cryptographically bound to its contents.
+ *
+ * THIS IS THE STRONGER CHECK, and the distinction matters more than the names
+ * suggest. recordCarriesAuthenticatedPayload() asks whether SOME ciphertext is
+ * present. That is not the same as asking whether the id / updatedAt / deleted
+ * header can be trusted, and for a v1 row it never can be:
+ * decryptLegacyRecord() decrypts each `<base>Cipher` field independently and
+ * has no authenticated copy of the header to compare against, so it stamps
+ * `_headerTampered: false` unconditionally. It is not a bug there - v1 simply
+ * has nowhere to put a bound header.
+ *
+ * The consequence is a forgery. One ciphertext produced under the vault key -
+ * any content at all, and every backup file ships one in its own vaultMeta
+ * canary - can be pasted into a hand-built row as a decoy `<base>Cipher` /
+ * `<base>Iv` pair. That row then decrypts "successfully", reports no header
+ * tampering, and carries whatever id, updatedAt and `deleted: true` the forger
+ * chose. Pointed at a live photo it destroys the imageBlob; the attacker never
+ * needed the vault passphrase, only the backup file's own passphrase.
+ *
+ * So untrusted input paths must require THIS, not merely a payload, before
+ * letting a row overwrite or delete something that already exists.
+ *
+ * @param {unknown} record
+ * @returns {boolean}
+ */
+export function recordHasAuthenticatedHeader(record) {
+  return Boolean(
+    record &&
+      typeof record === 'object' &&
+      record.v === RECORD_SCHEMA_VERSION &&
+      typeof record.ciphertext === 'string' &&
+      record.ciphertext.length > 0 &&
+      typeof record.iv === 'string' &&
+      record.iv.length > 0
+  );
+}
+
 export function recordCarriesAuthenticatedPayload(record) {
   if (!record || typeof record !== 'object') return false;
 

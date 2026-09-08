@@ -39,6 +39,7 @@ import {
   encryptRecord,
   isLegacyRecord,
   recordCarriesAuthenticatedPayload,
+  recordHasAuthenticatedHeader,
 } from '../services/crypto.js';
 
 /** Tables that participate in P2P sync and in backups. */
@@ -494,7 +495,15 @@ export class SweetheartDatabase extends Dexie {
     const perTable = {};
     const skippedTables = [];
     const writes = [];
-    const totals = { added: 0, updated: 0, stale: 0, invalid: 0, undecryptable: 0 };
+    const totals = {
+      added: 0,
+      updated: 0,
+      deleted: 0,
+      stale: 0,
+      invalid: 0,
+      undecryptable: 0,
+      unauthenticated: 0,
+    };
 
     for (const [tableName, records] of Object.entries(tables)) {
       if (!IMPORTABLE_TABLES.has(tableName) || !Array.isArray(records)) {
@@ -507,7 +516,16 @@ export class SweetheartDatabase extends Dexie {
         );
       }
 
-      const stats = { total: records.length, added: 0, updated: 0, stale: 0, invalid: 0, undecryptable: 0 };
+      const stats = {
+        total: records.length,
+        added: 0,
+        updated: 0,
+        deleted: 0,
+        stale: 0,
+        invalid: 0,
+        undecryptable: 0,
+        unauthenticated: 0,
+      };
       const table = this.table(tableName);
 
       // Sanitize + integrity-check first, OUTSIDE any transaction: awaiting Web
@@ -533,15 +551,39 @@ export class SweetheartDatabase extends Dexie {
         const existingRows = await table.bulkGet(chunk.map((row) => row.id));
         for (let i = 0; i < chunk.length; i++) {
           const existing = existingRows[i];
+          const row = chunk[i];
           if (!existing) {
+            // Nothing here to destroy. A v1 row is allowed to CREATE, because the
+            // worst case is a junk row the user can delete, not a lost photo.
             stats.added++;
-            writes.push({ table: tableName, row: chunk[i] });
-          } else if (incomingWins(existing, chunk[i])) {
-            stats.updated++;
-            writes.push({ table: tableName, row: chunk[i] });
-          } else {
-            stats.stale++;
+            writes.push({ table: tableName, row });
+            continue;
           }
+
+          // Something already exists at this id, so this write can destroy data.
+          // Only a v2 envelope may do that: see recordHasAuthenticatedHeader.
+          // A v1 row's id / updatedAt / deleted header is not bound to any
+          // ciphertext, so a forger holding one blob encrypted under the vault
+          // key can aim a tombstone at any id they can guess - and the seeded
+          // ids are identical across every vault by construction.
+          if (!recordHasAuthenticatedHeader(row)) {
+            stats.unauthenticated++;
+            continue;
+          }
+
+          if (!incomingWins(existing, row)) {
+            stats.stale++;
+            continue;
+          }
+
+          // Count destructive writes separately. Folding these into "updated"
+          // let the preview describe losing a photo as an update.
+          if (row.deleted === true && existing.deleted !== true) {
+            stats.deleted++;
+          } else {
+            stats.updated++;
+          }
+          writes.push({ table: tableName, row });
         }
       }
 
@@ -586,6 +628,15 @@ export class SweetheartDatabase extends Dexie {
           const stillWins = chunk.filter((row, i) => {
             const existing = existingRows[i];
             if (!existing) return true;
+            // Re-assert the plan-time invariant here too. A row that would
+            // overwrite or delete an existing one must carry a bound header, and
+            // a sync landing between preview and confirm can turn an "added"
+            // into an overwrite. Belt and braces: a plan is a caller-supplied
+            // object, so this must not rely on planBackupMerge having filtered.
+            if (!recordHasAuthenticatedHeader(row)) {
+              supersededSincePreview++;
+              return false;
+            }
             if (plan.incomingWins(existing, row)) return true;
             supersededSincePreview++;
             return false;

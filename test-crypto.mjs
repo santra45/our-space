@@ -102,6 +102,7 @@ import {
   createEncryptedBackup,
   decryptBackupContainer,
   recordCarriesAuthenticatedPayload,
+  recordHasAuthenticatedHeader,
 } from './src/services/crypto.js';
 import { buildInviteUrl, parseInvite } from './src/utils/invite.js';
 import {
@@ -971,6 +972,108 @@ async function run() {
   check('the live roulette-current is untouched', survivingRoulette.idea === 'Pizza and a bad film');
 
   /* ------------- 11c. unknown-origin files (the SyncHubModal preview branch) - */
+  /* ---------------- 11bis. decoy-ciphertext forgery (the v1 header hole) ---- */
+  section('11bis. A v1 row with a DECOY cipher pair cannot destroy a live record');
+
+  // The bypass an adversarial reviewer built against the first version of this
+  // guard, kept as a permanent regression test.
+  //
+  // recordCarriesAuthenticatedPayload only asks whether SOME ciphertext is
+  // present. decryptLegacyRecord then decrypts each <base>Cipher field on its
+  // own and stamps _headerTampered:false unconditionally, because v1 has no
+  // authenticated copy of the header to compare against. So ONE ciphertext made
+  // under the vault key - and every backup ships one, its own vaultMeta canary -
+  // can be pasted into a hand-built row as a decoy pair. The row decrypts, looks
+  // untampered, and carries whatever id and `deleted:true` the forger chose.
+  //
+  // The attacker needs the backup FILE passphrase and never the vault
+  // passphrase. It is destroy-only - they still cannot read anything.
+  const liveMemory = await encryptRecord(
+    { id: 'mem-1', updatedAt: NOW - 10 * MINUTE, deleted: false, caption: 'Us on the roof' },
+    key
+  );
+  await liveStore.table('memories').put({ ...liveMemory, imageBlob: new Uint8Array([1, 2, 3, 4]) });
+
+  // A real ciphertext under the vault key, standing in for the lifted canary.
+  const decoy = await encryptText('anything at all', key);
+
+  const forgedTombstone = {
+    id: 'mem-1',
+    updatedAt: NOW + MINUTE, // newer, so precedence would let it win
+    deleted: true,
+    v: 1,
+    captionCipher: decoy.ciphertext,
+    captionIv: decoy.iv,
+  };
+
+  check(
+    'the decoy pair does satisfy the weaker payload check (this is why it worked)',
+    recordCarriesAuthenticatedPayload(forgedTombstone) === true
+  );
+  check(
+    'but it has NO authenticated header',
+    recordHasAuthenticatedHeader(forgedTombstone) === false
+  );
+  check(
+    'and a genuine v2 envelope does',
+    recordHasAuthenticatedHeader(liveMemory) === true
+  );
+
+  const forgedPlan = await liveStore.planBackupMerge({ memories: [forgedTombstone] }, key);
+  check(
+    'the forgery is refused as unauthenticated, not counted as an update',
+    forgedPlan.totals.unauthenticated === 1 && forgedPlan.totals.updated === 0
+  );
+  check('the forgery queues no write', forgedPlan.writes.length === 0);
+
+  await liveStore.applyBackupMerge(forgedPlan);
+  const survivedForgery = await liveStore.table('memories').get('mem-1');
+  check(
+    'the live photo row is intact: not tombstoned, bytes still present',
+    survivedForgery.deleted !== true && survivedForgery.imageBlob?.length === 4
+  );
+
+  // applyBackupMerge must not trust a hand-built plan either.
+  const smuggled = await liveStore.applyBackupMerge({
+    writes: [{ table: 'memories', row: forgedTombstone }],
+    incomingWins: (existing, row) => true,
+  });
+  check(
+    'a hand-built plan cannot smuggle the forgery past the transaction',
+    (smuggled.written.memories || 0) === 0
+  );
+  const survivedSmuggle = await liveStore.table('memories').get('mem-1');
+  check(
+    'the photo survived the smuggled plan too',
+    survivedSmuggle.deleted !== true && survivedSmuggle.imageBlob?.length === 4
+  );
+
+  // The wire path enforces the same invariant in _commitStagedRecords, which
+  // talks to real Dexie and so cannot run here (no IndexedDB in plain node).
+  // What IS testable is the predicate that gate depends on, asserted above.
+  // The guard itself is peerSync.js: `if (existing && !recordHasAuthenticatedHeader(row))`.
+  check(
+    'the wire gate keys off the same predicate this suite pins down',
+    recordHasAuthenticatedHeader(forgedTombstone) === false &&
+      recordHasAuthenticatedHeader(liveMemory) === true
+  );
+
+  // An honest v1 row is still allowed to CREATE something new - refusing those
+  // outright would break a partner who has not finished the v2 sweep.
+  const legacyNew = {
+    id: 'mem-legacy-new',
+    updatedAt: NOW,
+    deleted: false,
+    v: 1,
+    captionCipher: decoy.ciphertext,
+    captionIv: decoy.iv,
+  };
+  const createPlan = await liveStore.planBackupMerge({ memories: [legacyNew] }, key);
+  check(
+    'a v1 row for an id we do not have is still allowed to create',
+    createPlan.totals.added === 1 && createPlan.totals.unauthenticated === 0
+  );
+
   section('11c. A backup whose origin cannot be established is `unknown`, not `same`');
 
   // ImportPreview had branches for 'foreign' and 'no-local-vault' and none for
