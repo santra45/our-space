@@ -255,6 +255,9 @@ for (const method of [
   // hooks and encryptRecord strips the field, so every write site calls this
   // explicitly - which makes it a real dependency of applyBackupMerge.
   '_withDelIndex',
+  // Read paths, so the sealed-table check on reads is driven for real.
+  'getDecrypted',
+  'listDecrypted',
 ]) {
   if (typeof SweetheartDatabase.prototype[method] !== 'function') {
     throw new Error(`test harness is stale: SweetheartDatabase has no ${method}()`);
@@ -2411,6 +2414,55 @@ async function run() {
     } catch {}
     if (!clkHadLS) delete globalThis.localStorage;
   }
+
+  /* ------- 11terdecies. reads must check the sealed table binding too ------ */
+  section('11terdecies. A cross-table row is spotted on read, not just on write');
+
+  // Reported by the project owner. decryptRecord can flag `_tableTampered`, but
+  // only when it is told which table it is reading - and getDecrypted and
+  // listDecrypted never passed one. The write gates refuse a cross-table row an
+  // overwrite, but the create path is deliberately permissive, so such a row CAN
+  // be sitting in a table. Every screen would have rendered it as ordinary
+  // content, because a read that does not ask cannot notice.
+  const xtRow = await encryptRecord(
+    { id: 'xt-1', updatedAt: NOW, deleted: false, content: 'sealed for letters' },
+    key,
+    { table: 'letters' }
+  );
+  // Same row, filed under bucketList - what the permissive create path allows.
+  const xtStore = new FakeVaultStore({ bucketList: [xtRow], letters: [xtRow] });
+
+  const xtHonest = await xtStore.getDecrypted('letters', 'xt-1', key);
+  check(
+    'read from the table it was sealed for: nothing flagged',
+    xtHonest._tableTampered !== true && xtHonest._headerTampered !== true
+  );
+
+  const xtCross = await xtStore.getDecrypted('bucketList', 'xt-1', key);
+  check(
+    'read from a DIFFERENT table: flagged as tampered',
+    xtCross._tableTampered === true && xtCross._headerTampered === true
+  );
+
+  const xtList = await xtStore.listDecrypted('bucketList', key);
+  const xtListed = xtList.find((r) => r.id === 'xt-1');
+  check(
+    'listDecrypted flags it too, so screens can hide it',
+    xtListed && xtListed._headerTampered === true
+  );
+
+  // A row sealed before the table binding existed must still read cleanly, or
+  // every pre-binding record would vanish from the UI.
+  const xtUnbound = await encryptRecord(
+    { id: 'xt-old', updatedAt: NOW, deleted: false, content: 'from an older build' },
+    key
+  );
+  const xtOldStore = new FakeVaultStore({ letters: [xtUnbound] });
+  const xtOld = await xtOldStore.getDecrypted('letters', 'xt-old', key);
+  check(
+    'a pre-binding row is unverified, NOT tampered, so it still shows',
+    xtOld._tableUnverified === true && xtOld._headerTampered !== true
+  );
 
   section('11c. A backup whose origin cannot be established is `unknown`, not `same`');
 

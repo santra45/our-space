@@ -350,7 +350,14 @@ export class SweetheartDatabase extends Dexie {
     if (!key) throw new Error('getDecrypted: vault is locked');
     const row = await this.table(tableName).get(id);
     if (!row) return null;
-    return await decryptRecord(row, key);
+    // The table is passed so a row sealed for a DIFFERENT table is flagged
+    // `_tableTampered` here too. Without it, decryptRecord has no expected table
+    // to compare the sealed `_tbl` against, so it reports nothing and every
+    // screen renders a cross-table row as ordinary content. The write gates
+    // refuse such a row an overwrite, but the create path is deliberately
+    // permissive - so one CAN be sitting in a table, and a read that does not
+    // ask is a read that will not notice.
+    return await decryptRecord(row, key, { table: tableName });
   }
 
   /**
@@ -372,7 +379,9 @@ export class SweetheartDatabase extends Dexie {
     for (const row of rows) {
       if (!options.includeDeleted && row.deleted === true) continue;
       try {
-        out.push(await decryptRecord(row, key));
+        // Same reason as getDecrypted: without the expected table, a row sealed
+        // for another one is indistinguishable from a legitimate record.
+        out.push(await decryptRecord(row, key, { table: tableName }));
       } catch {
         // Undecryptable row (wrong key, corruption, hostile peer). Skip it.
       }
