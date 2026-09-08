@@ -77,6 +77,21 @@ export function SyncProvider({ children }) {
 
   const dialTimerRef = useRef(null);
 
+  // The resume listeners below are registered once per unlock, so they must not
+  // close over render-time values. These refs give them the current ones.
+  const syncStatusRef = useRef(syncStatus);
+  const pendingInviteRef = useRef(pendingInvite);
+  const myPeerIdRef = useRef(myPeerId);
+  useEffect(() => {
+    syncStatusRef.current = syncStatus;
+  }, [syncStatus]);
+  useEffect(() => {
+    pendingInviteRef.current = pendingInvite;
+  }, [pendingInvite]);
+  useEffect(() => {
+    myPeerIdRef.current = myPeerId;
+  }, [myPeerId]);
+
   // Transient banners expire on their own. Owning the timer here rather than at
   // each call site means a notice raised outside the peer effect (a failed
   // manual sync, say) cannot get stuck on screen forever.
@@ -310,6 +325,65 @@ export function SyncProvider({ children }) {
     if (!target || target === myPeerId) return;
     trustAndConnect(target);
   };
+
+  /**
+   * Re-dial the trusted partner when the phone comes back.
+   *
+   * peerSync already listens for `visibilitychange`, but all it does there is
+   * `peer.reconnect()` - which reconnects this client to the PeerJS signalling
+   * server and nothing else. It does NOT re-establish the data channel to the
+   * partner. Mobile browsers tear that channel down while the screen is locked
+   * or the tab is backgrounded, so coming back left the connection dead until
+   * the user noticed and tapped Reconnect by hand. Nothing on screen said it had
+   * to be tapped, so in practice the two phones just quietly stopped syncing.
+   *
+   * Guards, because this fires on every unlock and every network flap:
+   *  - vault locked -> there is no key to authenticate with
+   *  - already authorized -> connectToPartner would return anyway, but not
+   *    calling it at all keeps a healthy session entirely untouched
+   *  - a pending invite -> that peer has not been confirmed by the user yet, and
+   *    auto-dialling it would defeat the confirmation
+   *  - only the TRUSTED slot is dialled, never the paired one, so a stranger who
+   *    got as far as opening a channel can never be re-dialled automatically
+   *  - a cooldown, so a flapping network cannot produce a dial storm and trip
+   *    the partner's own admission backoff
+   */
+  const resumeGuardRef = useRef(0);
+  useEffect(() => {
+    if (!isUnlocked || !cryptoKey) return undefined;
+
+    const RESUME_COOLDOWN_MS = 5000;
+
+    const maybeResume = () => {
+      if (document.visibilityState !== 'visible') return;
+      if (!navigator.onLine) return;
+      if (pendingInviteRef.current) return;
+      if (AUTHORIZED_STATES.has(syncStatusRef.current.state)) return;
+
+      const target = readStored(TRUSTED_PARTNER_KEY);
+      if (!target || target === myPeerIdRef.current) return;
+
+      const now = Date.now();
+      if (now - resumeGuardRef.current < RESUME_COOLDOWN_MS) return;
+      resumeGuardRef.current = now;
+
+      peerSync.connectToPartner(target).catch(() => {
+        // Offline, partner asleep, or signalling not back yet. The next
+        // visibility change or `online` event tries again.
+      });
+    };
+
+    document.addEventListener('visibilitychange', maybeResume);
+    window.addEventListener('online', maybeResume);
+    // Also try once now: the effect can mount just after a resume, with no
+    // further event coming.
+    maybeResume();
+
+    return () => {
+      document.removeEventListener('visibilitychange', maybeResume);
+      window.removeEventListener('online', maybeResume);
+    };
+  }, [isUnlocked, cryptoKey]);
 
   const unpairPartner = () => {
     removeStored(PAIRED_PARTNER_KEY);
