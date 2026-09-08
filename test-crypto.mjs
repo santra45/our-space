@@ -41,8 +41,11 @@
  *    `db.migrateLegacyRecords()` performs - the part that can lose data - but
  *    not the schema upgrade around it.
  *  - The `_del` tombstone hooks, which are Dexie CRUD hooks.
- *  - Every React gate: LockScreen's restore mode and unreadable panel,
- *    SyncHubModal's ImportPreview, VaultContext's guardDestructiveWrite,
+ *  - Every React gate: LockScreen's restore mode, its unreadable panel and its
+ *    slow/blocked hint during 'checking', SyncHubModal's ImportPreview rendering
+ *    (section 11c covers only the classification it branches on),
+ *    SecretCapsule's sealed-vs-date-gated banner, VaultContext's
+ *    guardDestructiveWrite,
  *    vaultCheckState/retryVaultCheck, wipeSyncedTables ordering and the
  *    DESTROY_CONFIRMATION_PHRASE prompt. Section 13 reproduces the crypto
  *    sequence VaultContext.restoreVaultFromBackup performs, not the UI that
@@ -966,6 +969,58 @@ async function run() {
     key
   );
   check('the live roulette-current is untouched', survivingRoulette.idea === 'Pizza and a bad film');
+
+  /* ------------- 11c. unknown-origin files (the SyncHubModal preview branch) - */
+  section('11c. A backup whose origin cannot be established is `unknown`, not `same`');
+
+  // ImportPreview had branches for 'foreign' and 'no-local-vault' and none for
+  // 'unknown', so a file carrying no readable vault identity rendered exactly
+  // like the user's own backup: counts, no banner, a live Merge button. These
+  // assertions pin the classification that branch keys off, and the reason the
+  // branch is a WARNING rather than an extra confirmation gate: identity is a
+  // label, the per-row key check is the actual gate.
+  const healthyLocalRead = { ok: true, meta: { salt } };
+
+  check(
+    'a container with no vaultMeta at all is `unknown` against a HEALTHY local read',
+    compareVaultIdentity(readBackupVaultIdentity({ bucketList: [] }), healthyLocalRead) === 'unknown'
+  );
+  check(
+    'a vaultMeta row with a salt but no canary is `unknown` too, not `foreign`',
+    compareVaultIdentity(
+      readBackupVaultIdentity({ vaultMeta: [{ id: 'config', salt: foreignSalt }] }),
+      healthyLocalRead
+    ) === 'unknown'
+  );
+  check(
+    'unknown is not silently collapsed into same',
+    compareVaultIdentity(null, healthyLocalRead) !== 'same'
+  );
+
+  // The justification for leaving Merge live on an unknown-origin file: a row is
+  // written only when it authenticates under THIS vault's key, whatever the
+  // file's (missing) vaultMeta says. Mixed file, no identity at all.
+  const unknownOriginStore = new FakeVaultStore();
+  const mineButUnlabelled = await encryptRecord(
+    { id: 'bkt-unknown-origin', updatedAt: NOW, deleted: false, text: 'Actually mine' },
+    key
+  );
+  const theirsUnlabelled = await encryptRecord(
+    { id: 'bkt-not-mine', updatedAt: NOW, deleted: false, text: 'Not mine' },
+    foreignKey
+  );
+  const unknownPlan = await unknownOriginStore.planBackupMerge(
+    { bucketList: [mineButUnlabelled, theirsUnlabelled] },
+    key
+  );
+  check(
+    'an unlabelled file still only writes rows that decrypt under the live key',
+    unknownPlan.totals.added === 1 && unknownPlan.totals.undecryptable === 1
+  );
+  check(
+    'and the one queued write is the row this vault actually authored',
+    unknownPlan.writes.length === 1 && unknownPlan.writes[0].row.id === 'bkt-unknown-origin'
+  );
 
   /* --------------------------------- 12. merge precedence is peerSync's rule */
   section("12. An older backup does not revert newer local work (peerSync's own rule)");

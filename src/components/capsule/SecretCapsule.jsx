@@ -432,10 +432,27 @@ export function SecretCapsule() {
       tap();
       setNotice(null);
 
+      // A date-locked letter is one of TWO different things, and saying the
+      // stronger one about the weaker one is a lie the user cannot check.
+      //
+      //   isSealed  - the body is wrapped under a sub-key derived from the
+      //               unlock date and the record id. Nothing here can re-derive
+      //               it before that date; the clock is not what stops you.
+      //   !isSealed - the body is plaintext inside the ordinary vault envelope
+      //               and only this app's date check hides it. That is the state
+      //               a letter is in when the retro-seal pass deferred it (the
+      //               legacy migration never finished) or gave up after
+      //               MAX_SEAL_UPGRADE_ATTEMPTS.
+      //
+      // The list badge already only says "key-wrapped" for the sealed case; this
+      // banner used to claim the key wrap for both.
       if (letter.isLocked) {
+        const until = `${formatDatePretty(letter.lockDate)} - ${formatTimeRemaining(letter.lockDate)}`;
         setNotice({
           tone: 'lock',
-          text: `"${letter.title}" stays sealed until ${formatDatePretty(letter.lockDate)} - ${formatTimeRemaining(letter.lockDate)}. Its body is encrypted under a key this app will not re-derive before that date.`,
+          text: letter.isSealed
+            ? `"${letter.title}" stays sealed until ${until}. Its body is encrypted under a key this app will not re-derive before that date.`
+            : `"${letter.title}" stays closed until ${until}. This one is not key-wrapped yet - its body sits in the vault like any other record and only this app's date check is holding it shut. It will be wrapped the next time this screen can seal it safely.`,
         });
         return;
       }

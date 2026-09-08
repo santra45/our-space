@@ -173,6 +173,30 @@ function PassphrasePrompt({
  * Counts, not reassurance. `stale` is the number the old blind bulkPut would
  * have silently overwritten with older data, and `undecryptable` is the tell
  * that the file belongs to a different vault entirely.
+ *
+ * Every `relation` compareVaultIdentity can return has a branch here. 'unknown'
+ * used to have none, so a file whose origin could not be established rendered
+ * identically to the user's own backup - same counts, no banner, live Merge
+ * button. It now says so out loud.
+ *
+ * DELIBERATE: 'unknown' gets a LOUD banner but NOT the confirmation phrase a
+ * salt replacement gets, and the Merge button stays live. The reasoning, since
+ * the opposite choice is the tempting one:
+ *
+ *   - Identity is a label; the gate is per-row. planBackupMerge queues a row
+ *     only when it carries a complete authenticated payload AND that payload
+ *     decrypts under this device's live key. Forging one needs the key. So a
+ *     queued row was provably written by THIS vault, whatever the file's
+ *     (missing) vaultMeta claims, and a hostile unlabelled file can at worst
+ *     replay rows the user already owns - which `incomingWins` then rejects
+ *     unless they are genuinely newer than the local copy.
+ *   - Nothing here writes a salt or clears a table, so there is no destructive
+ *     outcome for a phrase to guard. Asking for one anyway would train the user
+ *     to type it past a file that is already proven safe, and that devalues the
+ *     same phrase where it guards something real.
+ *
+ * What unknown origin actually costs is the ability to EXPLAIN a large
+ * `undecryptable` count, so that is what the banner talks about.
  */
 function ImportPreview({ plan, relation, busy, onConfirm, onCancel }) {
   const { added, updated, stale, invalid, undecryptable } = plan.totals;
@@ -203,8 +227,41 @@ function ImportPreview({ plan, relation, busy, onConfirm, onCancel }) {
                 pick), so a blind restore would replace your copies with rows nothing here can read —
                 they would simply vanish from every screen with no error.
               </p>
+              {/* Describes the counters printed below rather than promising a
+                  result independently of them. The old copy asserted "every
+                  record failed" as an unconditional guarantee, sitting directly
+                  above numbers that are computed separately - a string that can
+                  disagree with the data under it is a defect even while it
+                  happens to be true. */}
               <p className="mt-1 font-bold">
-                Every record from it failed the decryption check below and will NOT be written.
+                {willWrite === 0
+                  ? 'Nothing from it can be written: the counts below are the finished result of ' +
+                    'checking every record in the file against your key, and none of them passed.'
+                  : `The counts below are the finished result of checking every record in this ` +
+                    `file against your key, and ${willWrite} of them passed. A backup from a ` +
+                    `different vault should have none — read the numbers before you accept them.`}
+              </p>
+            </div>
+          </div>
+        )}
+
+        {relation === 'unknown' && (
+          <div className="mt-3 p-3 rounded-xl bg-amber-50 border-2 border-amber-300 flex items-start gap-2">
+            <ShieldAlert className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+            <div className="text-[11px] text-amber-900 leading-relaxed">
+              <p className="font-extrabold uppercase tracking-wide">Origin not established</p>
+              <p className="mt-1">
+                This file carries no readable vault identity — the part naming the vault it came
+                from is missing or incomplete — so it could not be matched against the vault on
+                this device. <strong>Every backup this app has ever written carries one</strong>,
+                so this file has been altered, truncated, or made by something else.
+              </p>
+              <p className="mt-1">
+                That does not loosen anything below. A record is still only written when it decrypts
+                and authenticates under <strong>your current key</strong>, which no other vault can
+                produce — so anything that does get written is provably yours. If the counts below
+                are mostly &quot;could not be decrypted&quot;, this file is not yours and you should
+                cancel.
               </p>
             </div>
           </div>

@@ -112,6 +112,27 @@ function sanitizeCoupleNames(value, fallback = 'Us') {
  * ahead of anything the partner has issued, and the +1 over the current config
  * guarantees an edit always beats the value it is replacing.
  *
+ * EVERY config stamp goes through here now, including the two that create a
+ * config (initializeVault and initializeFromPartnerInvite). They used to stamp
+ * raw Date.now() while the edit path was careful, which is exactly the
+ * inconsistency that lets a first write be un-beatable.
+ *
+ * DELIBERATELY NOT DONE: feeding an inbound partner config into a clock floor.
+ * Two reasons, and the second one is why it would be pointless even if it were
+ * safe.
+ *   1. peerSync keeps ONE high-water mark, `_observedRemoteMax`, and every
+ *      record write consults it. Raising it from the config channel would let a
+ *      single settings message from a peer with a broken (or hostile) clock
+ *      ratchet the timestamp on every future PHOTO and LETTER this device
+ *      writes, permanently and irreversibly. Couple names are cosmetic; records
+ *      are the irreplaceable part. Never trade the second for the first.
+ *   2. A floor only raises OUR OWN stamps. The failure it would supposedly fix -
+ *      a partner's genuinely newer settings losing to our inflated placeholder -
+ *      is decided by the receiver comparing the two numbers, so pushing our
+ *      number even higher makes the partner lose harder, not less. The real fix
+ *      is not to inflate the placeholder in the first place; see
+ *      initializeFromPartnerInvite.
+ *
  * @param {{ updatedAt?: number }|null} currentConfig
  * @returns {number}
  */
@@ -422,7 +443,12 @@ export function VaultProvider({ children }) {
           iterations: PBKDF2_ITERATIONS_CURRENT,
         });
 
-        const now = Date.now();
+        // These settings were genuinely typed here, so they are a real authored
+        // write and get a real monotonic stamp - the same helper the edit path
+        // uses, not raw Date.now(). `createdAt` stays wall-clock because it is
+        // descriptive: nothing merges on it.
+        const createdAt = Date.now();
+        const configAt = nextConfigTimestamp(null);
         const config = {
           coupleNames: sanitizeCoupleNames(initialSettings.coupleNames),
           startDate: isValidStartDate(initialSettings.startDate)
@@ -430,10 +456,10 @@ export function VaultProvider({ children }) {
             : localDateString(),
           // Stamped now, not left undefined: an unstamped config loses every
           // merge against a partner, however old the partner's copy is.
-          updatedAt: now,
+          updatedAt: configAt,
         };
 
-        const { canary, canaryIv } = await createCanary(key, { ...config, createdAt: now });
+        const { canary, canaryIv } = await createCanary(key, { ...config, createdAt });
 
         await db.vaultMeta.put({
           id: 'config',
@@ -441,7 +467,7 @@ export function VaultProvider({ children }) {
           canary,
           canaryIv,
           kdfIterations: PBKDF2_ITERATIONS_CURRENT,
-          updatedAt: now,
+          updatedAt: configAt,
         });
 
         // Only after the new salt is committed. The old records are
@@ -570,9 +596,20 @@ export function VaultProvider({ children }) {
         const startDate = isValidStartDate(initialSettings.startDate)
           ? initialSettings.startDate
           : localDateString();
-        // 0 when the invite carried no real settings, so the partner's config
-        // wins the first merge instead of this placeholder.
-        const updatedAt = isValidStartDate(initialSettings.startDate) ? Date.now() : 0;
+        // ALWAYS 0, whether or not the invite carried settings.
+        //
+        // Nothing in this config was authored on this device: it is either a
+        // default, or the INVITER'S OWN names and anniversary echoed back out of
+        // the link they sent. Stamping it Date.now() made a joiner with a fast
+        // clock claim authorship of the inviter's settings at a time the inviter
+        // could not beat, so the inviter's real config lost the
+        // `remoteUpdatedAt <= localUpdatedAt` test on every sync until wall clock
+        // caught up. 0 loses the first merge by construction, which is the
+        // correct outcome for a copy: the device that actually authored the
+        // settings keeps them. The joiner still SEES the right names immediately
+        // - this number decides merges, not what is on screen - and the joiner's
+        // own first edit goes through nextConfigTimestamp and beats 0 easily.
+        const updatedAt = 0;
         const config = {
           coupleNames: sanitizeCoupleNames(initialSettings.coupleNames),
           startDate,
@@ -703,6 +740,18 @@ export function VaultProvider({ children }) {
         //     it would feed undecryptable rows straight back into sync. This runs
         //     even on a device that reported no vault, because a previous destroy
         //     can leave orphaned rows behind with no vaultMeta to point at them.
+        //
+        //     UNCONDITIONAL ON PURPOSE, including relation === 'no-local-vault'.
+        //     Making it conditional would need a proof that a device with no
+        //     vaultMeta also has no rows, and there is none: vaultMeta and the
+        //     record tables are separate stores with no foreign key, so a partial
+        //     wipe, an aborted transaction or a hand-cleared vaultMeta leaves
+        //     rows behind whose key no longer exists anywhere in the world. They
+        //     can never be read again, but they CAN be re-broadcast at a partner
+        //     as undecryptable garbage. Safety over convenience: the cost of the
+        //     wipe is zero (nothing readable is lost - by definition), and the
+        //     LockScreen copy for this branch now says the clearing happens
+        //     rather than promising it does not.
         await wipeSyncedTables();
 
         // 5c. Then write the records, through the same validation and integrity

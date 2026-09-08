@@ -189,6 +189,29 @@ function DangerGate({
   );
 }
 
+/**
+ * How long vaultCheckState may sit at 'checking' before the spinner explains itself.
+ *
+ * A blocked schema upgrade does NOT resolve to 'unreadable'. Dexie fires
+ * on('blocked') but leaves the open request PENDING with no reject, so the
+ * vaultMeta read never settles, checkVault never leaves 'checking', and the
+ * blocked panel below - which lived only in the 'unreadable' branch - was
+ * unreachable in precisely the case it was written for. A genuinely blocked user
+ * watched "Looking for your vault…" forever and was never told to close the
+ * other tab. So the guidance has to be reachable from 'checking' too.
+ *
+ * 6 seconds: opening IndexedDB and reading one row is single-digit milliseconds
+ * on a warm start and tens of milliseconds on a phone waking from sleep, so this
+ * is two orders of magnitude past normal - far too long to fire on a merely slow
+ * device, short enough that a stuck user is not abandoned. The common block
+ * self-resolves anyway (Dexie's default versionchange handler closes the other
+ * tab's connection); a sustained one needs a frozen or non-Dexie holder, which
+ * is rare enough that a time-based HINT is the honest shape here. It diagnoses
+ * nothing, changes nothing, and the spinner keeps running underneath in case the
+ * read does land.
+ */
+const CHECK_SLOW_MS = 6000;
+
 export function LockScreen() {
   const {
     vaultCheckState,
@@ -239,6 +262,17 @@ export function LockScreen() {
   const hasVault = vaultCheckState === 'present';
   /** No form may be rendered until the vault question has an actual answer. */
   const canRenderForms = hasVault || vaultCheckState === 'absent';
+
+  /** See CHECK_SLOW_MS: a blocked upgrade never leaves 'checking' on its own. */
+  const [checkIsSlow, setCheckIsSlow] = useState(false);
+  useEffect(() => {
+    if (!isChecking) {
+      setCheckIsSlow(false);
+      return undefined;
+    }
+    const timer = setTimeout(() => setCheckIsSlow(true), CHECK_SLOW_MS);
+    return () => clearTimeout(timer);
+  }, [isChecking]);
 
   /** Once the user picks a form, the default-mode effect stops overriding them. */
   const modeTouched = useRef(false);
@@ -649,6 +683,35 @@ export function LockScreen() {
             <div className="py-10 text-center space-y-3">
               <div className="w-8 h-8 mx-auto rounded-full border-2 border-blush-200 border-t-blush-500 animate-spin" />
               <p className="text-xs text-slate-500 font-medium">Looking for your vault…</p>
+
+              {/* Dexie told us another connection is holding the old schema. The
+                  read above will never settle on its own, so this is the only
+                  place the user can be told why. */}
+              {vaultCheckBlocked && (
+                <div className="mx-2 p-3 rounded-xl bg-amber-50 border border-amber-200 text-[11px] text-amber-900 leading-relaxed text-left">
+                  <p className="font-bold">Our Space is open somewhere else.</p>
+                  <p className="mt-1">
+                    Another tab or window is holding the older version of the local database open,
+                    and the upgrade cannot finish until it closes. Close every other tab running Our
+                    Space — this screen continues on its own the moment it does.
+                  </p>
+                </div>
+              )}
+
+              {/* No blocked event, but the read is still not back. Same advice,
+                  stated as a possibility rather than a fact, because we do not
+                  actually know the cause here. */}
+              {!vaultCheckBlocked && checkIsSlow && (
+                <div className="mx-2 p-3 rounded-xl bg-slate-50 border border-slate-200 text-[11px] text-slate-600 leading-relaxed text-left">
+                  <p className="font-bold">This is taking longer than it should.</p>
+                  <p className="mt-1">
+                    The usual cause is another tab or window running Our Space and holding the local
+                    database open. Try closing them. Nothing has been changed here, and no setup
+                    form will appear until this finishes — a slow read is not proof this device is
+                    empty.
+                  </p>
+                </div>
+              )}
             </div>
           )}
 
@@ -1121,9 +1184,20 @@ export function LockScreen() {
                       'Restoring this backup adopts the encryption salt inside the file in place of the one this device already uses.'
                     )}
 
+                  {/* The old copy said "nothing here will be overwritten", which
+                      the code does not honour: restoreVaultFromBackup calls
+                      wipeSyncedTables unconditionally, including on this path.
+                      The wipe is deliberately kept - a device with no vaultMeta
+                      can still hold rows a previous destroy orphaned, and those
+                      are encrypted under a key that no longer exists anywhere,
+                      so carrying them into the restored vault would only feed
+                      permanently unreadable rows back into sync. So the STRING
+                      moves to meet the code, not the other way round. */}
                   {!hasVault && (
                     <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-[11px] text-slate-600 leading-relaxed">
-                      There is no vault on this device, so nothing here will be overwritten.
+                      There is no vault on this device, so no live vault is being replaced. Any
+                      leftover records from an earlier vault on this device are cleared first —
+                      their key is gone, so nothing could ever read them again.
                     </div>
                   )}
 
