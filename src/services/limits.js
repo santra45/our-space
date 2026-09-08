@@ -55,10 +55,22 @@ export const MAX_IMAGE_BLOB_BYTES = Math.floor(
  * Budget for ONE outbound SYNC_RECORDS_BATCH, measured on the serialized record
  * payload before encryption.
  *
- * Base64 + AES-GCM inflates roughly 1.34x, so 8MB of records lands near 11MB of
- * ciphertext - under the 30MB inbound cap.
+ * Kept small deliberately, though NOT for the reason it first looks like.
+ *
+ * PeerJS does not hand an oversized message to the data channel intact: its
+ * binary serializer chunks anything over ~16KB itself (chunkedMTU in
+ * peerjs/dist), so an 8MB batch does not throw "Message exceeds
+ * maxMessageSize". The problem is what it does instead - it pushes roughly five
+ * hundred chunks into the send buffer in a tight loop with no backpressure,
+ * while the receiver holds every chunk in memory until the last one lands to
+ * reassemble. On a phone that is how a sync dies: memory pressure, a stalled
+ * buffer, or a backgrounded tab losing the channel mid-reassembly.
+ *
+ * At 512KB a batch is ~32 chunks. A dropped connection costs one small batch
+ * instead of eight megabytes of progress, and sync resumes from where it got to
+ * rather than starting over.
  */
-export const MAX_BATCH_PAYLOAD_BYTES = 8 * 1024 * 1024;
+export const MAX_BATCH_PAYLOAD_BYTES = 512 * 1024;
 
 /**
  * Guard against a future edit reintroducing the drift this file exists to stop.
