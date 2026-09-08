@@ -70,6 +70,51 @@ const MAX_SINGLE_RECORD_BYTES = 16 * 1024 * 1024;
 
 const AUTH_TIMEOUT_MS = 30000;
 const CONNECT_OPEN_TIMEOUT_MS = 15000;
+
+/**
+ * A peer we have NEVER authenticated with gets a much shorter leash than a peer
+ * we know. Our peer id is permanent and is announced to a public broker on every
+ * launch, so anyone who has ever seen it can dial us forever. Giving a stranger
+ * the same 15s/30s squat window as a real partner is what let a reconnect loop
+ * hold the single pairing slot indefinitely.
+ */
+const UNKNOWN_CONNECT_OPEN_TIMEOUT_MS = 8000;
+const UNKNOWN_AUTH_TIMEOUT_MS = 12000;
+
+/**
+ * How long an unknown, unauthenticated incumbent may hold the slot before a new
+ * arrival is allowed to evict it. A real peer sends its first protocol frame
+ * within about one round trip, so anything still silent after this has proved
+ * nothing and is not worth protecting.
+ */
+const STRANGER_EVICT_AFTER_MS = 3000;
+
+/**
+ * Per-peer-id admission backoff. A cooldown is armed the moment a peer is let
+ * in and only cleared when it actually authenticates, so a loop of failed
+ * attempts throttles itself: 2s, 4s, 8s ... up to 5 minutes.
+ */
+const ADMISSION_BACKOFF_BASE_MS = 2000;
+const ADMISSION_BACKOFF_MAX_MS = 5 * 60 * 1000;
+/** A known partner on a flaky network may retry this often before any backoff. */
+const KNOWN_PEER_FREE_ATTEMPTS = 3;
+const KNOWN_PEER_BACKOFF_MAX_MS = 15000;
+/** Admission records older than this are forgotten, so a bad night is not permanent. */
+const ADMISSION_ENTRY_TTL_MS = 30 * 60 * 1000;
+/** Hard cap on the admission table so a peer-id-rotating flood cannot grow it without bound. */
+const ADMISSION_MAX_TRACKED_PEERS = 128;
+/**
+ * Global circuit breaker. Past this many unknown inbound admissions in a window
+ * we are plainly under a flood, and we refuse ALL unknown inbound connections
+ * until it subsides. The known partner keeps getting in, and dialling OUT is
+ * unaffected, so the user can still pair deliberately. Safety over convenience:
+ * refusing strangers is recoverable, a permanently squatted slot is not.
+ */
+const ADMISSION_FLOOD_WINDOW_MS = 60000;
+const ADMISSION_FLOOD_MAX_UNKNOWN = 6;
+/** Strangers must not be able to spam the user with toasts, so refusals are throttled. */
+const ADMISSION_WARN_INTERVAL_MS = 30000;
+
 const HEARTBEAT_INTERVAL_MS = 15000;
 const HEARTBEAT_TIMEOUT_MS = 50000;
 const SYNC_SESSION_TIMEOUT_MS = 120000;
@@ -97,6 +142,14 @@ const ICE_FAILURE_MESSAGE =
 
 const LOCAL_PEER_ID_KEY = 'sweetheart_device_peer_id';
 const SYNC_CLOCK_KEY = 'sweetheart_sync_clock';
+/**
+ * The last peer id that actually completed the challenge-response. Admission
+ * control needs to tell "my partner reconnecting after a tunnel" apart from "a
+ * stranger looping on my public peer id", and only a proven id can do that.
+ * SyncContext already keeps the paired id in localStorage, so this stores
+ * nothing new about the user.
+ */
+const KNOWN_PARTNER_KEY = 'sweetheart_known_partner_peer';
 
 /* ------------------------------------------------------------------------- *
  * Peer identity
@@ -177,6 +230,28 @@ function setStoredDevicePeerId(id) {
   }
 }
 
+function getStoredKnownPartnerId() {
+  try {
+    if (typeof localStorage === 'undefined') return null;
+    const id = localStorage.getItem(KNOWN_PARTNER_KEY);
+    if (id && PEER_ID_REGEX.test(id)) return id;
+  } catch {
+    // storage unavailable; admission control simply treats everyone as unknown
+  }
+  return null;
+}
+
+function setStoredKnownPartnerId(id) {
+  try {
+    if (typeof localStorage === 'undefined') return;
+    if (id && PEER_ID_REGEX.test(id)) {
+      localStorage.setItem(KNOWN_PARTNER_KEY, id);
+    }
+  } catch {
+    // safe fail
+  }
+}
+
 /* ------------------------------------------------------------------------- *
  * Wire allowlists
  * ------------------------------------------------------------------------- */
@@ -239,6 +314,20 @@ export class PeerSyncManager {
     this.pendingChallengeNonce = null;
     /** Peer we deliberately dialled. Only this peer may win a pre-auth glare tie-break. */
     this.dialingPeerId = null;
+
+    /* --- Admission control (S7) --- */
+    /** Last peer id that completed the handshake. Survives a reload; see KNOWN_PARTNER_KEY. */
+    this._knownPartnerId = getStoredKnownPartnerId();
+    /** peerId -> { attempts, blockedUntil, lastSeenAt }. Bounded by ADMISSION_MAX_TRACKED_PEERS. */
+    this._admission = new Map();
+    /** Timestamps of recent UNKNOWN inbound admissions, for the flood circuit breaker. */
+    this._unknownAdmissions = [];
+    /** Whoever currently holds the single connection slot, and what they have proved. */
+    this._slotKnown = false;
+    this._slotSince = 0;
+    this._slotProgressed = false;
+    /** Throttles the "a stranger was refused" toast so a flood cannot spam the UI. */
+    this._admissionWarnedAt = 0;
 
     this.authTimeoutTimer = null;
     this.connectOpenTimer = null;
@@ -332,8 +421,22 @@ export class PeerSyncManager {
     });
   }
 
-  /** Emits a FATAL problem: the session is over. */
+  /**
+   * Emits a FATAL problem: the session is over.
+   *
+   * REG-1: the UI treats every state emitted here ('error', 'auth_failed',
+   * 'ice_failed') as terminal - SyncContext drops `isAuthorized` and clears the
+   * route badge - so emitting one while the data channel is still live paints a
+   * dead link over an authenticated session that nothing will ever re-assert.
+   * Rather than trusting fourteen call sites to remember to tear down first,
+   * the invariant is enforced here: announcing the session is over MAKES it
+   * over. Anything that is genuinely survivable must use _emitWarning, which
+   * carries the current lifecycle state instead.
+   */
   _emitFatal(code, error, state = 'error') {
+    if (this.activeConnection || this.isConnected) {
+      this._closeActiveConnection();
+    }
     this.emit('status', { state, code, error });
   }
 
@@ -437,6 +540,19 @@ export class PeerSyncManager {
         } else if (err?.type === 'network') {
           msg = 'Network connection issue with signalling server.';
         }
+
+        // REG-1, same class: this is the SIGNALLING socket failing, and the
+        // 'disconnected' handler right below deliberately keeps the P2P data
+        // channel alive through exactly that. Emitting a terminal 'error' while
+        // an authenticated session is still carrying data would tell the user
+        // their link is dead when it demonstrably is not.
+        if (this.isAuthorized && this.activeConnection?.open) {
+          this._emitWarning('signalling_' + (err?.type || 'error'), msg, { errorType: err?.type });
+          return;
+        }
+
+        // Terminal state, so honour the same invariant _emitFatal enforces.
+        if (this.activeConnection || this.isConnected) this._closeActiveConnection();
         this.emit('status', {
           state: 'error',
           code: err?.type || 'peer_error',
@@ -502,6 +618,133 @@ export class PeerSyncManager {
     this._setupConnection(conn, true);
   }
 
+  /* ----------------------------------------------------------------------- *
+   * Admission control
+   * ----------------------------------------------------------------------- */
+
+  /**
+   * A peer we have reason to expect: the one we are dialling right now, or the
+   * one that last completed a handshake on this device. Everyone else is a
+   * stranger, no matter how plausible their id looks.
+   */
+  _isKnownPeer(peerId) {
+    if (!peerId) return false;
+    return peerId === this.dialingPeerId || peerId === this._knownPartnerId;
+  }
+
+  /** Drops stale admission records so a rough evening does not become a permanent block. */
+  _pruneAdmission(now) {
+    for (const [peerId, entry] of this._admission) {
+      if (now - entry.lastSeenAt > ADMISSION_ENTRY_TTL_MS) this._admission.delete(peerId);
+    }
+    // A flood that rotates peer ids would otherwise grow this map forever.
+    // Evict oldest-first; the flood breaker below is what actually stops them.
+    while (this._admission.size > ADMISSION_MAX_TRACKED_PEERS) {
+      const oldest = this._admission.keys().next().value;
+      if (oldest === undefined) break;
+      this._admission.delete(oldest);
+    }
+    this._unknownAdmissions = this._unknownAdmissions.filter(
+      (t) => now - t < ADMISSION_FLOOD_WINDOW_MS
+    );
+  }
+
+  /**
+   * Decides whether an INBOUND peer may take the pairing slot at all.
+   *
+   * S7: the previous build only applied admission control when the slot was
+   * already occupied, so in the idle state - the normal state - any stranger who
+   * knew our permanent, publicly-brokered peer id could take the slot and hold it
+   * for the full open/auth timeout, over and over, forever. Pairing denial is not
+   * a bounded delay when nothing rate-limits the reconnect.
+   *
+   * @returns {{ allowed: boolean, reason?: string }}
+   */
+  _admitInbound(peerId, isKnown) {
+    const now = Date.now();
+    this._pruneAdmission(now);
+
+    const entry = this._admission.get(peerId);
+    if (entry && entry.blockedUntil > now) {
+      return { allowed: false, reason: 'backoff' };
+    }
+
+    if (!isKnown && this._unknownAdmissions.length >= ADMISSION_FLOOD_MAX_UNKNOWN) {
+      // Under a flood we shut the door on everyone we cannot vouch for. The known
+      // partner still gets in, and dialling out still works, so this degrades
+      // pairing rather than breaking the app. Losing the slot to an attacker is
+      // not recoverable by the user; being told to try again is.
+      return { allowed: false, reason: 'flood' };
+    }
+
+    return { allowed: true };
+  }
+
+  /**
+   * Arms this peer's cooldown as it takes the slot. It is cleared only by a
+   * successful handshake (_noteAdmissionSuccess), so a loop that never
+   * authenticates walks itself up an exponential backoff while a real partner
+   * pays nothing after its first good connection.
+   */
+  _noteAdmission(peerId, isKnown) {
+    const now = Date.now();
+    const entry = this._admission.get(peerId) || { attempts: 0, blockedUntil: 0, lastSeenAt: now };
+    entry.attempts += 1;
+    entry.lastSeenAt = now;
+
+    let backoff;
+    if (isKnown) {
+      const over = entry.attempts - KNOWN_PEER_FREE_ATTEMPTS;
+      backoff = over <= 0 ? 0 : Math.min(1000 * 2 ** (over - 1), KNOWN_PEER_BACKOFF_MAX_MS);
+    } else {
+      backoff = Math.min(
+        ADMISSION_BACKOFF_BASE_MS * 2 ** (entry.attempts - 1),
+        ADMISSION_BACKOFF_MAX_MS
+      );
+      this._unknownAdmissions.push(now);
+    }
+    entry.blockedUntil = now + backoff;
+
+    // Re-insert so map order stays oldest-first for the size eviction above.
+    this._admission.delete(peerId);
+    this._admission.set(peerId, entry);
+  }
+
+  /** A completed handshake proves this peer belongs here. Forget every strike. */
+  _noteAdmissionSuccess(peerId) {
+    if (!peerId) return;
+    this._admission.delete(peerId);
+    this._knownPartnerId = peerId;
+    setStoredKnownPartnerId(peerId);
+  }
+
+  /** Refuses a connection without ever letting it touch the slot. */
+  _refuseConnection(conn, warningCode, warningText) {
+    try {
+      conn.close();
+    } catch {
+      // ignore
+    }
+    this._refuseWarn(warningCode, warningText);
+  }
+
+  /**
+   * Whether a newcomer may evict the peer currently holding the slot.
+   *
+   * Only ever applies to an UNAUTHENTICATED incumbent. A known peer always beats
+   * a stranger, and a stranger that has not yet delivered a single decryptable
+   * frame has proved nothing and is evictable once its grace period is up. That
+   * is what stops a squatter from locking out a real partner, without letting an
+   * attacker interrupt a handshake that is visibly making progress.
+   */
+  _mayEvictIncumbent(conn) {
+    if (!this.activeConnection || this.isAuthorized) return false;
+    if (this._slotKnown) return false;
+    if (this._isKnownPeer(conn.peer)) return true;
+    if (this._slotProgressed) return false;
+    return Date.now() - this._slotSince >= STRANGER_EVICT_AFTER_MS;
+  }
+
   /**
    * Admission control for a new data connection.
    *
@@ -514,16 +757,14 @@ export class PeerSyncManager {
     if (!conn || typeof conn.peer !== 'string') return;
     if (this.activeConnection === conn) return; // already wired up
 
+    const isKnown = isInitiator || this._isKnownPeer(conn.peer);
+
     const existing = this.activeConnection;
     if (existing) {
       if (this.isAuthorized) {
         if (conn.peer !== existing.peer) {
-          try {
-            conn.close();
-          } catch {
-            // ignore
-          }
-          this._emitWarning(
+          this._refuseConnection(
+            conn,
             'unknown_peer_rejected',
             'An unknown device tried to connect and was refused.'
           );
@@ -533,20 +774,20 @@ export class PeerSyncManager {
       } else {
         const expectedPeer = this.dialingPeerId || existing.peer;
         if (conn.peer !== expectedPeer) {
-          try {
-            conn.close();
-          } catch {
-            // ignore
+          // Not who we were talking to. Normally refused - but a stranger must
+          // not be able to squat the slot and lock the real partner out, so a
+          // stalled, unproven incumbent can be evicted.
+          if (!this._mayEvictIncumbent(conn)) {
+            this._refuseConnection(
+              conn,
+              'unknown_peer_rejected',
+              'An unknown device tried to connect while pairing and was refused.'
+            );
+            return;
           }
-          this._emitWarning(
-            'unknown_peer_rejected',
-            'An unknown device tried to connect while pairing and was refused.'
-          );
-          return;
-        }
-        // Genuine glare: both sides dialled each other at once. Deterministic
-        // tie-break, but only ever against the peer we were already talking to.
-        if (this.myPeerId && this.myPeerId <= conn.peer) {
+        } else if (this.myPeerId && this.myPeerId <= conn.peer) {
+          // Genuine glare: both sides dialled each other at once. Deterministic
+          // tie-break, but only ever against the peer we were already talking to.
           try {
             conn.close();
           } catch {
@@ -557,15 +798,40 @@ export class PeerSyncManager {
       }
     }
 
+    // The idle slot is NOT free for the taking. Rate-limit and flood-break every
+    // inbound peer before it is allowed to start any timer of ours.
+    if (!isInitiator) {
+      const verdict = this._admitInbound(conn.peer, isKnown);
+      if (!verdict.allowed) {
+        this._refuseConnection(
+          conn,
+          verdict.reason === 'flood' ? 'pairing_flood' : 'peer_rate_limited',
+          verdict.reason === 'flood'
+            ? 'Several unknown devices are trying to connect, so new pairing requests are being refused for a minute. Your partner is unaffected.'
+            : 'A device is reconnecting too quickly and was asked to wait.'
+        );
+        return;
+      }
+      this._noteAdmission(conn.peer, isKnown);
+    }
+
     this._closeActiveConnection();
+    // _closeActiveConnection clears dialingPeerId, but we are, right now, dialling
+    // this peer - losing that would make our own partner look like a stranger to
+    // the glare tie-break and to admission control.
+    if (isInitiator) this.dialingPeerId = conn.peer;
     this.activeConnection = conn;
     this.decryptFailures = 0;
     this._routeFailed = false;
+    this._slotKnown = isKnown;
+    this._slotSince = Date.now();
+    this._slotProgressed = false;
 
     // The auth clock starts the moment a peer occupies the slot, not when the data
-    // channel opens: otherwise a peer that stalls ICE squats here forever.
-    this._startAuthTimeout(conn);
-    this._startConnectOpenTimeout(conn);
+    // channel opens: otherwise a peer that stalls ICE squats here forever. An
+    // unknown peer gets a materially shorter leash than one we expect.
+    this._startAuthTimeout(conn, isKnown);
+    this._startConnectOpenTimeout(conn, isKnown);
 
     const handleOpen = async () => {
       if (this.activeConnection !== conn) return;
@@ -636,17 +902,43 @@ export class PeerSyncManager {
     );
   }
 
-  _startAuthTimeout(conn) {
+  /**
+   * @param {boolean} isKnown - Whether this peer is one we expect. A stranger gets
+   *   a shorter window AND a quiet teardown: reporting every stranger's timeout as
+   *   a loud "authentication failed" would hand an attacker a way to spam alarming
+   *   toasts at the user. The loud path is kept for a first-ever pairing, where a
+   *   timeout really is the answer the user is waiting for.
+   */
+  _startAuthTimeout(conn, isKnown = true) {
     this._clearAuthTimeout();
+    const timeout = isKnown ? AUTH_TIMEOUT_MS : UNKNOWN_AUTH_TIMEOUT_MS;
+    const quiet = !isKnown && Boolean(this._knownPartnerId);
     this.authTimeoutTimer = setTimeout(() => {
       if (this.activeConnection !== conn || this.isAuthorized) return;
-      this._closeActiveConnection();
+      if (quiet) {
+        this._closeActiveConnection();
+        this._refuseWarn(
+          'stranger_auth_timeout',
+          'An unknown device tried to pair and never completed the handshake. It was disconnected.'
+        );
+        return;
+      }
       this._emitFatal(
         'auth_timeout',
-        'Authentication timed out after 30 seconds. Your partner never completed the secure handshake.',
+        `Authentication timed out after ${Math.round(
+          timeout / 1000
+        )} seconds. Your partner never completed the secure handshake.`,
         'auth_failed'
       );
-    }, AUTH_TIMEOUT_MS);
+    }, timeout);
+  }
+
+  /** Throttled warning, shared with _refuseConnection so strangers cannot spam the UI. */
+  _refuseWarn(code, text) {
+    const now = Date.now();
+    if (now - this._admissionWarnedAt < ADMISSION_WARN_INTERVAL_MS) return;
+    this._admissionWarnedAt = now;
+    this._emitWarning(code, text);
   }
 
   _clearAuthTimeout() {
@@ -656,18 +948,32 @@ export class PeerSyncManager {
     }
   }
 
-  /** Bounds how long a peer may hold the connection slot without opening a channel. */
-  _startConnectOpenTimeout(conn) {
+  /**
+   * Bounds how long a peer may hold the connection slot without opening a channel.
+   * An unknown peer that never opens a channel is the cheapest possible squat -
+   * it costs the attacker one signalling message - so its window is short and its
+   * teardown is quiet.
+   */
+  _startConnectOpenTimeout(conn, isKnown = true) {
     this._clearConnectOpenTimeout();
+    const timeout = isKnown ? CONNECT_OPEN_TIMEOUT_MS : UNKNOWN_CONNECT_OPEN_TIMEOUT_MS;
+    const quiet = !isKnown && Boolean(this._knownPartnerId);
     this.connectOpenTimer = setTimeout(() => {
       if (this.activeConnection !== conn || conn.open) return;
-      this._closeActiveConnection();
+      if (quiet) {
+        this._closeActiveConnection();
+        this._refuseWarn(
+          'stranger_open_timeout',
+          'An unknown device held the pairing slot without connecting and was disconnected.'
+        );
+        return;
+      }
       this._emitFatal(
         'ice_failed',
         'Could not open a direct connection to your partner. This app uses no relay server, so a strict mobile network (CGNAT) on either side can block pairing. Try the same Wi-Fi network, or a different network on one device.',
         'ice_failed'
       );
-    }, CONNECT_OPEN_TIMEOUT_MS);
+    }, timeout);
   }
 
   _clearConnectOpenTimeout() {
@@ -744,6 +1050,9 @@ export class PeerSyncManager {
     this._resetAuthState();
     this.isConnected = false;
     this.dialingPeerId = null;
+    this._slotKnown = false;
+    this._slotSince = 0;
+    this._slotProgressed = false;
     if (this.activeConnection) {
       try {
         this.activeConnection.close();
@@ -964,6 +1273,9 @@ export class PeerSyncManager {
     // A frame that decrypts proves the channel is alive and the key matches.
     this.decryptFailures = 0;
     this.lastPongAt = Date.now();
+    // Real protocol progress. From here the slot holder is no longer evictable by
+    // a newcomer, so an attacker cannot interrupt a handshake that is working.
+    this._slotProgressed = true;
 
     if (!decrypted || typeof decrypted !== 'object' || !ALLOWED_MESSAGE_TYPES.has(decrypted.type)) {
       return;
