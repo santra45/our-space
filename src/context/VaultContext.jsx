@@ -214,24 +214,16 @@ export function VaultProvider({ children }) {
       if (stats.failed > 0) {
         const many = stats.failed !== 1;
         notes.push(
-          `${stats.failed} older record${many ? 's' : ''} could not be decrypted and ` +
-            `${many ? 'were' : 'was'} left untouched — most likely written with a different ` +
-            'passphrase.'
+          `${stats.failed} older ${many ? 'things' : 'thing'} could not be opened with your ` +
+            `passphrase, so we left ${many ? 'them' : 'it'} alone.`
         );
       }
 
       if (stats.tampered > 0) {
         const many = stats.tampered !== 1;
         notes.push(
-          `${stats.tampered} record${many ? 's' : ''} opened with your passphrase but ` +
-            `${many ? 'no longer match' : 'no longer matches'} what was sealed inside ` +
-            `${many ? 'them' : 'it'}: a rewritten id, date or delete flag, photo bytes swapped ` +
-            `after the fact, or an envelope sealed for a different list. That is why ` +
-            `${many ? 'they are' : 'it is'} missing from your screens instead of showing up ` +
-            `wrong — every screen refuses ${many ? 'them' : 'it'}. ${many ? 'They were' : 'It was'} ` +
-            `left exactly as ${many ? 'they are' : 'it is'} and deliberately not re-sealed, which ` +
-            `is what makes your partner’s phone refuse ${many ? 'them' : 'it'} too if this one ` +
-            'sends it on.'
+          `${stats.tampered} older ${many ? 'things look' : 'thing looks'} damaged, so ` +
+            `${many ? 'they are' : 'it is'} hidden rather than shown wrong.`
         );
       }
 
@@ -239,8 +231,8 @@ export function VaultProvider({ children }) {
     } catch (err) {
       console.error('Legacy record migration failed:', err);
       setWarning(
-        'Could not finish upgrading your older records to encrypted metadata. Your data is intact ' +
-          'and still readable; this will be retried next time you unlock.'
+        'We could not finish tidying up your older things. Everything is still here and still ' +
+          'readable — we will try again next time you unlock.'
       );
     }
   }, []);
@@ -275,13 +267,14 @@ export function VaultProvider({ children }) {
       } catch (err) {
         console.error('Could not read vault metadata:', err);
         setError(
-          'Could not open the local database. If you are in a private window, the browser may be blocking storage.'
+          'We could not open your space. If you are in a private window, your browser may be ' +
+            'blocking it.'
         );
         return false;
       }
 
       if (!meta || !meta.salt) {
-        setError('There is no vault on this device yet. Create one, or join your partner’s.');
+        setError('There is nothing here yet. Start your space, or join your partner’s.');
         return false;
       }
 
@@ -424,10 +417,8 @@ export function VaultProvider({ children }) {
     if (!read.ok) {
       console.error('Destructive write blocked: vault metadata unreadable.', read.error);
       setError(
-        'This device’s vault could not be read, so nothing was changed. That usually means Our ' +
-          'Space is open in another tab or window — close every other copy, then reload this one. ' +
-          'Until it can be read, replacing the vault is refused: a read error is not proof there ' +
-          'is nothing here to lose.'
+        'We could not read what is on this phone, so nothing was changed. Usually that means Our ' +
+          'Space is open in another tab — close the others, then reload this one.'
       );
       return { blocked: true, existing: null };
     }
@@ -436,8 +427,8 @@ export function VaultProvider({ children }) {
 
     if (confirmDestroy !== DESTROY_CONFIRMATION_PHRASE) {
       setError(
-        'This device already holds a vault. Replacing it would make every existing memory ' +
-          'permanently unreadable, so it needs an explicit confirmation.'
+        'There is already a space on this phone. Replacing it would make everything in it ' +
+          'impossible to open again, so we need you to confirm.'
       );
       return { blocked: true, existing: read.meta };
     }
@@ -520,7 +511,7 @@ export function VaultProvider({ children }) {
         return true;
       } catch (err) {
         console.error('Failed to initialize vault:', err);
-        setError('Could not initialize vault: ' + (err.message || 'Unknown error'));
+        setError('We could not set up your space. Please try again.');
         return false;
       }
     },
@@ -565,9 +556,8 @@ export function VaultProvider({ children }) {
       if (!read.ok) {
         console.error('Pairing blocked: vault metadata unreadable.', read.error);
         setError(
-          'This device’s vault could not be read, so pairing was refused. Close any other tab or ' +
-            'window running Our Space and reload. Pairing would replace this device’s encryption ' +
-            'key, and that is not safe to do while we cannot see what is already stored here.'
+          'We could not read what is on this phone, so we stopped instead of pairing. Close any ' +
+            'other tabs with Our Space open, then reload and try again.'
         );
         return false;
       }
@@ -628,8 +618,8 @@ export function VaultProvider({ children }) {
           // utils/invite.js). The mismatch is caught instead by the P2P
           // handshake, which cannot authenticate under two different keys.
           setWarning(
-            'Paired. Your passphrase is confirmed the moment your phones connect — if it does not ' +
-              'match your partner’s exactly, the connection will say so rather than syncing.'
+            'Paired! We will know your passphrases match the moment your phones connect — if they ' +
+              'do not, we will tell you instead of syncing.'
           );
         }
 
@@ -678,7 +668,7 @@ export function VaultProvider({ children }) {
         return true;
       } catch (err) {
         console.error('Failed to initialize from partner invite:', err);
-        setError('Could not pair with partner: ' + (err.message || 'Unknown error'));
+        setError('We could not pair with your partner. Please try again.');
         return false;
       }
     },
@@ -835,14 +825,14 @@ export function VaultProvider({ children }) {
       // rather than into a state nobody renders.
       const key = cryptoKey || getVaultKey();
       if (!key) {
-        setWarning('The vault is locked. Unlock it before changing your settings.');
+        setWarning('Our Space is locked. Unlock it before changing your settings.');
         return false;
       }
 
       try {
         const meta = await db.vaultMeta.get('config');
         if (!meta || !meta.salt) {
-          throw new Error('Vault metadata is missing from this device.');
+          throw new Error('vaultMeta config row is missing on this device');
         }
 
         const merged = { ...(vaultConfig || {}), ...newSettings };
@@ -875,9 +865,8 @@ export function VaultProvider({ children }) {
       } catch (err) {
         console.error('Failed to save vault settings:', err);
         setWarning(
-          'Could not save your settings: ' +
-            (err.message || 'Unknown error') +
-            '. The old values are still in place and your partner was not told.'
+          'We could not save your settings. The old ones are still in place, and your partner ' +
+            'was not told.'
         );
         return false;
       }
@@ -899,17 +888,15 @@ export function VaultProvider({ children }) {
 
       // The wire format is attacker-influenced. Validate before it reaches state.
       if (!isValidStartDate(remoteConfig.startDate)) {
-        setWarning(
-          'Ignored a settings update from your partner: it carried an invalid anniversary date.'
-        );
+        setWarning('We skipped a settings change from your partner — the date did not look right.');
         return;
       }
 
       const remoteUpdatedAt = Number.isFinite(remoteConfig.updatedAt) ? remoteConfig.updatedAt : 0;
       if (remoteUpdatedAt > Date.now() + MAX_CLOCK_SKEW_MS) {
         setWarning(
-          'Ignored a settings update from your partner: their device clock is set far in the ' +
-            'future. Fix the date on that device and try again.'
+          'We skipped a settings change from your partner — their phone’s date is set far in the ' +
+            'future. Fix it on that phone and try again.'
         );
         return;
       }
@@ -948,7 +935,7 @@ export function VaultProvider({ children }) {
       } catch (err) {
         console.error('Failed to apply synced config:', err);
         setWarning(
-          'Could not save the settings your partner just sent. Your own settings are unchanged.'
+          'We could not save the settings your partner just sent. Yours are unchanged.'
         );
       }
     };

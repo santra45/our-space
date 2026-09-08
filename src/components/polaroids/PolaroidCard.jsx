@@ -53,7 +53,7 @@ function PolaroidCardBase({ memory, cryptoKey, onSelect }) {
     async function loadImage() {
       if (!cryptoKey) {
         setLoading(false);
-        setError('Vault is locked.');
+        setError('Our Space is locked.');
         return;
       }
       if (!memory.imageBlob) {

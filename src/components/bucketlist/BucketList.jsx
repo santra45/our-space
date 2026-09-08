@@ -330,7 +330,7 @@ export function BucketList() {
           fireCelebrationBurst();
         }
       } catch {
-        setError('Could not save that change. Your vault may have locked.');
+        setError('Could not save that change. Our Space may have locked.');
       }
     },
     [cryptoKey, tap, celebration]
@@ -350,7 +350,7 @@ export function BucketList() {
         if (row) peerSync.broadcastLiveRecord('bucketList', row);
         setError('');
       } catch {
-        setError('Could not delete that item. Your vault may have locked.');
+        setError('Could not delete that item. Our Space may have locked.');
       }
     },
     [cryptoKey, tap]
@@ -386,7 +386,7 @@ export function BucketList() {
         celebration();
         fireHeartConfetti();
       } catch {
-        setError('Could not save that dream. Your vault may have locked.');
+        setError('Could not save that dream. Our Space may have locked.');
       }
     },
     [newItemText, category, cryptoKey, tap, celebration]
@@ -428,9 +428,9 @@ export function BucketList() {
           <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
           <p className="text-xs font-medium leading-snug">
             {error ||
-              `${skippedCount} item${skippedCount === 1 ? '' : 's'} could not be decrypted and ${
-                skippedCount === 1 ? 'is' : 'are'
-              } hidden.`}
+              `${skippedCount} item${skippedCount === 1 ? '' : 's'} could not be opened with your passphrase, so ${
+                skippedCount === 1 ? 'it is' : 'they are'
+              } hidden for now.`}
           </p>
         </div>
       )}

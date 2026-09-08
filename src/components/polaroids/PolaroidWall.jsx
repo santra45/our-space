@@ -88,12 +88,11 @@ export function PolaroidWall() {
 
     decryptWall().catch((err) => {
       if (cancelled) return;
+      console.error('Could not decrypt the polaroid wall:', err);
       setWall({
         items: [],
         unreadable: 0,
-        error: err?.message
-          ? `Could not open your scrapbook: ${err.message}`
-          : 'Could not open your scrapbook.',
+        error: 'We could not open your scrapbook just now. Please try again.',
         ready: true,
       });
     });
@@ -152,7 +151,7 @@ export function PolaroidWall() {
           <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
           <p className="text-[11px] leading-relaxed text-amber-800">
             {wallError ||
-              `${unreadable} ${unreadable === 1 ? 'polaroid' : 'polaroids'} could not be unlocked with this passphrase and ${unreadable === 1 ? 'is' : 'are'} hidden. ${unreadable === 1 ? 'It was' : 'They were'} most likely saved under a different vault, or arrived damaged from your partner.`}
+              `${unreadable} ${unreadable === 1 ? 'polaroid' : 'polaroids'} could not be opened with your passphrase, so ${unreadable === 1 ? 'it is' : 'they are'} hidden for now.`}
           </p>
         </div>
       )}
@@ -174,7 +173,7 @@ export function PolaroidWall() {
           </div>
           <h3 className="text-base font-bold text-slate-700">No Polaroids Yet</h3>
           <p className="text-xs text-slate-500 max-w-xs mx-auto mt-1 mb-5">
-            Add your first photo together! It will be compressed, encrypted locally, and synced directly to your partner.
+            Add your first photo together! It will be saved safely here and shared with your partner.
           </p>
           <BouncyButton
             onClick={() => setIsModalOpen(true)}

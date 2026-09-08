@@ -451,8 +451,8 @@ export function SecretCapsule() {
         setNotice({
           tone: 'lock',
           text: letter.isSealed
-            ? `"${letter.title}" stays sealed until ${until}. Its body is encrypted under a key this app will not re-derive before that date.`
-            : `"${letter.title}" stays closed until ${until}. This one is not key-wrapped yet - its body sits in the vault like any other record and only this app's date check is holding it shut. It will be wrapped the next time this screen can seal it safely.`,
+            ? `"${letter.title}" is sealed until ${until} 💕 We will not open it early.`
+            : `"${letter.title}" stays shut until ${until} 💕 We are still tucking this one away properly — it will be sealed the next time this screen can.`,
         });
         return;
       }
@@ -481,7 +481,7 @@ export function SecretCapsule() {
         } else {
           setNotice({
             tone: 'error',
-            text: 'This letter could not be unsealed. Its unlock date or record id may have been altered - the seal is bound to both, so changing either makes the body unreadable rather than merely unlocking it.',
+            text: 'We could not open this letter. Something about it changed, so it cannot be read any more.',
           });
         }
       } finally {
@@ -570,7 +570,7 @@ export function SecretCapsule() {
     if (e) e.stopPropagation();
     if (
       !window.confirm(
-        'Delete this love letter? Its encrypted body is destroyed here and on your partner’s device.'
+        'Delete this love letter? It goes from your phone and your partner’s, for good.'
       )
     ) {
       return;
@@ -648,9 +648,8 @@ export function SecretCapsule() {
         <div className="flex items-start gap-2 px-3.5 py-2.5 rounded-2xl text-[11px] leading-relaxed bg-amber-50 border border-amber-200 text-amber-800">
           <ShieldAlert className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
           <span>
-            {skippedCount} letter{skippedCount === 1 ? '' : 's'} could not be read with this
-            passphrase and {skippedCount === 1 ? 'was' : 'were'} hidden. That usually means it was
-            written under a different vault, or its record header was altered in transit.
+            {skippedCount} letter{skippedCount === 1 ? '' : 's'} could not be opened with your
+            passphrase, so {skippedCount === 1 ? 'it is' : 'they are'} hidden for now.
           </span>
         </div>
       )}
@@ -709,7 +708,7 @@ export function SecretCapsule() {
                     <h4 className="text-sm font-bold text-slate-800 truncate">{letter.title}</h4>
                     <p className="text-[11px] text-slate-400">
                       Written on {formatDatePretty(letter.writtenAt)}
-                      {letter.isLocked && letter.isSealed ? ' · key-wrapped' : ''}
+                      {letter.isLocked && letter.isSealed ? ' · sealed' : ''}
                       {!letter.isLocked && letter.isOpened ? ' · already opened' : ''}
                     </p>
                   </div>
@@ -773,7 +772,7 @@ export function SecretCapsule() {
               <div>
                 <h3 className="text-base font-bold text-slate-800">Write Love Letter</h3>
                 <p className="text-[11px] text-slate-400">
-                  AES-GCM-256, encrypted on this device only
+                  Only the two of you can read it
                 </p>
               </div>
             </div>
@@ -781,7 +780,7 @@ export function SecretCapsule() {
             <form onSubmit={handleSaveLetter} className="space-y-3">
               <div>
                 <label className="block text-xs font-semibold text-slate-600 mb-1">
-                  Envelope Title / Prompt
+                  Title / Prompt
                 </label>
                 <input
                   type="text"
@@ -793,7 +792,7 @@ export function SecretCapsule() {
                   className="w-full px-3 py-2 text-xs bg-white border border-blush-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blush-400"
                 />
                 <p className="text-[10px] text-slate-400 mt-0.5">
-                  The title stays readable while the letter is sealed - only the body is locked.
+                  The title still shows while it is sealed — only the letter itself is hidden.
                 </p>
               </div>
 
@@ -831,20 +830,11 @@ export function SecretCapsule() {
               {/* Honesty box - this wording must match the README's threat model */}
               <div className="flex items-start gap-2 px-3 py-2.5 rounded-2xl bg-slate-50 border border-slate-200 text-[10px] leading-relaxed text-slate-600">
                 <Info className="w-3.5 h-3.5 mt-0.5 flex-shrink-0 text-slate-400" />
-                <div className="space-y-1">
-                  <p>
-                    <span className="font-bold text-slate-700">What the lock does:</span> the body is
-                    encrypted under its own key, wrapped with a key derived from the unlock date
-                    itself. The app cannot read it early, and editing the stored date corrupts the
-                    letter instead of opening it.
-                  </p>
-                  <p>
-                    <span className="font-bold text-slate-700">What it does not do:</span> it cannot
-                    stop either of you. Anyone who knows the vault passphrase can open a sealed
-                    letter early by setting their device clock forward. It is a promise you keep,
-                    not a safe you cannot crack.
-                  </p>
-                </div>
+                <p>
+                  The app will not open a sealed letter early — though anyone who knows your
+                  passphrase and changes their phone&apos;s date could. It is a promise, not a
+                  padlock. 💕
+                </p>
               </div>
 
               {saveError && (
@@ -858,8 +848,8 @@ export function SecretCapsule() {
               >
                 {saving
                   ? unlockDate
-                    ? 'Sealing time lock...'
-                    : 'Encrypting...'
+                    ? 'Sealing…'
+                    : 'Tucking it away…'
                   : unlockDate
                     ? 'Seal Until ' + formatDatePretty(unlockDate) + ' 🔒'
                     : 'Seal with Wax Stamp 💌'}

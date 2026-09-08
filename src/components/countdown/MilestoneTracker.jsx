@@ -211,7 +211,7 @@ export function MilestoneTracker() {
         celebration();
         fireHeartConfetti();
       } catch {
-        setError('Could not save that milestone. Your vault may have locked.');
+        setError('Could not save that milestone. Our Space may have locked.');
       }
     },
     [milestoneTitle, milestoneDate, cryptoKey, celebration]
@@ -230,7 +230,7 @@ export function MilestoneTracker() {
         if (row) peerSync.broadcastLiveRecord('milestones', row);
         setError('');
       } catch {
-        setError('Could not delete that milestone. Your vault may have locked.');
+        setError('Could not delete that milestone. Our Space may have locked.');
       }
     },
     [cryptoKey, tap]
@@ -405,9 +405,9 @@ export function MilestoneTracker() {
             <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
             <p className="text-xs font-medium leading-snug">
               {error ||
-                `${skippedCount} milestone${skippedCount === 1 ? '' : 's'} could not be decrypted and ${
-                  skippedCount === 1 ? 'is' : 'are'
-                } hidden.`}
+                `${skippedCount} milestone${skippedCount === 1 ? '' : 's'} could not be opened with your passphrase, so ${
+                  skippedCount === 1 ? 'it is' : 'they are'
+                } hidden for now.`}
             </p>
           </div>
         )}
@@ -442,7 +442,7 @@ export function MilestoneTracker() {
         <div className="space-y-2">
           {records.length === 0 ? (
             <p className="text-xs text-slate-400 text-center py-4 italic">
-              No milestones added yet. Tap + to record your first memory!
+              No milestones yet. Tap + to add your first one!
             </p>
           ) : (
             records.map((m) => (
@@ -453,7 +453,7 @@ export function MilestoneTracker() {
                 <div className="flex items-center gap-2.5 flex-1 min-w-0 pr-2">
                   <div className="w-2 h-2 rounded-full bg-blush-400 flex-shrink-0" />
                   <span className="text-xs font-bold text-slate-700 truncate">
-                    {m.title || 'Encrypted Milestone'}
+                    {m.title || 'A milestone'}
                   </span>
                 </div>
                 <div className="flex items-center gap-2 flex-shrink-0">

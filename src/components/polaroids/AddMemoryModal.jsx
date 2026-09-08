@@ -92,7 +92,7 @@ export function AddMemoryModal({ isOpen, onClose, cryptoKey }) {
     if (saving || !selectedFile) return;
 
     if (!cryptoKey) {
-      setError('Your vault is locked. Unlock it and try again.');
+      setError('Our Space is locked. Unlock it and try again.');
       return;
     }
 
@@ -112,7 +112,7 @@ export function AddMemoryModal({ isOpen, onClose, cryptoKey }) {
       });
 
       // Step 2: zero-knowledge AES-GCM 256 on the image bytes.
-      setStatusText('Encrypting with AES-GCM 256...');
+      setStatusText('Tucking it away safely...');
       const imageBlob = await encryptBlob(blob, cryptoKey);
 
       // Anything over this is refused by the sync layer on both ends, so catch it
@@ -125,7 +125,7 @@ export function AddMemoryModal({ isOpen, onClose, cryptoKey }) {
       }
 
       // Step 3: seal the whole record. date/caption/mime go inside the envelope.
-      setStatusText('Saving to your vault...');
+      setStatusText('Saving to your scrapbook...');
       const row = await db.putEncrypted(
         'memories',
         {
@@ -196,7 +196,7 @@ export function AddMemoryModal({ isOpen, onClose, cryptoKey }) {
             </div>
             <div>
               <h3 className="text-base font-bold text-slate-800">Add New Polaroid</h3>
-              <p className="text-[11px] text-slate-400">Encrypted before saving</p>
+              <p className="text-[11px] text-slate-400">Kept just between you two</p>
             </div>
           </div>
 

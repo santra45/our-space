@@ -56,22 +56,20 @@ import { useHaptics } from '../../hooks/useHaptics';
  * threw. Keys are the `code` values returned by VaultContext.restoreVaultFromBackup.
  */
 const RESTORE_ERRORS = {
-  no_identity:
-    'That backup does not carry a vault salt, so there is no identity to restore from it.',
-  bad_salt: 'That backup carries a malformed vault salt and was refused.',
-  passphrase_too_short: `The vault passphrase must be at least ${MIN_PASSPHRASE_LENGTH} characters.`,
+  no_identity: 'This file is missing the part we need to rebuild your space here.',
+  bad_salt: 'This file looks damaged, so we left everything as it is.',
+  passphrase_too_short: `The passphrase needs at least ${MIN_PASSPHRASE_LENGTH} characters.`,
   passphrase_mismatch:
-    'That is not the passphrase this backup’s vault was encrypted with. Nothing was changed. It is ' +
-    'the passphrase you used to unlock the app back when this file was made — not necessarily the ' +
-    'one that opened the file itself.',
+    'That is not the passphrase this file was saved with. Nothing changed. It is the one you used ' +
+    'to open Our Space back when you saved it — not always the same one that opened the file.',
   unreadable:
-    'This device’s existing vault could not be read, so the restore was refused rather than risk ' +
-    'overwriting it. Close any other tab or window running Our Space, then reload and try again.',
+    'We could not read what is already on this phone, so we stopped instead of risking it. Close ' +
+    'any other tabs with Our Space open, then reload and try again.',
   same_vault:
-    'This backup is for the vault already on this device, so there is no identity to replace. ' +
-    'Unlock normally, then use Import .vault in the Sync Hub to merge its records back in.',
-  needs_confirmation: 'Type the confirmation phrase to replace the vault already on this device.',
-  write_failed: 'The restore failed partway through. Nothing further was written.',
+    'This file is from this very phone, so there is nothing to swap. Just unlock as usual, then ' +
+    'use Bring in a copy in the Sync Hub to add its things back.',
+  needs_confirmation: 'Type the words above to replace what is on this phone.',
+  write_failed: 'That stopped partway. Nothing more was written.',
 };
 
 /**
@@ -97,16 +95,16 @@ function DangerGate({
         <ShieldAlert className="w-5 h-5 text-rose-600 flex-shrink-0 mt-0.5" />
         <div>
           <p className="text-xs font-extrabold text-rose-800 uppercase tracking-wide">
-            This destroys the vault on this device
+            This erases everything on this phone
           </p>
           <p className="text-[11px] text-rose-700 mt-1 leading-relaxed">
-            {headline} A new encryption key means every photo, letter, milestone and bucket-list item
-            already stored here becomes <strong>permanently unreadable</strong>, and they will be
-            erased from this device. There is no undo and no recovery — not by us, not by anyone.
+            {headline} Every photo, letter, milestone and wish saved here{' '}
+            <strong>can never be opened again</strong>, and all of it is erased from this phone.
+            There is no undo — not by us, not by anyone.
           </p>
           <p className="text-[11px] text-rose-700 mt-1.5 leading-relaxed">
-            If you simply forgot the passphrase, <strong>stop here</strong>. Nothing on this screen
-            can recover it, and your partner&apos;s device may still hold everything.
+            If you have only forgotten the passphrase, <strong>please stop here</strong>. Nothing on
+            this screen can bring it back, and your partner&apos;s phone may still have everything.
           </p>
         </div>
       </div>
@@ -120,25 +118,17 @@ function DangerGate({
       <div className="p-2.5 rounded-xl bg-white/70 border border-rose-200 space-y-2">
         <p className="text-[11px] font-bold text-slate-700 flex items-center gap-1.5">
           <Download className="w-3.5 h-3.5 text-slate-500" />
-          Save an encrypted rescue backup first
+          Save a copy first
         </p>
         <p className="text-[10px] text-slate-500 leading-relaxed">
-          Downloads every encrypted row on this device, plus this vault&apos;s salt and canary, in one
-          file. It can be put back later with <strong>&quot;Restore from a rescue backup&quot;</strong>{' '}
-          on this screen.
-        </p>
-        <p className="text-[10px] text-slate-500 leading-relaxed">
-          <strong>It needs two passphrases, not one.</strong> The one you type below only opens the
-          file. The photos and letters inside stay encrypted under the passphrase{' '}
-          <strong>this vault uses today</strong> — restoring them means supplying that one as well.
-          If it is truly lost, this file cannot bring them back, and neither can anything else. That
-          is what end-to-end encryption costs.
+          This saves everything on this phone into one file. To open it later you will need the
+          passphrase you type below, and the one you open Our Space with today.
         </p>
         <input
           type="password"
           value={backupPassphrase}
           onChange={(e) => onBackupPassphraseChange(e.target.value)}
-          placeholder={`Passphrase for the backup file (min ${MIN_PASSPHRASE_LENGTH})`}
+          placeholder={`Passphrase for this file (at least ${MIN_PASSPHRASE_LENGTH})`}
           minLength={MIN_PASSPHRASE_LENGTH}
           autoComplete="new-password"
           className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-slate-800 text-xs focus:outline-none focus:ring-2 focus:ring-slate-400 placeholder:text-slate-400"
@@ -149,12 +139,12 @@ function DangerGate({
           disabled={backupBusy}
           className="w-full py-2 rounded-xl bg-slate-800 text-white text-xs font-bold hover:bg-slate-900 disabled:opacity-50 transition"
         >
-          {backupBusy ? 'Encrypting backup…' : 'Download rescue backup'}
+          {backupBusy ? 'Saving…' : 'Save a copy'}
         </button>
         {backupDone && (
           <p className="text-[10px] text-emerald-700 font-semibold flex items-center gap-1">
             <CheckCircle2 className="w-3 h-3" />
-            Backup written and verified — that passphrase opens the file.
+            Saved. That passphrase opens it. 💕
           </p>
         )}
         {backupError && (
@@ -359,7 +349,7 @@ export function LockScreen() {
     setBackupDone(false);
 
     if (normalizePassphrase(backupPassphrase).length < MIN_PASSPHRASE_LENGTH) {
-      setBackupError(`Choose a backup passphrase of at least ${MIN_PASSPHRASE_LENGTH} characters.`);
+      setBackupError(`Pick a passphrase with at least ${MIN_PASSPHRASE_LENGTH} characters.`);
       return;
     }
 
@@ -385,7 +375,7 @@ export function LockScreen() {
       setBackupDone(true);
     } catch (err) {
       console.error('Rescue backup failed:', err);
-      setBackupError('Could not create the backup: ' + (err.message || 'Unknown error'));
+      setBackupError('We could not save that copy. Please try again.');
     } finally {
       if (url) setTimeout(() => URL.revokeObjectURL(url), 60000);
       setBackupBusy(false);
@@ -434,13 +424,13 @@ export function LockScreen() {
       const text = await file.text();
       const parsed = JSON.parse(text);
       if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-        setRestoreError('That file is not a valid .vault backup.');
+        setRestoreError('That does not look like a file Our Space saved.');
         return;
       }
       setRestoreFileName(file.name);
       setRestoreContainer(parsed);
     } catch {
-      setRestoreError('That file is not a valid .vault backup (it is not readable JSON).');
+      setRestoreError('That does not look like a file Our Space saved.');
     }
   };
 
@@ -456,9 +446,9 @@ export function LockScreen() {
       const identity = readBackupVaultIdentity(decrypted.tables);
       if (!identity) {
         setRestoreError(
-          'That backup opened, but it does not carry the vault salt and canary, so there is no ' +
-            'identity to restore. It was most likely written by an older version of the app. Its ' +
-            'records can still be merged into an unlocked vault from the Sync Hub.'
+          'That file opened, but it is missing the part we need to rebuild your space here. It was ' +
+            'probably saved by an older version. You can still bring its things in from the Sync ' +
+            'Hub once you are unlocked.'
         );
         return;
       }
@@ -468,7 +458,8 @@ export function LockScreen() {
       // first rather than making the user type it twice for nothing.
       setRestoreVaultPassphrase(restoreFilePassphrase);
     } catch (err) {
-      setRestoreError(err.message || 'Could not open that backup file.');
+      console.error('Could not open the backup container:', err);
+      setRestoreError('We could not open that file. Check the passphrase and try again.');
     } finally {
       setRestoreBusy(false);
     }
@@ -499,7 +490,7 @@ export function LockScreen() {
       return;
     }
 
-    setRestoreError(RESTORE_ERRORS[result.code] || result.message || 'The restore did not complete.');
+    setRestoreError(RESTORE_ERRORS[result.code] || 'That did not finish. Please try again.');
   };
 
   /** Remembers the peer id so SyncContext can offer to dial after unlock. */
@@ -546,7 +537,7 @@ export function LockScreen() {
       return;
     }
     if (hasVault && !isConfirmed) {
-      setLocalError(`Type ${DESTROY_CONFIRMATION_PHRASE} to confirm you want to destroy this vault.`);
+      setLocalError(`Type ${DESTROY_CONFIRMATION_PHRASE} to confirm you want to erase everything here.`);
       return;
     }
     setLoading(true);
@@ -580,13 +571,13 @@ export function LockScreen() {
 
     if (!invite || !invite.salt) {
       setLocalError(
-        'Please paste a valid invite link containing your partner’s vault salt (copied from WhatsApp, or scanned from their QR code).'
+        'Please paste your partner’s invite link — the one they sent you, or the QR code you scanned.'
       );
       return;
     }
 
     if (joinReplacesVault && !isConfirmed) {
-      setLocalError(`Type ${DESTROY_CONFIRMATION_PHRASE} to confirm you want to destroy this vault.`);
+      setLocalError(`Type ${DESTROY_CONFIRMATION_PHRASE} to confirm you want to erase everything here.`);
       return;
     }
 
@@ -672,7 +663,7 @@ export function LockScreen() {
             Our Space 💕
           </h1>
           <p className="text-sm text-slate-500 mt-1 font-medium">
-            Private, Encrypted Sanctuary For Two
+            A little corner just for the two of us
           </p>
         </div>
 
@@ -682,7 +673,7 @@ export function LockScreen() {
           {isChecking && (
             <div className="py-10 text-center space-y-3">
               <div className="w-8 h-8 mx-auto rounded-full border-2 border-blush-200 border-t-blush-500 animate-spin" />
-              <p className="text-xs text-slate-500 font-medium">Looking for your vault…</p>
+              <p className="text-xs text-slate-500 font-medium">Finding your space…</p>
 
               {/* Dexie told us another connection is holding the old schema. The
                   read above will never settle on its own, so this is the only
@@ -691,9 +682,7 @@ export function LockScreen() {
                 <div className="mx-2 p-3 rounded-xl bg-amber-50 border border-amber-200 text-[11px] text-amber-900 leading-relaxed text-left">
                   <p className="font-bold">Our Space is open somewhere else.</p>
                   <p className="mt-1">
-                    Another tab or window is holding the older version of the local database open,
-                    and the upgrade cannot finish until it closes. Close every other tab running Our
-                    Space — this screen continues on its own the moment it does.
+                    Close the other tabs you have open and this will carry on by itself.
                   </p>
                 </div>
               )}
@@ -703,12 +692,10 @@ export function LockScreen() {
                   actually know the cause here. */}
               {!vaultCheckBlocked && checkIsSlow && (
                 <div className="mx-2 p-3 rounded-xl bg-slate-50 border border-slate-200 text-[11px] text-slate-600 leading-relaxed text-left">
-                  <p className="font-bold">This is taking longer than it should.</p>
+                  <p className="font-bold">This is taking a little while.</p>
                   <p className="mt-1">
-                    The usual cause is another tab or window running Our Space and holding the local
-                    database open. Try closing them. Nothing has been changed here, and no setup
-                    form will appear until this finishes — a slow read is not proof this device is
-                    empty.
+                    Usually that means Our Space is open in another tab. Try closing them. Nothing
+                    here has changed, and nothing will until this finishes.
                   </p>
                 </div>
               )}
@@ -723,24 +710,10 @@ export function LockScreen() {
             <div className="py-6 text-center space-y-3">
               <ShieldAlert className="w-8 h-8 mx-auto text-amber-500" />
               <p className="text-sm font-bold text-slate-700">
-                Could not read this device&apos;s vault
+                Something went wrong opening your space
               </p>
-              {vaultCheckBlocked ? (
-                <p className="text-[11px] text-slate-600 leading-relaxed px-2">
-                  Our Space is open in <strong>another tab or window</strong>, and it is holding the
-                  older version of the local database open. The upgrade cannot finish until that copy
-                  closes. Close every other tab running Our Space, then tap Try again.
-                </p>
-              ) : (
-                <p className="text-[11px] text-slate-600 leading-relaxed px-2">
-                  The local database would not open. Another tab may be holding it, or the browser
-                  may be blocking storage (private windows do this), or the disk may be full.
-                </p>
-              )}
-              <p className="text-[11px] text-slate-500 leading-relaxed px-2">
-                Nothing has been changed, and no setup form is offered here on purpose — a read
-                error is not proof this device is empty, and creating a new vault on top of one we
-                cannot see would destroy it.
+              <p className="text-[11px] text-slate-600 leading-relaxed px-2">
+                Nothing was lost — try again, and close any other tabs you have open.
               </p>
               <button
                 type="button"
@@ -792,10 +765,10 @@ export function LockScreen() {
               <div className="text-center mb-4">
                 <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blush-100/70 text-blush-600 text-xs font-semibold">
                   <Lock className="w-3.5 h-3.5" />
-                  <span>Vault Locked</span>
+                  <span>Locked</span>
                 </div>
                 <p className="text-xs text-slate-500 mt-2">
-                  Enter your shared secret passphrase to unlock your private memories and notes.
+                  Enter the passphrase you two share to open your memories and notes.
                 </p>
               </div>
 
@@ -803,8 +776,8 @@ export function LockScreen() {
                 <div className="p-2.5 bg-indigo-50/70 border border-indigo-100 rounded-xl text-[11px] text-indigo-800 flex items-center gap-2">
                   <Link2 className="w-4 h-4 text-indigo-500 flex-shrink-0" />
                   <span>
-                    Invite link detected. Unlock and this device will offer to connect to{' '}
-                    {inviteData.partnerPeerId}.
+                    Your partner&apos;s invite is here. Unlock, and we&apos;ll offer to connect to
+                    their phone.
                   </span>
                 </div>
               )}
@@ -813,9 +786,9 @@ export function LockScreen() {
                 <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-xl text-[11px] text-amber-900 flex items-start gap-2">
                   <AlertTriangle className="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5" />
                   <span>
-                    That invite link is for a <strong>different vault</strong> than the one on this
-                    device. Unlocking here is safe and ignores the link. Joining it would replace
-                    everything stored here.
+                    That invite is for a <strong>different space</strong>, not this one. Unlocking
+                    here is safe — the link is ignored. Joining it would replace everything on this
+                    phone.
                   </span>
                 </div>
               )}
@@ -857,7 +830,7 @@ export function LockScreen() {
                 disabled={loading || !passphrase.trim()}
                 className="w-full py-3.5 text-base font-bold shadow-md shadow-blush-300/40"
               >
-                {loading ? 'Deriving Key...' : 'Unlock Our Space 💕'}
+                {loading ? 'Opening…' : 'Unlock Our Space 💕'}
               </BouncyButton>
 
               <div className="pt-2 flex flex-col gap-1.5 text-center">
@@ -889,8 +862,8 @@ export function LockScreen() {
                 </div>
                 <p className="text-xs text-slate-500 mt-2">
                   {inviteData && inviteData.partnerPeerId
-                    ? `Partner device (${inviteData.partnerPeerId}) invited you!`
-                    : 'Pair your device directly with your partner using their invite link.'}
+                    ? 'Your partner invited you! 💕'
+                    : 'Use your partner’s invite link to join their space.'}
                 </p>
               </div>
 
@@ -916,8 +889,8 @@ export function LockScreen() {
                     <Link2 className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
                   </div>
                   <p className="text-[11px] text-slate-400 mt-1">
-                    Ask your partner to tap &quot;Share Pairing Link&quot; in their Sync Hub and paste
-                    the link here.
+                    Ask your partner to tap &quot;Share Pairing Link&quot; in their Sync Hub, then
+                    paste it here.
                   </p>
                 </div>
               )}
@@ -926,8 +899,8 @@ export function LockScreen() {
                 <div className="p-2.5 bg-emerald-50/70 border border-emerald-100 rounded-xl text-[11px] text-emerald-800 flex items-center gap-2">
                   <ShieldCheck className="w-4 h-4 text-emerald-500 flex-shrink-0" />
                   <span>
-                    This invite is for the vault already on this device. Re-pairing is safe — nothing
-                    will be erased.
+                    This invite is for the space you already have here. Pairing again is safe —
+                    nothing gets erased.
                   </span>
                 </div>
               )}
@@ -935,13 +908,13 @@ export function LockScreen() {
               {pendingJoinSalt && !hasVault && (
                 <div className="p-2.5 bg-emerald-50/70 border border-emerald-100 rounded-xl text-[11px] text-emerald-800 flex items-center gap-2">
                   <ShieldCheck className="w-4 h-4 text-emerald-500 flex-shrink-0" />
-                  <span>Partner&apos;s encryption salt found! Enter your shared passphrase to pair.</span>
+                  <span>Found your partner&apos;s invite! Enter the passphrase you both chose.</span>
                 </div>
               )}
 
               {joinReplacesVault &&
                 dangerGate(
-                  'Joining this invite adopts your partner’s encryption salt in place of the one this device already uses.'
+                  'Joining this invite moves this phone over to your partner’s space.'
                 )}
 
               <div>
@@ -973,7 +946,7 @@ export function LockScreen() {
                   </button>
                 </div>
                 <p className="text-[11px] text-slate-400 mt-1">
-                  Must match partner&apos;s passphrase exactly to derive the identical 256-bit AES key.
+                  It has to match theirs exactly, letter for letter.
                 </p>
               </div>
 
@@ -984,7 +957,7 @@ export function LockScreen() {
                 disabled={loading || !passphrase.trim() || (joinReplacesVault && !isConfirmed)}
                 className="w-full py-3.5 text-base font-bold bg-indigo-600 hover:bg-indigo-700 text-white shadow-md shadow-indigo-300/40"
               >
-                {loading ? 'Deriving Key & Pairing...' : 'Pair & Enter Our Space 💕'}
+                {loading ? 'Pairing…' : 'Pair & Enter Our Space 💕'}
               </BouncyButton>
 
               {hasVault && (
@@ -1010,14 +983,14 @@ export function LockScreen() {
                   <span>Setup Your Private Space</span>
                 </div>
                 <p className="text-xs text-slate-500 mt-2">
-                  Choose a passphrase only the two of you know. It derives your AES-GCM 256
-                  encryption key.
+                  Choose a passphrase only the two of you know. It is the only thing that opens
+                  your space.
                 </p>
               </div>
 
               {hasVault &&
                 dangerGate(
-                  'Creating a new space generates a brand new encryption salt for this device.'
+                  'Starting a new space gives this phone a brand new lock.'
                 )}
 
               <div>
@@ -1074,9 +1047,9 @@ export function LockScreen() {
                   </button>
                 </div>
                 <p className="text-[11px] text-slate-400 mt-1">
-                  Must be at least {MIN_PASSPHRASE_LENGTH} characters (e.g. a memorable secret
-                  sentence only you two know). It is never stored anywhere — forget it and the vault
-                  is gone.
+                  At least {MIN_PASSPHRASE_LENGTH} characters — a little sentence only you two would
+                  know works best. It is never saved anywhere, so if you both forget it, everything
+                  here is gone.
                 </p>
               </div>
 
@@ -1088,10 +1061,10 @@ export function LockScreen() {
                 className="w-full py-3.5 text-base font-bold"
               >
                 {loading
-                  ? 'Deriving 256-bit Key...'
+                  ? 'Setting things up…'
                   : hasVault
-                    ? 'Erase & Create New Vault'
-                    : 'Create Vault & Start 💕'}
+                    ? 'Erase & Start Fresh'
+                    : 'Create Our Space 💕'}
               </BouncyButton>
 
               {hasVault && (
@@ -1118,11 +1091,11 @@ export function LockScreen() {
               <div className="text-center mb-1">
                 <div className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-amber-50 border border-amber-200 text-amber-800 text-xs font-bold">
                   <LifeBuoy className="w-3.5 h-3.5 text-amber-500" />
-                  <span>Restore from a rescue backup</span>
+                  <span>Bring back a saved copy</span>
                 </div>
                 <p className="text-xs text-slate-500 mt-2 leading-relaxed">
-                  Rebuilds a vault on this device from a <code>.vault</code> file — its encryption
-                  salt as well as its records, so the memories inside open again.
+                  Rebuilds your space on this phone from a file you saved earlier, so everything
+                  inside opens again.
                 </p>
               </div>
 
@@ -1130,7 +1103,7 @@ export function LockScreen() {
               <div>
                 <label className="flex items-center justify-center gap-2 py-2.5 px-3 rounded-2xl border-2 border-dashed border-slate-300 text-xs font-semibold text-slate-600 hover:bg-slate-50 cursor-pointer">
                   <Upload className="w-4 h-4 text-slate-400" />
-                  <span>{restoreFileName || 'Choose your .vault rescue file'}</span>
+                  <span>{restoreFileName || 'Choose the file you saved'}</span>
                   <input
                     type="file"
                     accept=".vault,.json,application/json"
@@ -1153,7 +1126,7 @@ export function LockScreen() {
                       setRestoreFilePassphrase(e.target.value);
                       setRestoreError(null);
                     }}
-                    placeholder="Backup file passphrase"
+                    placeholder="Passphrase for this file"
                     autoComplete="off"
                     autoFocus
                     className="w-full px-4 py-2.5 bg-white/70 border border-blush-200 rounded-2xl text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 placeholder:text-slate-400"
@@ -1163,7 +1136,7 @@ export function LockScreen() {
                     disabled={restoreBusy || !restoreFilePassphrase.trim()}
                     className="w-full py-3 text-sm font-bold bg-slate-800 hover:bg-slate-900 text-white"
                   >
-                    {restoreBusy ? 'Opening backup…' : 'Open backup file'}
+                    {restoreBusy ? 'Opening…' : 'Open this file'}
                   </BouncyButton>
                 </form>
               )}
@@ -1174,14 +1147,14 @@ export function LockScreen() {
                   <div className="p-2.5 rounded-xl bg-emerald-50/70 border border-emerald-100 text-[11px] text-emerald-800 flex items-start gap-2">
                     <ShieldCheck className="w-4 h-4 text-emerald-500 flex-shrink-0 mt-0.5" />
                     <span>
-                      File opened. It carries a vault identity, so the records inside can be made
-                      readable again — with the passphrase <strong>that vault</strong> used.
+                      File opened! Now the passphrase you used <strong>back then</strong> will bring
+                      everything inside back.
                     </span>
                   </div>
 
                   {restoreReplacesVault &&
                     dangerGate(
-                      'Restoring this backup adopts the encryption salt inside the file in place of the one this device already uses.'
+                      'Bringing this file back moves this phone over to the space inside it.'
                     )}
 
                   {/* The old copy said "nothing here will be overwritten", which
@@ -1195,15 +1168,14 @@ export function LockScreen() {
                       moves to meet the code, not the other way round. */}
                   {!hasVault && (
                     <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-[11px] text-slate-600 leading-relaxed">
-                      There is no vault on this device, so no live vault is being replaced. Any
-                      leftover records from an earlier vault on this device are cleared first —
-                      their key is gone, so nothing could ever read them again.
+                      There is nothing here to replace. Anything left over from an older space on
+                      this phone is tidied away first — it cannot be opened any more anyway.
                     </div>
                   )}
 
                   <div>
                     <label className="block text-xs font-semibold text-slate-600 mb-1">
-                      The original <em>vault</em> passphrase
+                      The passphrase you used <em>back then</em>
                     </label>
                     <input
                       type={showPassword ? 'text' : 'password'}
@@ -1218,9 +1190,8 @@ export function LockScreen() {
                       className="w-full px-4 py-2.5 bg-white/70 border border-blush-200 rounded-2xl text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 placeholder:text-slate-400"
                     />
                     <p className="text-[11px] text-slate-400 mt-1 leading-relaxed">
-                      Often the same as the file passphrase — pre-filled with it. It is checked
-                      against the backup&apos;s own canary before anything is written, so a wrong
-                      one costs you nothing.
+                      Usually the same as the file passphrase, so we have filled it in. We check it
+                      before anything is written, so a wrong guess costs you nothing.
                     </p>
                   </div>
 
@@ -1239,7 +1210,7 @@ export function LockScreen() {
                     }
                     className="w-full py-3.5 text-base font-bold bg-amber-600 hover:bg-amber-700 text-white shadow-md shadow-amber-300/40"
                   >
-                    {restoreBusy ? 'Restoring…' : 'Restore this vault'}
+                    {restoreBusy ? 'Bringing it back…' : 'Bring everything back'}
                   </BouncyButton>
                 </form>
               )}
@@ -1271,7 +1242,7 @@ export function LockScreen() {
                 className="inline-flex items-center gap-1.5 text-xs text-amber-700 hover:text-amber-800 underline font-medium"
               >
                 <LifeBuoy className="w-3.5 h-3.5" />
-                <span>Restore from a rescue backup file</span>
+                <span>Bring back a copy you saved</span>
               </button>
             </div>
           )}
@@ -1279,7 +1250,7 @@ export function LockScreen() {
           {/* Security badge */}
           <div className="mt-5 pt-4 border-t border-blush-100/80 flex items-center justify-center gap-2 text-slate-400 text-[11px]">
             <ShieldCheck className="w-4 h-4 text-emerald-500" />
-            <span>AES-GCM 256 Zero-Knowledge • 100% Local Encrypted</span>
+            <span>Locked with your passphrase. Only you two can open it.</span>
           </div>
         </GlassCard>
       </motion.div>

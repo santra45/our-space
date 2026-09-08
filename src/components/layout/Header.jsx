@@ -48,7 +48,7 @@ export function Header({ onOpenSync }) {
     // that the passphrases differ or that ICE never found a route.
     if (syncError) {
       return {
-        label: 'Sync Issue',
+        label: 'Sync hiccup',
         color: 'bg-rose-100 text-rose-700 border-rose-200',
         dot: 'bg-rose-500',
         icon: AlertTriangle,
@@ -58,7 +58,7 @@ export function Header({ onOpenSync }) {
     if (isAuthorized) {
       if (connectionType === 'direct') {
         return {
-          label: 'Direct P2P ⚡',
+          label: 'Phone to phone ⚡',
           color: 'bg-emerald-100 text-emerald-700 border-emerald-200',
           dot: 'bg-emerald-500 animate-pulse',
           icon: Zap,
@@ -66,7 +66,7 @@ export function Header({ onOpenSync }) {
       }
       if (connectionType === 'relayed') {
         return {
-          label: 'Relayed 🛡️',
+          label: 'Via a helper 🛡️',
           color: 'bg-indigo-100 text-indigo-700 border-indigo-200',
           dot: 'bg-indigo-500 animate-pulse',
           icon: Wifi,
@@ -74,7 +74,7 @@ export function Header({ onOpenSync }) {
       }
       // X3: the route genuinely is not known yet. Say so instead of guessing.
       return {
-        label: 'Route unknown',
+        label: 'Connected 💕',
         color: 'bg-emerald-100 text-emerald-700 border-emerald-200',
         dot: 'bg-emerald-500 animate-pulse',
         icon: HelpCircle,
@@ -84,7 +84,7 @@ export function Header({ onOpenSync }) {
     // Channel open, identity NOT proven. Deliberately not green.
     if (isHandshaking) {
       return {
-        label: 'Verifying...',
+        label: 'Checking…',
         color: 'bg-amber-100 text-amber-700 border-amber-200',
         dot: 'bg-amber-500 animate-ping',
         icon: ShieldAlert,
@@ -123,7 +123,7 @@ export function Header({ onOpenSync }) {
             <h2 className="text-sm font-bold text-slate-800 leading-tight">
               {vaultConfig?.coupleNames || 'Our Space'}
             </h2>
-            <p className="text-[10px] text-slate-500 font-medium">Zero-Knowledge Vault</p>
+            <p className="text-[10px] text-slate-500 font-medium">Just for us 💕</p>
           </div>
         </div>
 
@@ -147,7 +147,7 @@ export function Header({ onOpenSync }) {
               tick();
               lockVault();
             }}
-            title="Lock Vault"
+            title="Lock Our Space"
             className="w-8 h-8 rounded-full bg-white/80 border border-blush-200 flex items-center justify-center text-slate-500 hover:text-blush-600 hover:bg-blush-50 transition shadow-sm"
           >
             <Lock className="w-3.5 h-3.5" />
@@ -179,7 +179,7 @@ export function Header({ onOpenSync }) {
                 tick();
                 clearSyncError();
               }}
-              aria-label="Dismiss sync error"
+              aria-label="Dismiss"
               className="w-5 h-5 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center shrink-0"
             >
               <X className="w-3 h-3" />
@@ -224,8 +224,8 @@ export function Header({ onOpenSync }) {
 
             <p className="text-xs text-slate-600 leading-relaxed">
               {pendingInvite.fromLink
-                ? 'A pairing link asked this app to connect to the device below.'
-                : 'This app has a saved partner device it has not connected to before.'}
+                ? 'A link is asking to connect to the phone below.'
+                : 'There is a saved phone here we have not connected to before.'}
             </p>
 
             <p className="mt-2 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-mono text-xs font-bold text-slate-700 break-all">
@@ -234,10 +234,7 @@ export function Header({ onOpenSync }) {
 
             <div className="mt-3 p-3 rounded-2xl bg-amber-50 border border-amber-200">
               <p className="text-[11px] text-amber-800 leading-relaxed">
-                <strong>Connecting reveals your IP address to that device.</strong> A direct
-                peer-to-peer connection exchanges network candidates, which include your phone&apos;s
-                local and public IP. Only continue if you know who sent you this link and recognise
-                the code above from their screen.
+                Only connect if you know who sent you this link.
               </p>
             </div>
 

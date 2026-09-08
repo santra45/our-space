@@ -112,10 +112,8 @@ export function LetterEnvelope({ letter, onClose, onDelete, onOpened }) {
 
             {wasTimeLocked && (
               <p className="mt-5 text-[10px] leading-relaxed text-slate-400 bg-slate-50 border border-slate-200 rounded-2xl px-3 py-2">
-                This letter&apos;s body was key-wrapped until {formatDatePretty(letter.lockDate)} -
-                the app could not read it before that date, and altering the stored date would have
-                destroyed it rather than opened it. It was never proof against either of you: the
-                vault passphrase plus a device clock could always have opened it early.
+                This one was sealed until {formatDatePretty(letter.lockDate)} 💕 The app would
+                not open it early — though it was always a promise, not a padlock.
               </p>
             )}
 

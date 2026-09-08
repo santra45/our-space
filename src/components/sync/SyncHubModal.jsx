@@ -271,9 +271,13 @@ function ImportPreview({ plan, relation, busy, onConfirm, onCancel }) {
   // Deletions are writes. Excluding them from this total once made a merge whose
   // entire effect was destroying rows render as "Nothing to write".
   const willWrite = added + updated + deleted;
+  // Every reason a row can be held back, added up. The individual counts stay
+  // exactly as the plan reports them; only the DISPLAY is collapsed to one line.
+  const leftOut = stale + invalid + undecryptable + tampered + unauthenticated;
   const destructive = deleted > 0;
   const foreign = relation === 'foreign';
   const [ackDelete, setAckDelete] = useState(false);
+  const [showWhy, setShowWhy] = useState(false);
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
@@ -282,39 +286,19 @@ function ImportPreview({ plan, relation, busy, onConfirm, onCancel }) {
         animate={{ opacity: 1, scale: 1 }}
         className="w-full max-w-sm bg-white rounded-3xl p-5 shadow-2xl border border-blush-100 max-h-[85vh] overflow-y-auto"
       >
-        <h3 className="text-base font-bold text-slate-800">Review this restore</h3>
+        <h3 className="text-base font-bold text-slate-800">Before we add these</h3>
         <p className="mt-1 text-[11px] text-slate-500 leading-relaxed">
-          Nothing has been written yet. This is what the merge would do.
+          Nothing has been added yet. Here is what would happen.
         </p>
 
         {foreign && (
           <div className="mt-3 p-3 rounded-xl bg-rose-50 border-2 border-rose-300 flex items-start gap-2">
             <ShieldAlert className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
             <div className="text-[11px] text-rose-800 leading-relaxed">
-              <p className="font-extrabold uppercase tracking-wide">Different vault</p>
+              <p className="font-extrabold uppercase tracking-wide">This is from somewhere else</p>
               <p className="mt-1">
-                This backup was made by a <strong>different vault</strong> than the one on this
-                device. Its records are encrypted under a key this device does not have, and some of
-                them share fixed ids with yours (the starter bucket-list items, the date roulette
-                pick), so a blind restore would replace your copies with rows nothing here can read —
-                they would simply vanish from every screen with no error.
-              </p>
-              {/* Reads the counters out; it must not be able to contradict them.
-                  The old copy said "none of them passed" whenever nothing was
-                  queued, which it printed directly above a `stale` counter whose
-                  own label ("kept as-is") only ever describes rows that DID
-                  decrypt under this key and were then held back for being older.
-                  Two true numbers and a sentence that denies one of them is the
-                  same defect as a wrong number. */}
-              <p className="mt-1 font-bold">
-                {willWrite === 0
-                  ? 'Going by the counts below, no record from this file is queued to be written. ' +
-                    'That is not the same as "none of them opened" — a record counted as kept ' +
-                    'as-is did decrypt under your key and was held back only for being older. ' +
-                    'Read the lines below before you decide.'
-                  : `Going by the counts below, ${willWrite} record(s) from this file decrypted ` +
-                    `under your key and are queued to be written. A backup from a different vault ` +
-                    `should have none — read the numbers before you accept them.`}
+                This file came from a different space, not yours. If you were not expecting it,
+                please tap Cancel.
               </p>
             </div>
           </div>
@@ -324,31 +308,10 @@ function ImportPreview({ plan, relation, busy, onConfirm, onCancel }) {
           <div className="mt-3 p-3 rounded-xl bg-amber-50 border-2 border-amber-300 flex items-start gap-2">
             <ShieldAlert className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
             <div className="text-[11px] text-amber-900 leading-relaxed">
-              <p className="font-extrabold uppercase tracking-wide">Origin not established</p>
+              <p className="font-extrabold uppercase tracking-wide">We are not sure where this is from</p>
               <p className="mt-1">
-                This file carries no readable vault identity — the part naming the vault it came
-                from is missing or incomplete — so it could not be matched against the vault on
-                this device. <strong>Every backup this app has ever written carries one</strong>,
-                so this file has been altered, truncated, or made by something else.
-              </p>
-              {/* What this may claim is bounded by exactly two gates in
-                  planBackupMerge, and it may claim NOTHING beyond them. Every
-                  candidate must carry ciphertext that verifies under the live
-                  key (verifyRowIntegrity), and a record may only overwrite or
-                  delete an EXISTING row when its plaintext header is sealed into
-                  that ciphertext (recordHasAuthenticatedHeader). It may not
-                  claim that everything written is "provably yours" - the old
-                  wording - because a record landing on an id you do not have yet
-                  is admitted on the weaker of the two gates. The second sentence
-                  below exists to stop a reader generalising the first. */}
-              <p className="mt-1">
-                That does not loosen the per-record checks. Every record still has to decrypt under{' '}
-                <strong>your current key</strong>, and a record may only overwrite or delete
-                something you already have when its id, timestamp and delete flag are sealed inside
-                that same encrypted payload. A record landing on an id you do not have yet is held
-                to the first of those rules only, so treat the Added count as new material of
-                unproven origin. If the counts below are mostly &quot;could not be decrypted&quot;,
-                this file is not yours and you should cancel.
+                This file does not say which space it belongs to. Only things that open with your
+                passphrase can be added. If you were not expecting it, please tap Cancel.
               </p>
             </div>
           </div>
@@ -356,8 +319,8 @@ function ImportPreview({ plan, relation, busy, onConfirm, onCancel }) {
 
         {relation === 'no-local-vault' && (
           <div className="mt-3 p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-[11px] text-amber-900 leading-relaxed">
-            This device has no vault identity recorded, so the backup could not be matched against
-            one. Only records that decrypt with your current key will be written.
+            We could not match this file to this phone. Only the things that open with your
+            passphrase will be added.
           </div>
         )}
 
@@ -392,7 +355,7 @@ function ImportPreview({ plan, relation, busy, onConfirm, onCancel }) {
                   destructive ? 'text-rose-800' : 'text-slate-500'
                 }`}
               >
-                Deleted permanently
+                Removed for good
               </span>
               <span
                 className={`text-lg font-extrabold leading-none ${
@@ -410,110 +373,51 @@ function ImportPreview({ plan, relation, busy, onConfirm, onCancel }) {
               {/* The timeline runs the other way round: a tombstone inside the
                   file was necessarily written BEFORE the file was exported. The
                   deletion is newer than YOUR copy, not newer than the file. */}
-              {/* U2: literally true of the local merge and nothing else, and it
-                  is the one line of reassurance sitting beside a preview whose
-                  Added rows go on to the partner's phone. Left bare it was read
-                  as "this import is harmless". It is now scoped out loud, and
-                  when there is something to be scoped against it points at the
-                  banner that says what a created record becomes. */}
+              {/* U2: this reassurance is about DELETION only. It never meant
+                  "this import is harmless" - created rows still travel on to the
+                  partner's phone. The paragraph that used to spell that out has
+                  been dropped from the UI as unreadable jargon; the rule itself
+                  is unchanged in db/index.js. */}
               {destructive
-                ? `${deleted} of these were already deleted when this file was made, and you ` +
-                  `still have them here. Merging obeys those deletions: their photos and letter ` +
-                  `text are erased from this device and cannot be brought back, on this device ` +
-                  `or the other one.`
-                : added > 0
-                  ? 'Nothing in this file erases a record you still have. Erasing is the only ' +
-                    'thing this line is about — it says nothing about what the file ADDS. Read ' +
-                    'the note below the counts for that.'
-                  : 'Nothing in this file erases a record you still have.'}
+                ? `This will remove ${deleted} ${deleted === 1 ? 'thing' : 'things'} you still ` +
+                  `have, here and on the other phone. That cannot be undone.`
+                : 'Nothing you still have gets removed.'}
             </p>
           </div>
         </div>
 
-        <ul className="mt-2 space-y-1 text-[11px] text-slate-600">
-          <li className="flex justify-between gap-2 px-1">
-            <span>Older than what you already have — kept as-is</span>
-            <span className="font-bold text-slate-800">{stale}</span>
-          </li>
-          <li className="flex justify-between gap-2 px-1">
-            <span>Could not be decrypted by this vault — refused</span>
-            <span className={`font-bold ${undecryptable > 0 ? 'text-rose-600' : 'text-slate-800'}`}>
-              {undecryptable}
-            </span>
-          </li>
-          {/* NOT the same refusal as the line above, and the difference is the
-              whole point: these rows DID open under this vault's key, and were
-              refused because some part of the row disagreed with what the key
-              authenticated - a rewritten header, swapped photo bytes, or an
-              envelope sealed for a different table. Folded into "could not be
-              decrypted", the one number that says someone went at the file read
-              as "wrong key". */}
-          <li className="flex justify-between gap-2 px-1">
-            <span>Opened, but altered since it was sealed — refused</span>
-            <span className={`font-bold ${tampered > 0 ? 'text-rose-600' : 'text-slate-800'}`}>
-              {tampered}
-            </span>
-          </li>
-          {/* planBackupMerge counts a row here when it would have overwritten or
-              deleted an existing record without a sealed header. Left unrendered
-              it was the one refusal the user could never see. */}
-          <li className="flex justify-between gap-2 px-1">
-            <span>Not sealed to the record it targets — refused</span>
-            <span
-              className={`font-bold ${unauthenticated > 0 ? 'text-rose-600' : 'text-slate-800'}`}
-            >
-              {unauthenticated}
-            </span>
-          </li>
-          <li className="flex justify-between gap-2 px-1">
-            <span>Malformed or out-of-range — refused</span>
-            <span className="font-bold text-slate-800">{invalid}</span>
-          </li>
-        </ul>
-
-        {/* Keyed on the PLAN, not on the file's label - see the block comment.
-            Everything claimed here is bounded by what planBackupMerge actually
-            does with a row that lands on an id this device does not hold: the
-            row must not verify as 'tampered' or 'undecryptable', a tombstone at
-            an unseen id is refused as invalid, and that is the entire test - an
-            'unverified' row (absent binding, or content inherited from a v1 row)
-            is admitted to create. Nothing in that path establishes who wrote it.
-            The onward reach is not speculation either: getManifest lists every
-            primary key in every synced table, and the sync request handler
-            serves whatever row that id resolves to. */}
-        {added > 0 && (
-          <div className="mt-3 p-3 rounded-xl bg-amber-50 border-2 border-amber-300 flex items-start gap-2">
-            <ShieldAlert className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-            <div className="text-[11px] text-amber-900 leading-relaxed">
-              <p className="font-extrabold uppercase tracking-wide">
-                {added} record(s) would be created
-              </p>
-              <p className="mt-1">
-                Adding is the permissive side of this merge, on purpose — it is what makes restoring
-                an old backup work. A record landing on an id you do not already have only has to
-                open under your key. <strong>Nothing here establishes who wrote it.</strong> Once
-                written it is an ordinary record on this phone: it shows up in your lists, and this
-                phone offers its records to your partner on the next sync, so it reaches their
-                device too.
-              </p>
-              <p className="mt-1">
-                What a created record cannot do is take anything away. Replacing or deleting
-                something you already have needs an envelope that sealed that record&apos;s own id,
-                timestamp and delete flag, over content authored inside this vault — a record merely
-                re-sealed from an older, never-authenticated one does not qualify. Everything short
-                of that is in the refused counts above.
-              </p>
+        {/* The five per-reason counters above are still computed - they are the
+            numbers the plan is made of - but the user gets one friendly line and
+            an optional plain-English "why". Five forensic categories on a
+            scrapbook screen is a security console, not a love letter. */}
+        {leftOut > 0 && (
+          <div className="mt-2 px-1">
+            <div className="flex items-baseline justify-between gap-2 text-[11px] text-slate-600">
+              <span>
+                {leftOut} {leftOut === 1 ? 'thing was' : 'things were'} left out
+              </span>
+              <button
+                type="button"
+                onClick={() => setShowWhy((v) => !v)}
+                className="text-[10px] font-bold text-slate-400 hover:text-slate-600 underline"
+              >
+                Why?
+              </button>
             </div>
+            {showWhy && (
+              <p className="mt-1 text-[10px] text-slate-500 leading-relaxed">
+                Some are older than the copies you already have, and some could not be opened with
+                your passphrase.
+              </p>
+            )}
           </div>
         )}
 
-        <p className="mt-3 text-[10px] text-slate-500 leading-relaxed">
-          Newer local edits are never replaced by older ones from the file — the same rule your two
-          phones use when they sync. A deletion recorded in the file is treated as an edit like any
-          other, so a newer one wins. Your vault key is not touched by a merge; to rebuild a vault
-          from a rescue file, lock the app and use &quot;Restore from a rescue backup&quot; on the
-          lock screen instead.
-        </p>
+        {/* The long explanations that used to live here (what a created row can
+            and cannot do, how last-write-wins works, which id/updatedAt/deleted
+            fields are sealed) were internal reasoning rendered at the user. The
+            RULES are unchanged and enforced in db/index.js planBackupMerge; only
+            the essay is gone. */}
 
         {/* The gate is on the destructive outcome, not on the file's label - see
             the block comment above. It is a deliberate act naming the count, not
@@ -529,7 +433,8 @@ function ImportPreview({ plan, relation, busy, onConfirm, onCancel }) {
               className="mt-0.5 w-3.5 h-3.5 shrink-0 accent-rose-600"
             />
             <span className="text-[11px] font-bold text-rose-800 leading-relaxed">
-              I understand {deleted} record(s) I still have will be erased for good.
+              I understand {deleted} {deleted === 1 ? 'thing' : 'things'} I still have will be gone
+              for good.
             </span>
           </label>
         )}
@@ -556,12 +461,12 @@ function ImportPreview({ plan, relation, busy, onConfirm, onCancel }) {
             {busy && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
             <span>
               {willWrite === 0
-                ? 'Nothing to write'
+                ? 'Nothing to add'
                 : busy
-                  ? 'Merging...'
+                  ? 'Adding…'
                   : destructive
-                    ? `Merge, deleting ${deleted}`
-                    : `Merge ${willWrite}`}
+                    ? `Add, removing ${deleted}`
+                    : `Add ${willWrite}`}
             </span>
           </button>
         </div>
@@ -632,7 +537,7 @@ export function SyncHubModal({ isOpen, onClose }) {
       .then((meta) => {
         if (cancelled) return;
         if (!meta || !meta.salt) {
-          setInviteMetaError('This device has no vault key material, so it cannot invite anyone.');
+          setInviteMetaError('Nothing is set up on this phone yet, so we cannot make an invite.');
           return;
         }
         // resolveKdfIterations always answers: a row without the field predates
@@ -644,8 +549,8 @@ export function SyncHubModal({ isOpen, onClose }) {
         if (cancelled) return;
         console.error('Could not read the vault KDF iteration count:', err);
         setInviteMetaError(
-          'Could not read this vault’s key settings, so no invite can be built right now. ' +
-            'Close any other tab running Our Space and reopen this hub.'
+          'We could not get your invite ready. Close any other tabs with Our Space open, then ' +
+            'open this again.'
         );
       });
 
@@ -704,9 +609,7 @@ export function SyncHubModal({ isOpen, onClose }) {
     tap();
     if (!inviteReady) {
       setPairError(
-        inviteMetaError ||
-          'Still reading this vault’s key settings. An invite sent without them would fail to pair, ' +
-            'so it is not built yet — try again in a moment.'
+        inviteMetaError || 'Your invite is not quite ready. Give it a second and try again.'
       );
       return;
     }
@@ -756,7 +659,7 @@ export function SyncHubModal({ isOpen, onClose }) {
     const parsed = parseInvite(raw);
     if (!parsed || !parsed.partnerPeerId) {
       setPairError(
-        'That does not look like a pairing code or invite link. Paste the whole link your partner shared, or their code from the hub.'
+        'That does not look like a pairing code or invite link. Paste the whole link your partner sent you, or their code.'
       );
       return;
     }
@@ -805,14 +708,14 @@ export function SyncHubModal({ isOpen, onClose }) {
       // anything. Without this, one typo produces an undecryptable .vault.
       const meta = await db.vaultMeta.get('config');
       if (!meta || !meta.salt) {
-        setPromptError('This vault has no key material on this device, so a backup cannot be verified.');
+        setPromptError('Nothing is set up on this phone yet, so there is nothing to save.');
         return;
       }
 
       const matches = await verifyPassphraseAgainstMeta(passphrase, meta);
       if (!matches) {
         setPromptError(
-          'That is not this vault’s passphrase. The backup must use the same passphrase you unlock with, otherwise nothing could ever restore it.'
+          'That is not the passphrase you open Our Space with. The copy has to use the same one, or nothing could ever bring it back.'
         );
         return;
       }
@@ -829,17 +732,18 @@ export function SyncHubModal({ isOpen, onClose }) {
       // and aborts it again if the object URL is revoked in the same tick.
       const anchor = document.createElement('a');
       anchor.href = url;
-      anchor.download = `OurSpace-Encrypted-${new Date().toISOString().split('T')[0]}.vault`;
+      anchor.download = `our-space-${new Date().toISOString().split('T')[0]}.vault`;
       anchor.rel = 'noopener';
       document.body.appendChild(anchor);
       anchor.click();
       anchor.remove();
 
       closePrompt();
-      setBackupNotice('Encrypted .vault backup created and verified. Only that passphrase can open it.');
+      setBackupNotice('Copy saved. Only that passphrase opens it. 💕');
       celebration();
     } catch (err) {
-      setPromptError('Could not create the backup: ' + (err?.message || 'unknown error'));
+      console.error('Could not create the backup:', err);
+      setPromptError('We could not save that copy. Please try again.');
     } finally {
       if (url) setTimeout(() => URL.revokeObjectURL(url), 60000);
       setPromptBusy(false);
@@ -859,7 +763,7 @@ export function SyncHubModal({ isOpen, onClose }) {
     // string and hangs the tab before anything is even validated.
     if (file.size > MAX_BACKUP_FILE_BYTES) {
       setBackupError(
-        `That file is ${Math.round(file.size / (1024 * 1024))}MB. Backups are capped at ${MAX_BACKUP_FILE_MB}MB.`
+        `That file is ${Math.round(file.size / (1024 * 1024))}MB — a bit big. The most we can take is ${MAX_BACKUP_FILE_MB}MB.`
       );
       return;
     }
@@ -871,16 +775,17 @@ export function SyncHubModal({ isOpen, onClose }) {
       try {
         container = JSON.parse(text);
       } catch {
-        setBackupError('That file is not a valid .vault backup (it is not readable JSON).');
+        setBackupError('That does not look like a file Our Space saved.');
         return;
       }
       if (!container || typeof container !== 'object' || Array.isArray(container)) {
-        setBackupError('That file is not a valid .vault backup.');
+        setBackupError('That does not look like a file Our Space saved.');
         return;
       }
       setPassphrasePrompt({ mode: 'import', container });
     } catch (err) {
-      setBackupError('Could not read that file: ' + (err?.message || 'unknown error'));
+      console.error('Could not read that file:', err);
+      setBackupError('We could not read that file. Please try another one.');
     }
   };
 
@@ -906,7 +811,7 @@ export function SyncHubModal({ isOpen, onClose }) {
       const decrypted = await decryptBackupContainer(passphrasePrompt.container, passphrase);
 
       if (!cryptoKey) {
-        setPromptError('The vault is locked, so a backup cannot be verified. Unlock and try again.');
+        setPromptError('Our Space is locked right now. Unlock it and try again.');
         return;
       }
 
@@ -918,8 +823,8 @@ export function SyncHubModal({ isOpen, onClose }) {
       // this file belongs here, and a wrong answer costs the user their photos.
       if (relation === 'unknown' && !localRead.ok) {
         setPromptError(
-          'This device’s vault could not be read, so the backup could not be checked against it. ' +
-            'Nothing was written. Close any other tab running Our Space and try again.'
+          'We could not read what is already on this phone, so we stopped. Nothing changed. Close ' +
+            'any other tabs with Our Space open and try again.'
         );
         return;
       }
@@ -928,9 +833,8 @@ export function SyncHubModal({ isOpen, onClose }) {
       closePrompt();
       setImportPreview({ plan, relation, identity });
     } catch (err) {
-      setPromptError(
-        'Backup rejected: ' + (err?.message || 'incorrect passphrase or corrupted backup file')
-      );
+      console.error('Could not open that backup file:', err);
+      setPromptError('We could not open that file. Check the passphrase and try again.');
     } finally {
       setPromptBusy(false);
     }
@@ -959,26 +863,25 @@ export function SyncHubModal({ isOpen, onClose }) {
       const result = await db.applyBackupMerge(importPreview.plan);
       const written = Object.values(result.written || {}).reduce((sum, n) => sum + n, 0);
       const supersededNote = result.supersededSincePreview
-        ? ` ${result.supersededSincePreview} were superseded by a newer copy that arrived while you were reading this, and were left alone.`
+        ? ` ${result.supersededSincePreview} already had a newer copy here, so we left those alone.`
         : '';
       const deleteNote =
         plannedDeletes > 0
           ? result.supersededSincePreview
-            ? ` Up to ${plannedDeletes} of them erased a record you still had.`
-            : ` ${plannedDeletes} of them erased a record you still had — those are gone for good.`
+            ? ` Up to ${plannedDeletes} of them removed something you had.`
+            : ` ${plannedDeletes} of them removed something you had — those are gone for good.`
           : '';
       setImportPreview(null);
-      setBackupNotice(
-        `Wrote ${written} record(s) from that backup.${deleteNote}${supersededNote}`
-      );
+      setBackupNotice(`Added ${written} ${written === 1 ? 'thing' : 'things'}.${deleteNote}${supersededNote}`);
       // No celebration buzz for a merge that erased something. The haptic is
       // part of the message, and congratulating a data loss is a lie told in
       // vibration.
       if (plannedDeletes > 0) tap();
       else celebration();
     } catch (err) {
+      console.error('The backup merge failed:', err);
       setImportPreview(null);
-      setBackupError('The merge failed: ' + (err?.message || 'unknown error'));
+      setBackupError('That did not finish. Please try again.');
     } finally {
       setImportBusy(false);
     }
@@ -991,13 +894,13 @@ export function SyncHubModal({ isOpen, onClose }) {
    * --------------------------------------------------------------------- */
 
   let statusDot = 'bg-amber-400';
-  let statusLabel = 'Awaiting Connection';
+  let statusLabel = 'Waiting to connect';
   if (isAuthorized) {
     statusDot = 'bg-emerald-500 animate-pulse';
     statusLabel = 'Connected to Partner';
   } else if (isHandshaking) {
     statusDot = 'bg-amber-500 animate-ping';
-    statusLabel = 'Verifying partner (not trusted yet)...';
+    statusLabel = 'Making sure it is them…';
   } else if (isConnecting) {
     statusDot = 'bg-amber-500 animate-ping';
     statusLabel = 'Connecting to Partner...';
@@ -1023,7 +926,7 @@ export function SyncHubModal({ isOpen, onClose }) {
 
         <div className="text-center mb-4">
           <h3 className="text-base font-bold text-slate-800">Pair &amp; Sync Hub</h3>
-          <p className="text-xs text-slate-400">Direct peer-to-peer connection</p>
+          <p className="text-xs text-slate-400">Your two phones, straight to each other</p>
         </div>
 
         {/* Live Status */}
@@ -1052,29 +955,28 @@ export function SyncHubModal({ isOpen, onClose }) {
           {isAuthorized && (
             <div className="pt-2 border-t border-blush-100/70 text-[11px] space-y-1">
               <div className="flex items-center justify-between gap-2">
-                <span className="text-slate-500 font-medium shrink-0">Connection Route:</span>
+                <span className="text-slate-500 font-medium shrink-0">How you are connected:</span>
                 {connectionType === 'direct' ? (
                   <span className="inline-flex items-center gap-1 font-bold text-emerald-700 bg-emerald-100/80 px-2.5 py-0.5 rounded-full border border-emerald-200 shadow-sm">
                     <Zap className="w-3 h-3 text-amber-500 fill-amber-400" />
-                    <span>Direct P2P ⚡</span>
+                    <span>Phone to phone ⚡</span>
                   </span>
                 ) : connectionType === 'relayed' ? (
                   <span className="inline-flex items-center gap-1 font-semibold text-indigo-700 bg-indigo-50 px-2.5 py-0.5 rounded-full border border-indigo-200">
                     <ShieldCheck className="w-3 h-3 text-indigo-500" />
-                    <span>Relayed 🛡️</span>
+                    <span>Via a helper 🛡️</span>
                   </span>
                 ) : (
                   <span className="inline-flex items-center gap-1 font-semibold text-slate-600 bg-slate-100 px-2.5 py-0.5 rounded-full border border-slate-200">
                     <HelpCircle className="w-3 h-3 text-slate-400" />
-                    <span>Unknown</span>
+                    <span>Not sure</span>
                   </span>
                 )}
               </div>
               {connectionType !== 'direct' && connectionType !== 'relayed' && (
                 <p className="text-[10px] text-slate-500 leading-relaxed">
-                  The browser has not reported which network path this connection took. Your data is
-                  end-to-end encrypted either way, but this app cannot honestly claim the link is
-                  phone-to-phone right now.
+                  Connected. We cannot tell exactly how it routed, but your things are still
+                  private.
                 </p>
               )}
             </div>
@@ -1272,8 +1174,7 @@ export function SyncHubModal({ isOpen, onClose }) {
           )}
 
           <p className="text-[10px] text-slate-400 leading-relaxed">
-            Pairing opens a direct link, which shares your IP address with that device. Only pair
-            with a code you recognise.
+            Only pair with a code you recognise.
           </p>
         </div>
 
@@ -1281,7 +1182,7 @@ export function SyncHubModal({ isOpen, onClose }) {
         <div className="pt-3 border-t border-slate-100">
           <p className="text-[11px] font-bold text-slate-600 mb-2 flex items-center gap-1.5">
             <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
-            <span>Encrypted Vault Backup (Failsafe)</span>
+            <span>Keep a copy, just in case</span>
           </p>
 
           <div className="grid grid-cols-2 gap-2">
@@ -1290,12 +1191,12 @@ export function SyncHubModal({ isOpen, onClose }) {
               className="flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl border border-slate-200 text-[11px] font-semibold text-slate-600 hover:bg-slate-50"
             >
               <Download className="w-3.5 h-3.5" />
-              <span>Export .vault</span>
+              <span>Save a copy</span>
             </button>
 
             <label className="flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl border border-slate-200 text-[11px] font-semibold text-slate-600 hover:bg-slate-50 cursor-pointer">
               <Upload className="w-3.5 h-3.5" />
-              <span>Import .vault</span>
+              <span>Bring in a copy</span>
               <input
                 type="file"
                 accept=".vault,.json,application/json"
@@ -1328,10 +1229,10 @@ export function SyncHubModal({ isOpen, onClose }) {
       {/* D3: masked passphrase entry, verified before anything is written. */}
       {passphrasePrompt?.mode === 'export' && (
         <PassphrasePrompt
-          title="Encrypt this backup"
-          description="Use the same passphrase you unlock this vault with. It is checked against your vault before the file is written, so a typo cannot produce a backup nobody can open."
+          title="Lock this copy"
+          description="Use the same passphrase you open Our Space with. We check it before writing the file, so a typo cannot leave you with a copy nobody can open."
           requireConfirm
-          submitLabel="Create backup"
+          submitLabel="Save the copy"
           busy={promptBusy}
           error={promptError}
           onSubmit={runExport}
@@ -1341,10 +1242,10 @@ export function SyncHubModal({ isOpen, onClose }) {
 
       {passphrasePrompt?.mode === 'import' && (
         <PassphrasePrompt
-          title="Unlock this backup"
-          description="Enter the passphrase this .vault file was encrypted with. Nothing is written yet — you will see exactly what would change before anything is merged. A merge never replaces your current vault key."
+          title="Open this copy"
+          description="Enter the passphrase this file was saved with. Nothing is added yet — you will see exactly what would change first."
           requireConfirm={false}
-          submitLabel="Check backup"
+          submitLabel="Take a look"
           busy={promptBusy}
           error={promptError}
           onSubmit={runImport}

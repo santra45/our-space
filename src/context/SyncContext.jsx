@@ -245,10 +245,11 @@ export function SyncProvider({ children }) {
     setPartnerId(clean);
     setSyncError(null);
     peerSync.connectToPartner(clean).catch((err) => {
+      console.error('Could not start a connection to ' + clean + ':', err);
       setSyncError({
         code: 'dial_failed',
         state: 'error',
-        text: `Could not start a connection to ${clean}: ${err?.message || 'unknown error'}`,
+        text: `We could not reach ${clean}. Check they have Our Space open, then try again.`,
       });
     });
   };
