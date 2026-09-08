@@ -2330,6 +2330,88 @@ async function run() {
     tsWritten.deleted === true && tsWritten._del === 1
   );
 
+  /* ------- 11duodecies. a rolled-back clock must not poison sync forever --- */
+  section('11duodecies. A future clock does not permanently future-date this phone');
+
+  // Reported by the project owner. The sync clock floor is monotonic on purpose,
+  // which made a clock change permanent: set the phone's date to next year -
+  // exactly what someone does to peek at a time-locked letter - save anything,
+  // and the floor is stamped a year ahead. Put the clock back and the floor
+  // stays, because it only moves forward. Every record written from then on is
+  // dated in the future and the partner refuses all of them until real time
+  // catches up.
+  const clkKey = 'sweetheart_sync_clock'; // must match SYNC_CLOCK_KEY in peerSync.js
+  const clkSavedRemote = peerSync._observedRemoteMax;
+  const clkSavedIssued = peerSync._lastIssuedStamp;
+
+  // getSyncSafeTimestamp guards every storage access on
+  // `typeof localStorage !== 'undefined'`, so under plain node the floor is
+  // always 0 and the branch under test never runs. A minimal shim makes the
+  // real code path live; it is removed again in the finally below.
+  const clkHadLS = typeof globalThis.localStorage !== 'undefined';
+  if (!clkHadLS) {
+    const store = new Map();
+    globalThis.localStorage = {
+      getItem: (k) => (store.has(k) ? store.get(k) : null),
+      setItem: (k, v) => store.set(k, String(v)),
+      removeItem: (k) => store.delete(k),
+    };
+  }
+  const clkSaved = (() => {
+    try { return localStorage.getItem(clkKey); } catch { return null; }
+  })();
+
+  const YEAR_MS = 365 * 24 * 60 * 60 * 1000;
+  try {
+    // Simulate the poisoned floor a future-dated save leaves behind.
+    localStorage.setItem(clkKey, String(Date.now() + YEAR_MS));
+    peerSync._observedRemoteMax = 0;
+    // Earlier sections drive the same singleton, so isolate the in-session
+    // high-water mark too or their stamps leak into this one.
+    peerSync._lastIssuedStamp = 0;
+
+    const clkNow = Date.now();
+    const clkStamp = peerSync.getSyncSafeTimestamp();
+    check(
+      'a year-ahead floor is clamped back to roughly now',
+      clkStamp > clkNow - 1000 && clkStamp < clkNow + 60 * 1000
+    );
+    check(
+      'and the poisoned value is not written back to storage',
+      Number(localStorage.getItem(clkKey)) < clkNow + 60 * 1000
+    );
+
+    // A partner with a wild clock must not be able to push us arbitrarily far
+    // forward either. It is clamped to the same ceiling the wire enforces
+    // (now + 24h), NOT to now: a partner legitimately a few hours ahead should
+    // still win a merge, which is the whole point of the high-water mark.
+    const DAY_MS = 24 * 60 * 60 * 1000;
+    peerSync._observedRemoteMax = Date.now() + YEAR_MS;
+    const clkStamp2 = peerSync.getSyncSafeTimestamp();
+    check(
+      'a far-future remote high-water mark is clamped to the wire ceiling, not obeyed',
+      clkStamp2 <= Date.now() + DAY_MS + 1000 && clkStamp2 < Date.now() + 2 * DAY_MS
+    );
+
+    // Normal operation is unchanged: still monotonic, still ahead of the last.
+    // This used to be flaky roughly one run in five, and the flake was a real
+    // bug: after the remote high-water mark pushed a stamp near the ceiling, the
+    // next call clamped back to now and issued an EARLIER stamp than the one
+    // before it. _lastIssuedStamp is what makes it a guarantee.
+    peerSync._observedRemoteMax = 0;
+    const a = peerSync.getSyncSafeTimestamp();
+    const b = peerSync.getSyncSafeTimestamp();
+    check('stamps are still strictly increasing', b > a);
+  } finally {
+    peerSync._observedRemoteMax = clkSavedRemote;
+    peerSync._lastIssuedStamp = clkSavedIssued;
+    try {
+      if (clkSaved === null) localStorage.removeItem(clkKey);
+      else localStorage.setItem(clkKey, clkSaved);
+    } catch {}
+    if (!clkHadLS) delete globalThis.localStorage;
+  }
+
   section('11c. A backup whose origin cannot be established is `unknown`, not `same`');
 
   // ImportPreview had branches for 'foreign' and 'no-local-vault' and none for

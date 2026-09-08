@@ -369,6 +369,8 @@ export class PeerSyncManager {
     this._inSessions = new Map();
 
     /** Highest partner timestamp we have accepted, used to keep our own writes monotonic. */
+    /** Highest stamp this device has issued this session; never walks backwards. */
+    this._lastIssuedStamp = 0;
     this._observedRemoteMax = 0;
     this._clockSkewWarned = false;
 
@@ -2612,6 +2614,13 @@ export class PeerSyncManager {
    * @returns {number}
    */
   getSyncSafeTimestamp() {
+    const now = Date.now();
+
+    // A stamp beyond this is refused by the partner outright (see
+    // _validateWireRecord), so a floor above it can only mint records that can
+    // never be accepted. Anything past it is treated as damage, not history.
+    const ceiling = now + MAX_CLOCK_SKEW_MS;
+
     let floor = 0;
     try {
       if (typeof localStorage !== 'undefined') {
@@ -2623,7 +2632,41 @@ export class PeerSyncManager {
       // storage unavailable; in-memory high-water mark still applies
     }
 
-    const next = Math.max(Date.now(), floor + 1, this._observedRemoteMax + 1);
+    // Clamp a poisoned floor back to real time.
+    //
+    // The floor is monotonic on purpose, but that made a clock change permanent.
+    // Set the phone's date to next year - which is exactly what someone does to
+    // peek at a time-locked letter - save or edit anything, and the floor is
+    // stamped a year ahead. Put the clock back and the floor stays there,
+    // because it only ever moves forward. Every record this phone writes from
+    // then on is dated in the future, and the partner refuses all of them until
+    // real time catches up. Months of memories, silently one-way.
+    //
+    // Both the stored floor and the remote high-water mark get the same
+    // treatment: neither is allowed to argue this device into the far future.
+    if (floor > ceiling) {
+      floor = now;
+      this._emitWarning(
+        'clock_rolled_back',
+        "This phone's date looks like it was changed. We have set syncing back to the current time."
+      );
+    }
+    const remoteFloor = Math.min(this._observedRemoteMax, ceiling);
+
+    // `_lastIssuedStamp` is what keeps this strictly increasing WITHIN a session,
+    // and it is not redundant with the stored floor.
+    //
+    // The clamp above is a ceiling test, and the ceiling moves with the wall
+    // clock. A partner legitimately a few hours ahead can push one stamp up near
+    // the ceiling; a moment later the ceiling has barely moved, the stored floor
+    // now sits above it, and the clamp would haul this device back to `now` -
+    // issuing a stamp EARLIER than the one before it. Last-write-wins then reads
+    // a newer edit as older, on this device's own records.
+    //
+    // So the ceiling may reset where the clock starts from, but it may never
+    // walk this device's own stamps backwards.
+    const next = Math.max(now, floor + 1, remoteFloor + 1, this._lastIssuedStamp + 1);
+    this._lastIssuedStamp = next;
 
     try {
       if (typeof localStorage !== 'undefined') {
