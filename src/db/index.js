@@ -386,18 +386,26 @@ export class SweetheartDatabase extends Dexie {
           //    (TABLE_BINDING_FIELD). Same carve-out, same drain, and this is
           //    the one that costs: a table binding is inside the ciphertext, so
           //    unlike an attached blob its absence cannot be detected without
-          //    decrypting. The cheap `recordHasAttachedBinary` skip therefore
-          //    had to go, and the sweep now opens every v2 row once per unlock:
+          //    decrypting. There is therefore no cheap pre-filter available and
+          //    the sweep opens every v2 row once per unlock:
           //    one AES-GCM open of a small JSON envelope per row, on a sweep
           //    that already SHA-256s every attached photo it opens. That cost is
           //    the price of this carve-out draining at all rather than being
           //    permanent, and it is paid on a background task VaultContext fires
           //    un-awaited after unlock.
           //
-          // Rows this device did not write are covered too: seedDefaultItems()
-          // in BucketList.jsx calls encryptRecord() directly with no table, so
-          // the six starter items - the ones on fixed, cross-vault-colliding ids
-          // - are always sealed unbound and are bound here at the next unlock.
+          // Rows written by an OLDER build of this app are covered the same way,
+          // including the six starter bucket-list items on their fixed,
+          // cross-vault-colliding ids: seedDefaultItems() binds the table now,
+          // but rows it wrote before that are unbound and are bound here at the
+          // next unlock.
+          //
+          // Note what this sweep does NOT do, because an earlier version of this
+          // comment got it wrong: it re-seals rows this device HOLDS, while the
+          // integrity gates decrypt the row ARRIVING. Sweeping therefore does
+          // nothing about an envelope harvested before binding existed. That is
+          // handled where it has to be - by refusing an unverified row an
+          // overwrite in planBackupMerge and _commitStagedRecords.
           const isLegacy = isLegacyRecord(row);
 
           try {
