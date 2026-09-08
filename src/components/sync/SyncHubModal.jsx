@@ -31,6 +31,7 @@ import {
   Eye,
   EyeOff,
   Loader2,
+  Trash2,
 } from 'lucide-react';
 import QRCode from 'qrcode';
 import { useSync } from '../../context/SyncContext';
@@ -174,34 +175,77 @@ function PassphrasePrompt({
  * have silently overwritten with older data, and `undecryptable` is the tell
  * that the file belongs to a different vault entirely.
  *
+ * A MERGE CAN DESTROY, AND THAT IS THE HEADLINE NUMBER.
+ * `planBackupMerge` classifies a write that tombstones a live row as `deleted`,
+ * separately from `updated` (db/index.js, the `row.deleted === true &&
+ * existing.deleted !== true` branch). Before that counter was rendered here,
+ * importing a backup taken AFTER a deletion showed the user "Updated 2" and then
+ * dropped two photos on confirm. No attacker is required for that: device A
+ * deletes a photo and exports, the user imports that export on device B which
+ * still holds the only copy, and B obeys the tombstone. So `deleted` gets its
+ * own loud tile, its own sentence, and its own acknowledgement.
+ *
  * Every `relation` compareVaultIdentity can return has a branch here. 'unknown'
  * used to have none, so a file whose origin could not be established rendered
  * identically to the user's own backup - same counts, no banner, live Merge
  * button. It now says so out loud.
  *
- * DELIBERATE: 'unknown' gets a LOUD banner but NOT the confirmation phrase a
- * salt replacement gets, and the Merge button stays live. The reasoning, since
- * the opposite choice is the tempting one:
+ * DELIBERATE: the extra confirmation is keyed on WHAT THE PLAN DOES, not on the
+ * file's label. 'unknown' gets a loud banner but no gate beyond the preview
+ * itself; a plan with `deleted > 0` gets a gate whatever its origin says. The
+ * reasoning, since the opposite choice is the tempting one:
  *
- *   - Identity is a label; the gate is per-row. planBackupMerge queues a row
- *     only when it carries a complete authenticated payload AND that payload
- *     decrypts under this device's live key. Forging one needs the key. So a
- *     queued row was provably written by THIS vault, whatever the file's
- *     (missing) vaultMeta claims, and a hostile unlabelled file can at worst
- *     replay rows the user already owns - which `incomingWins` then rejects
- *     unless they are genuinely newer than the local copy.
- *   - Nothing here writes a salt or clears a table, so there is no destructive
- *     outcome for a phrase to guard. Asking for one anyway would train the user
- *     to type it past a file that is already proven safe, and that devalues the
- *     same phrase where it guards something real.
+ *   - A label gate is bypassable by the attacker it is aimed at. Identity is
+ *     read out of the file's own vaultMeta (readBackupVaultIdentity), so anyone
+ *     who can build a hostile file can simply leave a matching vaultMeta in
+ *     place and classify as 'same'. Gating on 'unknown' would therefore stop
+ *     only the forger who volunteered to be caught, while charging every honest
+ *     user with a truncated file.
+ *   - The per-row gate is what actually holds, and it is two-tier. Every
+ *     candidate must carry ciphertext that AES-GCM verifies under THIS device's
+ *     live key (planBackupMerge -> verifyRowIntegrity ->
+ *     recordCarriesAuthenticatedPayload + decryptRecord). On top of that, a row
+ *     may only OVERWRITE OR TOMBSTONE a row that already exists when its
+ *     plaintext id / updatedAt / deleted header is sealed inside that same
+ *     ciphertext - `recordHasAuthenticatedHeader`, i.e. a v2 envelope, enforced
+ *     at plan time and re-asserted inside the applyBackupMerge transaction. A
+ *     v1 row may still create at an unused id, which is what keeps restoring an
+ *     old backup working.
+ *   - Neither tier stops the loss this dialog is really about. A genuinely newer
+ *     tombstone is not an attack, it is the sync rule working, and it is exactly
+ *     what erases the last copy of a photo when the user imports device A's
+ *     post-deletion export onto device B. No cryptographic gate can refuse that
+ *     on the user's behalf; only the user can. That is an argument for naming
+ *     the destruction, not for a confirmation PHRASE - a phrase is reserved for
+ *     replacing the vault salt, where the loss is total and instant, and reusing
+ *     it here would train the user to type it past routine merges. So the
+ *     destructive count is named in its own tile, in an acknowledgement that
+ *     must be ticked, on the button, and in the post-merge notice.
  *
- * What unknown origin actually costs is the ability to EXPLAIN a large
- * `undecryptable` count, so that is what the banner talks about.
+ * DO NOT re-derive the record gates anywhere in the rendered copy beyond the two
+ * sentences already in the "Origin not established" banner. How strong an
+ * envelope is belongs to crypto.js and has changed more than once; a UI
+ * paragraph that restates it goes stale in silence, and this component has
+ * already shipped one such false guarantee.
  */
 function ImportPreview({ plan, relation, busy, onConfirm, onCancel }) {
-  const { added, updated, stale, invalid, undecryptable } = plan.totals;
-  const willWrite = added + updated;
+  // Defaulted, not destructured raw: an older plan object missing a counter would
+  // otherwise make `willWrite` NaN, which is neither 0 nor a number - the button
+  // would light up and offer to "Merge NaN".
+  const t = plan.totals || {};
+  const added = t.added || 0;
+  const updated = t.updated || 0;
+  const deleted = t.deleted || 0;
+  const stale = t.stale || 0;
+  const invalid = t.invalid || 0;
+  const undecryptable = t.undecryptable || 0;
+  const unauthenticated = t.unauthenticated || 0;
+  // Deletions are writes. Excluding them from this total once made a merge whose
+  // entire effect was destroying rows render as "Nothing to write".
+  const willWrite = added + updated + deleted;
+  const destructive = deleted > 0;
   const foreign = relation === 'foreign';
+  const [ackDelete, setAckDelete] = useState(false);
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
@@ -227,19 +271,22 @@ function ImportPreview({ plan, relation, busy, onConfirm, onCancel }) {
                 pick), so a blind restore would replace your copies with rows nothing here can read —
                 they would simply vanish from every screen with no error.
               </p>
-              {/* Describes the counters printed below rather than promising a
-                  result independently of them. The old copy asserted "every
-                  record failed" as an unconditional guarantee, sitting directly
-                  above numbers that are computed separately - a string that can
-                  disagree with the data under it is a defect even while it
-                  happens to be true. */}
+              {/* Reads the counters out; it must not be able to contradict them.
+                  The old copy said "none of them passed" whenever nothing was
+                  queued, which it printed directly above a `stale` counter whose
+                  own label ("kept as-is") only ever describes rows that DID
+                  decrypt under this key and were then held back for being older.
+                  Two true numbers and a sentence that denies one of them is the
+                  same defect as a wrong number. */}
               <p className="mt-1 font-bold">
                 {willWrite === 0
-                  ? 'Nothing from it can be written: the counts below are the finished result of ' +
-                    'checking every record in the file against your key, and none of them passed.'
-                  : `The counts below are the finished result of checking every record in this ` +
-                    `file against your key, and ${willWrite} of them passed. A backup from a ` +
-                    `different vault should have none — read the numbers before you accept them.`}
+                  ? 'Going by the counts below, no record from this file is queued to be written. ' +
+                    'That is not the same as "none of them opened" — a record counted as kept ' +
+                    'as-is did decrypt under your key and was held back only for being older. ' +
+                    'Read the lines below before you decide.'
+                  : `Going by the counts below, ${willWrite} record(s) from this file decrypted ` +
+                    `under your key and are queued to be written. A backup from a different vault ` +
+                    `should have none — read the numbers before you accept them.`}
               </p>
             </div>
           </div>
@@ -256,12 +303,24 @@ function ImportPreview({ plan, relation, busy, onConfirm, onCancel }) {
                 this device. <strong>Every backup this app has ever written carries one</strong>,
                 so this file has been altered, truncated, or made by something else.
               </p>
+              {/* What this may claim is bounded by exactly two gates in
+                  planBackupMerge, and it may claim NOTHING beyond them. Every
+                  candidate must carry ciphertext that verifies under the live
+                  key (verifyRowIntegrity), and a record may only overwrite or
+                  delete an EXISTING row when its plaintext header is sealed into
+                  that ciphertext (recordHasAuthenticatedHeader). It may not
+                  claim that everything written is "provably yours" - the old
+                  wording - because a record landing on an id you do not have yet
+                  is admitted on the weaker of the two gates. The second sentence
+                  below exists to stop a reader generalising the first. */}
               <p className="mt-1">
-                That does not loosen anything below. A record is still only written when it decrypts
-                and authenticates under <strong>your current key</strong>, which no other vault can
-                produce — so anything that does get written is provably yours. If the counts below
-                are mostly &quot;could not be decrypted&quot;, this file is not yours and you should
-                cancel.
+                That does not loosen the per-record checks. Every record still has to decrypt under{' '}
+                <strong>your current key</strong>, and a record may only overwrite or delete
+                something you already have when its id, timestamp and delete flag are sealed inside
+                that same encrypted payload. A record landing on an id you do not have yet is held
+                to the first of those rules only, so treat the Added count as new material of
+                unproven origin. If the counts below are mostly &quot;could not be decrypted&quot;,
+                this file is not yours and you should cancel.
               </p>
             </div>
           </div>
@@ -285,6 +344,50 @@ function ImportPreview({ plan, relation, busy, onConfirm, onCancel }) {
           </div>
         </div>
 
+        {/* Deliberately NOT a third cell in the grid above. This number is not a
+            peer of "Added" and "Updated" - it is the only one that destroys
+            something, so it gets full width, a different colour, and a sentence
+            saying what is lost. A user scanning three equal tiles reads three
+            equal outcomes. */}
+        <div
+          className={`mt-2 p-3 rounded-xl border-2 flex items-start gap-2.5 ${
+            destructive ? 'bg-rose-50 border-rose-300' : 'bg-slate-50 border-slate-200'
+          }`}
+        >
+          <Trash2
+            className={`w-4 h-4 shrink-0 mt-0.5 ${destructive ? 'text-rose-600' : 'text-slate-400'}`}
+          />
+          <div className="min-w-0 flex-1">
+            <p className="flex items-baseline justify-between gap-2">
+              <span
+                className={`text-[10px] font-extrabold uppercase tracking-wide ${
+                  destructive ? 'text-rose-800' : 'text-slate-500'
+                }`}
+              >
+                Deleted permanently
+              </span>
+              <span
+                className={`text-lg font-extrabold leading-none ${
+                  destructive ? 'text-rose-700' : 'text-slate-400'
+                }`}
+              >
+                {deleted}
+              </span>
+            </p>
+            <p
+              className={`mt-1 text-[11px] leading-relaxed ${
+                destructive ? 'text-rose-800' : 'text-slate-500'
+              }`}
+            >
+              {destructive
+                ? `This file records that ${deleted} of these were deleted after it was made, and ` +
+                  `you still have them here. Merging obeys that: their photos and letter text are ` +
+                  `erased from this device and cannot be brought back, on this device or the other one.`
+                : 'Nothing in this file erases a record you still have.'}
+            </p>
+          </div>
+        </div>
+
         <ul className="mt-2 space-y-1 text-[11px] text-slate-600">
           <li className="flex justify-between gap-2 px-1">
             <span>Older than what you already have — kept as-is</span>
@@ -296,6 +399,17 @@ function ImportPreview({ plan, relation, busy, onConfirm, onCancel }) {
               {undecryptable}
             </span>
           </li>
+          {/* planBackupMerge counts a row here when it would have overwritten or
+              deleted an existing record without a sealed header. Left unrendered
+              it was the one refusal the user could never see. */}
+          <li className="flex justify-between gap-2 px-1">
+            <span>Not sealed to the record it targets — refused</span>
+            <span
+              className={`font-bold ${unauthenticated > 0 ? 'text-rose-600' : 'text-slate-800'}`}
+            >
+              {unauthenticated}
+            </span>
+          </li>
           <li className="flex justify-between gap-2 px-1">
             <span>Malformed or out-of-range — refused</span>
             <span className="font-bold text-slate-800">{invalid}</span>
@@ -304,10 +418,30 @@ function ImportPreview({ plan, relation, busy, onConfirm, onCancel }) {
 
         <p className="mt-3 text-[10px] text-slate-500 leading-relaxed">
           Newer local edits are never replaced by older ones from the file — the same rule your two
-          phones use when they sync. Your vault key is not touched by a merge; to rebuild a vault
+          phones use when they sync. A deletion recorded in the file is treated as an edit like any
+          other, so a newer one wins. Your vault key is not touched by a merge; to rebuild a vault
           from a rescue file, lock the app and use &quot;Restore from a rescue backup&quot; on the
           lock screen instead.
         </p>
+
+        {/* The gate is on the destructive outcome, not on the file's label - see
+            the block comment above. It is a deliberate act naming the count, not
+            a confirmation phrase: a phrase belongs to salt replacement, and
+            spending it here would teach the user to type it past routine imports. */}
+        {destructive && (
+          <label className="mt-3 flex items-start gap-2 p-2.5 rounded-xl bg-rose-50 border border-rose-200 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={ackDelete}
+              onChange={(e) => setAckDelete(e.target.checked)}
+              disabled={busy}
+              className="mt-0.5 w-3.5 h-3.5 shrink-0 accent-rose-600"
+            />
+            <span className="text-[11px] font-bold text-rose-800 leading-relaxed">
+              I understand {deleted} record(s) I still have will be erased for good.
+            </span>
+          </label>
+        )}
 
         <div className="mt-4 grid grid-cols-2 gap-2">
           <button
@@ -321,12 +455,22 @@ function ImportPreview({ plan, relation, busy, onConfirm, onCancel }) {
           <button
             type="button"
             onClick={onConfirm}
-            disabled={busy || willWrite === 0}
-            className="py-2.5 rounded-2xl bg-blush-500 text-white text-xs font-bold shadow-sm shadow-blush-300/50 hover:bg-blush-600 disabled:opacity-50 inline-flex items-center justify-center gap-1.5"
+            disabled={busy || willWrite === 0 || (destructive && !ackDelete)}
+            className={`py-2.5 rounded-2xl text-white text-xs font-bold shadow-sm disabled:opacity-50 inline-flex items-center justify-center gap-1.5 ${
+              destructive
+                ? 'bg-rose-600 shadow-rose-300/50 hover:bg-rose-700'
+                : 'bg-blush-500 shadow-blush-300/50 hover:bg-blush-600'
+            }`}
           >
             {busy && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
             <span>
-              {willWrite === 0 ? 'Nothing to write' : busy ? 'Merging...' : `Merge ${willWrite}`}
+              {willWrite === 0
+                ? 'Nothing to write'
+                : busy
+                  ? 'Merging...'
+                  : destructive
+                    ? `Merge, deleting ${deleted}`
+                    : `Merge ${willWrite}`}
             </span>
           </button>
         </div>
@@ -701,9 +845,23 @@ export function SyncHubModal({ isOpen, onClose }) {
     }
   };
 
-  /** Applies a plan the user has now seen and accepted. */
+  /**
+   * Applies a plan the user has now seen and accepted.
+   *
+   * The notice has to name deletions. It used to say "Merged N record(s)" after
+   * a merge whose entire effect was tombstoning N live rows - the one word the
+   * user needed was the one word missing.
+   *
+   * applyBackupMerge reports only how many rows it wrote per table, not how many
+   * of those were tombstones, so the exact figure is derived rather than
+   * reported: every planned write lands unless it was superseded between the
+   * preview and the confirm, so with `supersededSincePreview === 0` the planned
+   * `deleted` count IS what happened, and otherwise it is an upper bound. Say
+   * which of the two this was instead of picking one and hoping.
+   */
   const confirmImport = async () => {
     if (!importPreview) return;
+    const plannedDeletes = importPreview.plan?.totals?.deleted || 0;
     setImportBusy(true);
     setBackupError('');
     try {
@@ -712,9 +870,21 @@ export function SyncHubModal({ isOpen, onClose }) {
       const supersededNote = result.supersededSincePreview
         ? ` ${result.supersededSincePreview} were superseded by a newer copy that arrived while you were reading this, and were left alone.`
         : '';
+      const deleteNote =
+        plannedDeletes > 0
+          ? result.supersededSincePreview
+            ? ` Up to ${plannedDeletes} of them erased a record you still had.`
+            : ` ${plannedDeletes} of them erased a record you still had — those are gone for good.`
+          : '';
       setImportPreview(null);
-      setBackupNotice(`Merged ${written} record(s) from that backup.${supersededNote}`);
-      celebration();
+      setBackupNotice(
+        `Wrote ${written} record(s) from that backup.${deleteNote}${supersededNote}`
+      );
+      // No celebration buzz for a merge that erased something. The haptic is
+      // part of the message, and congratulating a data loss is a lie told in
+      // vibration.
+      if (plannedDeletes > 0) tap();
+      else celebration();
     } catch (err) {
       setImportPreview(null);
       setBackupError('The merge failed: ' + (err?.message || 'unknown error'));
