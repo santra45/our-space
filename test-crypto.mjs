@@ -98,6 +98,7 @@ import {
   // backups
   createEncryptedBackup,
   decryptBackupContainer,
+  recordCarriesAuthenticatedPayload,
 } from './src/services/crypto.js';
 import { buildInviteUrl, parseInvite } from './src/utils/invite.js';
 import {
@@ -870,6 +871,96 @@ async function run() {
     'the live bkt-default-1 is untouched and still readable',
     survivingPlain.text === 'Watch the sunrise from the roof' && survivingPlain.completed === false
   );
+  /* ------------------ 11b. unauthenticated rows (the real RISK-1 hole) ------ */
+  section('11b. A row carrying NO ciphertext cannot overwrite a live record');
+
+  // The adversarial review's finding, locked in as a regression guard.
+  //
+  // Section 11 only proves that a row encrypted under a DIFFERENT key is
+  // refused - AES-GCM does that on its own. The hole was narrower and worse: a
+  // row with no encrypted fields at all never exercises the key. decryptRecord
+  // falls through to the legacy path, which decrypts only `<base>Cipher` fields
+  // (there are none), stamps `_headerTampered: false` unconditionally, and
+  // resolves. The old gate read that as "decrypted fine under our key".
+  //
+  // Nobody needs a key to build one of these, and the ids collide by design, so
+  // this was a hand-writable overwrite of live photos and letters.
+  const bareTombstone = {
+    id: 'bkt-default-1',
+    updatedAt: NOW + MINUTE, // newer, so precedence alone would let it win
+    deleted: true,
+    v: 1,
+  };
+
+  check(
+    'a row with no ciphertext is not an authenticated payload',
+    recordCarriesAuthenticatedPayload(bareTombstone) === false
+  );
+  check(
+    'claiming v:2 without an envelope does not make it authenticated',
+    recordCarriesAuthenticatedPayload({ ...bareTombstone, v: 2 }) === false
+  );
+  check(
+    'an empty-string envelope is not authenticated either',
+    recordCarriesAuthenticatedPayload({ id: 'x', v: 2, ciphertext: '', iv: '' }) === false
+  );
+  check(
+    'a genuine v2 envelope IS authenticated',
+    recordCarriesAuthenticatedPayload(liveBucket) === true
+  );
+  check(
+    'a genuine v1 row with a Cipher/Iv pair IS authenticated',
+    recordCarriesAuthenticatedPayload({
+      id: 'let-1',
+      updatedAt: NOW,
+      deleted: false,
+      contentCipher: 'abc',
+      contentIv: 'def',
+    }) === true
+  );
+  check(
+    'a Cipher without its matching Iv does not count',
+    recordCarriesAuthenticatedPayload({ id: 'let-1', contentCipher: 'abc' }) === false
+  );
+
+  // Now prove it end-to-end through the SHIPPED merge methods.
+  const barePlan = await liveStore.planBackupMerge(
+    { bucketList: [bareTombstone], dateIdeas: [{ ...bareTombstone, id: 'roulette-current' }] },
+    key
+  );
+  check(
+    'both unauthenticated rows are refused, not counted as updates',
+    barePlan.totals.undecryptable === 2 && barePlan.totals.updated === 0
+  );
+  check('an unauthenticated plan queues no writes', barePlan.writes.length === 0);
+
+  await liveStore.applyBackupMerge(barePlan);
+  const afterBare = await decryptRecord(
+    await liveStore.table('bucketList').get('bkt-default-1'),
+    key
+  );
+  check(
+    'the live encrypted row survived the bare tombstone',
+    afterBare.text === 'Watch the sunrise from the roof' && afterBare.deleted === false
+  );
+
+  // Same hole existed on the wire path; same guard closes it. Lend peerSync the
+  // key so the check under test is actually reached - without one it short
+  // circuits on 'locked' and would pass for the wrong reason.
+  const priorKey = peerSync.cryptoKey;
+  peerSync.cryptoKey = key;
+  try {
+    const wireVerdict = await peerSync._verifyRecordIntegrity(bareTombstone);
+    check(
+      'the sync path also refuses it, as `unauthenticated`',
+      wireVerdict.ok === false && wireVerdict.code === 'unauthenticated'
+    );
+    const wireGenuine = await peerSync._verifyRecordIntegrity(liveBucket);
+    check('a genuine row still passes the sync gate', wireGenuine.ok === true);
+  } finally {
+    peerSync.cryptoKey = priorKey;
+  }
+
   const survivingRoulette = await decryptRecord(
     await liveStore.table('dateIdeas').get('roulette-current'),
     key

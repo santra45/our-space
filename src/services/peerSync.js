@@ -44,6 +44,7 @@ import {
   bufferToBase64,
   base64ToBuffer,
   decryptRecord,
+  recordCarriesAuthenticatedPayload,
 } from './crypto.js';
 import { PEER_ID_REGEX } from '../utils/invite.js';
 import db, { SYNCED_TABLES, MAX_IMAGE_BLOB_BYTES, MAX_RECORDS_PER_TABLE } from '../db/index.js';
@@ -2069,6 +2070,13 @@ export class PeerSyncManager {
    */
   async _verifyRecordIntegrity(row) {
     if (!this.cryptoKey) return { ok: false, code: 'locked' };
+    // See recordCarriesAuthenticatedPayload: decryptRecord resolving does not by
+    // itself prove our key was used, because a row with no ciphertext resolves
+    // through the legacy path untouched. Without this an authenticated peer
+    // could push a bare row over any id it can guess.
+    if (!recordCarriesAuthenticatedPayload(row)) {
+      return { ok: false, code: 'unauthenticated' };
+    }
     try {
       const plain = await decryptRecord(row, this.cryptoKey);
       if (plain && plain._headerTampered === true) {

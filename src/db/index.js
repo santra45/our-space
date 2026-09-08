@@ -38,6 +38,7 @@ import {
   decryptRecord,
   encryptRecord,
   isLegacyRecord,
+  recordCarriesAuthenticatedPayload,
 } from '../services/crypto.js';
 
 /** Tables that participate in P2P sync and in backups. */
@@ -303,18 +304,20 @@ export class SweetheartDatabase extends Dexie {
   async softDelete(tableName, id, key) {
     const existing = await this.table(tableName).get(id);
     if (!existing) return null;
+    // A keyless tombstone carries no ciphertext, so the integrity gates on the
+    // import and wire paths would (correctly) refuse it as unauthenticated and
+    // the deletion would never replicate. Refuse to mint one rather than write a
+    // tombstone that silently cannot travel.
+    if (!key) {
+      throw new Error('softDelete requires the vault key to write a replicable tombstone.');
+    }
 
     // Not Date.now(): a device with a slow clock would stamp a tombstone the
     // partner's copy already beats, so the delete would be silently undone on
     // the next merge. syncSafeNow() is ahead of anything the partner has issued;
     // the +1 guarantees the tombstone also beats the row it is replacing.
     const updatedAt = Math.max(await syncSafeNow(), (existing.updatedAt || 0) + 1);
-    let row;
-    if (key) {
-      row = await encryptRecord({ id, updatedAt, deleted: true }, key);
-    } else {
-      row = { id, updatedAt, deleted: true, v: existing.v || 1 };
-    }
+    const row = await encryptRecord({ id, updatedAt, deleted: true }, key);
     await this.table(tableName).put(row);
     return row;
   }
@@ -684,6 +687,11 @@ export function compareVaultIdentity(backupIdentity, localRead) {
  * @returns {Promise<boolean>}
  */
 async function verifyRowIntegrity(row, key) {
+  // A successful decrypt is not on its own proof the key was used: a row with no
+  // ciphertext at all resolves through the legacy path without touching the key.
+  // Require an authenticated payload FIRST, or a foreign row on a colliding
+  // stable id (bkt-default-1, roulette-current) would overwrite a live one.
+  if (!recordCarriesAuthenticatedPayload(row)) return false;
   try {
     const plain = await decryptRecord(row, key);
     if (plain && plain._headerTampered === true) return false;

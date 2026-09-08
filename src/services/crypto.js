@@ -558,6 +558,60 @@ async function decryptLegacyRecord(record, key) {
  *   with the authenticated copies inside the envelope - treat as hostile).
  * @throws {Error} When the payload does not decrypt with this key.
  */
+/**
+ * True when `record` actually carries a payload that AES-GCM will authenticate.
+ *
+ * This is the load-bearing half of every integrity gate, and it exists because
+ * decryptRecord() succeeding is NOT evidence that a key was ever exercised.
+ * decryptLegacyRecord() only decrypts fields named `<base>Cipher`; a row with
+ * none - `{ id, updatedAt, deleted, v }` - walks straight through it, gets
+ * `_headerTampered: false` stamped on unconditionally, and resolves. Under the
+ * old gates that counted as "decrypted successfully under our key", so a
+ * hand-built or foreign row passed the check without holding any key at all.
+ *
+ * That matters because ids are guessable by construction: the seeded defaults
+ * use fixed ids (bkt-default-1, roulette-current) that collide across EVERY
+ * vault. An unauthenticated row on a colliding id could therefore overwrite a
+ * live encrypted one on both the backup-import and the peer-sync path.
+ *
+ * So callers handling untrusted rows must require this BEFORE trusting a
+ * successful decrypt. A row that carries no ciphertext cannot have come from
+ * someone holding the vault key, and is refused rather than merged.
+ *
+ * @param {unknown} record
+ * @returns {boolean}
+ */
+export function recordCarriesAuthenticatedPayload(record) {
+  if (!record || typeof record !== 'object') return false;
+
+  // v2: the whole payload lives in one authenticated envelope.
+  if (
+    record.v === RECORD_SCHEMA_VERSION &&
+    typeof record.ciphertext === 'string' &&
+    record.ciphertext.length > 0 &&
+    typeof record.iv === 'string' &&
+    record.iv.length > 0
+  ) {
+    return true;
+  }
+
+  // v1: at least one complete <base>Cipher / <base>Iv pair must be present.
+  for (const field of Object.keys(record)) {
+    if (!field.endsWith('Cipher')) continue;
+    const base = field.slice(0, -'Cipher'.length);
+    if (
+      typeof record[field] === 'string' &&
+      record[field].length > 0 &&
+      typeof record[`${base}Iv`] === 'string' &&
+      record[`${base}Iv`].length > 0
+    ) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 export async function decryptRecord(record, key) {
   if (!record || typeof record !== 'object') {
     throw new Error('decryptRecord: expected a record object');
