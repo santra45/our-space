@@ -127,7 +127,13 @@ export async function seedDefaultItems(key) {
   }
 
   await db.transaction('rw', db.bucketList, async () => {
-    if ((await db.bucketList.count()) > 0) return;
+    // Tombstones must NOT count as "this table already has content". They are
+    // invisible in every list, so a table holding only deletes looks empty to
+    // the user while suppressing the starter items forever. That was reachable:
+    // the sync path still accepts a tombstone for an id it has never held (the
+    // manifest diff legitimately requests them), so one such row would have
+    // silently cost this device all six starter items.
+    if ((await db.bucketList.where('_del').equals(0).count()) > 0) return;
     await db.bucketList.bulkAdd(rows);
   });
 }
@@ -158,7 +164,8 @@ export function BucketList() {
     async function run() {
       try {
         // Cheap pre-check so the common case never allocates six AES operations.
-        if ((await db.bucketList.count()) > 0) return;
+        // Re-checked inside the lock; same tombstone reasoning as above.
+    if ((await db.bucketList.where('_del').equals(0).count()) > 0) return;
         if (!seedInFlight) {
           seedInFlight = seedDefaultItems(cryptoKey).finally(() => {
             seedInFlight = null;
