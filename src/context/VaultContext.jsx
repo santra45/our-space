@@ -185,17 +185,57 @@ export function VaultProvider({ children }) {
   /**
    * Finishes the v1 -> v2 record migration now that a key exists. Non-fatal:
    * v1 rows stay readable either way, so a failure is a warning, not a block.
+   *
+   * BOTH counters the sweep returns are rendered, and they mean opposite things.
+   * `failed` is a row this key could not open at all - a filing mistake, almost
+   * always a record written under a different passphrase. `tampered` is a row
+   * that opened perfectly and then disagreed with its own seal, which is a
+   * person. The sweep refuses to re-seal those (db/index.js, the
+   * `plain._headerTampered === true` branch: it increments `stats.tampered` and
+   * `continue`s before the re-encrypt, because re-sealing would rebuild the
+   * envelope around the CURRENT bytes and authenticate the edit).
+   *
+   * This counter went to nowhere at all until now, and the failure mode was the
+   * quietest one in the app: `_headerTampered` folds in a swapped binary field
+   * and a cross-table replay as well as a rewritten header (crypto.js, where
+   * `out._headerTampered` ORs in `binaryCheck.tampered` and `out._tableTampered`),
+   * and every one of the five screens that renders records skips such a row
+   * (BucketList, SecretCapsule, MilestoneTracker, PolaroidWall, DateRoulette all
+   * test `_headerTampered` before displaying). So a photo whose bytes were
+   * swapped in place simply stopped appearing, with nothing anywhere saying why
+   * - indistinguishable from a rendering bug, which is the reading that costs
+   * the user nothing to accept.
    */
   const runLegacyMigration = useCallback(async (key) => {
     try {
       const stats = await db.migrateLegacyRecords(key);
+      const notes = [];
+
       if (stats.failed > 0) {
-        setWarning(
-          `${stats.failed} older record${stats.failed === 1 ? '' : 's'} could not be decrypted and ` +
-            'were left untouched. They were most likely written with a different passphrase. ' +
-            'Nothing was deleted.'
+        const many = stats.failed !== 1;
+        notes.push(
+          `${stats.failed} older record${many ? 's' : ''} could not be decrypted and ` +
+            `${many ? 'were' : 'was'} left untouched — most likely written with a different ` +
+            'passphrase.'
         );
       }
+
+      if (stats.tampered > 0) {
+        const many = stats.tampered !== 1;
+        notes.push(
+          `${stats.tampered} record${many ? 's' : ''} opened with your passphrase but ` +
+            `${many ? 'no longer match' : 'no longer matches'} what was sealed inside ` +
+            `${many ? 'them' : 'it'}: a rewritten id, date or delete flag, photo bytes swapped ` +
+            `after the fact, or an envelope sealed for a different list. That is why ` +
+            `${many ? 'they are' : 'it is'} missing from your screens instead of showing up ` +
+            `wrong — every screen refuses ${many ? 'them' : 'it'}. ${many ? 'They were' : 'It was'} ` +
+            `left exactly as ${many ? 'they are' : 'it is'} and deliberately not re-sealed, which ` +
+            `is what makes your partner’s phone refuse ${many ? 'them' : 'it'} too if this one ` +
+            'sends it on.'
+        );
+      }
+
+      if (notes.length > 0) setWarning(`${notes.join(' ')} Nothing was deleted.`);
     } catch (err) {
       console.error('Legacy record migration failed:', err);
       setWarning(

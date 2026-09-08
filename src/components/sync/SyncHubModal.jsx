@@ -199,6 +199,20 @@ function PassphrasePrompt({
  * identically to the user's own backup - same counts, no banner, live Merge
  * button. It now says so out loud.
  *
+ * BUT ORIGIN IS THE WRONG THING TO KEY A WARNING ON, AND THAT WAS THE HOLE.
+ * Keying the only unproven-origin banner on relation === 'unknown' left the
+ * CREATE path silent, and the create path is the permissive one by design. The
+ * re-seal kill chain fixed in d9239ab arrived exactly there: a file whose own
+ * vaultMeta classifies as 'same' - which costs a forger nothing, because
+ * readBackupVaultIdentity reads that identity out of the file itself - showing
+ * "Added: 2, Deleted permanently: 0" and no banner whatsoever. So the second
+ * banner is keyed on `added > 0` instead, with no reference to origin at all,
+ * and it names the thing the counts do not: a created record is a real record on
+ * this device, and this device hands its records to the partner (db/index.js
+ * getManifest enumerates every primary key in every synced table; peerSync
+ * `_handleSyncRequest` serves `db.table(req.table).get(req.id)` for anything the
+ * partner asks for).
+ *
  * DELIBERATE: the extra confirmation is keyed on WHAT THE PLAN DOES, not on the
  * file's label. 'unknown' gets a loud banner but no gate beyond the preview
  * itself; a plan with `deleted > 0` gets a gate whatever its origin says. The
@@ -232,10 +246,14 @@ function PassphrasePrompt({
  *     must be ticked, on the button, and in the post-merge notice.
  *
  * DO NOT re-derive the record gates anywhere in the rendered copy beyond the two
- * sentences already in the "Origin not established" banner. How strong an
- * envelope is belongs to crypto.js and has changed more than once; a UI
+ * places that already do it: the second sentence of the "Origin not established"
+ * banner, and the second sentence of the "would be created" banner. How strong
+ * an envelope is belongs to crypto.js and has changed more than once; a UI
  * paragraph that restates it goes stale in silence, and this component has
- * already shipped one such false guarantee.
+ * already shipped one such false guarantee. Both surviving restatements are
+ * deliberately the SAME sentence about the same rule - may create; may overwrite
+ * or delete only with a sealed header on vault-authored content - so there is
+ * one claim to re-check, not two.
  */
 function ImportPreview({ plan, relation, busy, onConfirm, onCancel }) {
   // Defaulted, not destructured raw: an older plan object missing a counter would
@@ -392,12 +410,22 @@ function ImportPreview({ plan, relation, busy, onConfirm, onCancel }) {
               {/* The timeline runs the other way round: a tombstone inside the
                   file was necessarily written BEFORE the file was exported. The
                   deletion is newer than YOUR copy, not newer than the file. */}
+              {/* U2: literally true of the local merge and nothing else, and it
+                  is the one line of reassurance sitting beside a preview whose
+                  Added rows go on to the partner's phone. Left bare it was read
+                  as "this import is harmless". It is now scoped out loud, and
+                  when there is something to be scoped against it points at the
+                  banner that says what a created record becomes. */}
               {destructive
                 ? `${deleted} of these were already deleted when this file was made, and you ` +
                   `still have them here. Merging obeys those deletions: their photos and letter ` +
                   `text are erased from this device and cannot be brought back, on this device ` +
                   `or the other one.`
-                : 'Nothing in this file erases a record you still have.'}
+                : added > 0
+                  ? 'Nothing in this file erases a record you still have. Erasing is the only ' +
+                    'thing this line is about — it says nothing about what the file ADDS. Read ' +
+                    'the note below the counts for that.'
+                  : 'Nothing in this file erases a record you still have.'}
             </p>
           </div>
         </div>
@@ -442,6 +470,42 @@ function ImportPreview({ plan, relation, busy, onConfirm, onCancel }) {
             <span className="font-bold text-slate-800">{invalid}</span>
           </li>
         </ul>
+
+        {/* Keyed on the PLAN, not on the file's label - see the block comment.
+            Everything claimed here is bounded by what planBackupMerge actually
+            does with a row that lands on an id this device does not hold: the
+            row must not verify as 'tampered' or 'undecryptable', a tombstone at
+            an unseen id is refused as invalid, and that is the entire test - an
+            'unverified' row (absent binding, or content inherited from a v1 row)
+            is admitted to create. Nothing in that path establishes who wrote it.
+            The onward reach is not speculation either: getManifest lists every
+            primary key in every synced table, and the sync request handler
+            serves whatever row that id resolves to. */}
+        {added > 0 && (
+          <div className="mt-3 p-3 rounded-xl bg-amber-50 border-2 border-amber-300 flex items-start gap-2">
+            <ShieldAlert className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+            <div className="text-[11px] text-amber-900 leading-relaxed">
+              <p className="font-extrabold uppercase tracking-wide">
+                {added} record(s) would be created
+              </p>
+              <p className="mt-1">
+                Adding is the permissive side of this merge, on purpose — it is what makes restoring
+                an old backup work. A record landing on an id you do not already have only has to
+                open under your key. <strong>Nothing here establishes who wrote it.</strong> Once
+                written it is an ordinary record on this phone: it shows up in your lists, and this
+                phone offers its records to your partner on the next sync, so it reaches their
+                device too.
+              </p>
+              <p className="mt-1">
+                What a created record cannot do is take anything away. Replacing or deleting
+                something you already have needs an envelope that sealed that record&apos;s own id,
+                timestamp and delete flag, over content authored inside this vault — a record merely
+                re-sealed from an older, never-authenticated one does not qualify. Everything short
+                of that is in the refused counts above.
+              </p>
+            </div>
+          </div>
+        )}
 
         <p className="mt-3 text-[10px] text-slate-500 leading-relaxed">
           Newer local edits are never replaced by older ones from the file — the same rule your two

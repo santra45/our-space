@@ -134,7 +134,24 @@ export async function seedDefaultItems(key) {
     // manifest diff legitimately requests them), so one such row would have
     // silently cost this device all six starter items.
     if ((await db.bucketList.where('_del').equals(0).count()) > 0) return;
-    await db.bucketList.bulkAdd(rows);
+
+    // ...and having stopped that row suppressing the seed, the seed then has to
+    // survive it. The row is STILL THERE, sitting on one of the six fixed ids,
+    // and bulkAdd raises ConstraintError on an existing primary key - so the one
+    // forged tombstone that used to cost all six items would instead have cost
+    // whichever of them the failure took down, reported to nobody.
+    //
+    // Skipped rather than overwritten, deliberately. bulkPut would seed straight
+    // over that id, and this device cannot tell a forged tombstone from a real
+    // deletion its partner made and it has not finished syncing; the app's rule
+    // everywhere else is that a write may create but may not overwrite a record
+    // it cannot prove it authored, and a blind local seed is not an exception to
+    // it. The read is inside the same rw transaction as the write, so a seed
+    // racing in another tab cannot land between them.
+    const collisions = await db.bucketList.bulkGet(rows.map((row) => row.id));
+    const fresh = rows.filter((_, index) => !collisions[index]);
+    if (fresh.length === 0) return;
+    await db.bucketList.bulkAdd(fresh);
   });
 }
 
@@ -159,26 +176,42 @@ export function BucketList() {
    * --------------------------------------------------------------------- */
 
   useEffect(() => {
-    if (!cryptoKey) return;
+    if (!cryptoKey) return undefined;
+    let cancelled = false;
 
     async function run() {
       try {
         // Cheap pre-check so the common case never allocates six AES operations.
         // Re-checked inside the lock; same tombstone reasoning as above.
-    if ((await db.bucketList.where('_del').equals(0).count()) > 0) return;
+        if ((await db.bucketList.where('_del').equals(0).count()) > 0) return;
         if (!seedInFlight) {
           seedInFlight = seedDefaultItems(cryptoKey).finally(() => {
             seedInFlight = null;
           });
         }
         await seedInFlight;
-      } catch {
-        // Losing the seed race is the expected outcome of a race, not a fault:
-        // whoever won already wrote the same six deterministic ids.
+      } catch (err) {
+        // A bare `catch {}` used to sit here on the reasoning that losing the
+        // seed race is the expected outcome of a race, not a fault. True of the
+        // race, and only of the race - seedDefaultItems now filters colliding
+        // ids inside its own transaction, so what reaches here is a failed
+        // encrypt or a failed write, i.e. the starter items are genuinely not
+        // on this device. Swallowed, that is six items missing with the same
+        // empty screen a brand new vault shows.
+        console.error('Could not seed the starter bucket-list items:', err);
+        if (!cancelled) {
+          setError(
+            'Could not add the starter bucket list items to this device. Anything you add ' +
+              'yourself still saves normally — reopen this screen to try again.'
+          );
+        }
       }
     }
 
     run();
+    return () => {
+      cancelled = true;
+    };
   }, [cryptoKey]);
 
   /* --------------------------------------------------------------------- *
