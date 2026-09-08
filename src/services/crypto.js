@@ -58,6 +58,8 @@ const INTERNAL_RECORD_FIELDS = new Set([
   '_tableUnverified',
   '_bin',
   '_tbl',
+  '_prov',
+  '_headerUnverified',
 ]);
 
 const getCrypto = () => (typeof window !== 'undefined' ? window.crypto : globalThis.crypto);
@@ -532,6 +534,30 @@ const BINARY_DIGEST_FIELD = '_bin';
 const TABLE_BINDING_FIELD = '_tbl';
 
 /**
+ * Marks an envelope whose CONTENT was never authenticated by this vault.
+ *
+ * Sealing a payload proves who sealed it. It does NOT prove where the payload
+ * came from, and that distinction is load-bearing: the v1 -> v2 re-seal sweep
+ * decrypts a legacy row and encrypts it again, which would otherwise convert an
+ * unauthenticated row into an authenticated one. A v1 row's id, updatedAt and
+ * deleted flag were never bound to anything (decryptLegacyRecord has no sealed
+ * copy to compare against, so it reports no tampering by construction) - so a
+ * row an attacker authored and got CREATED on a device would come back out of
+ * the sweep indistinguishable from a record the couple actually wrote, and
+ * would then be accepted as an authenticated overwrite against the partner.
+ *
+ * Re-sealing therefore carries this marker forward. The row keeps exactly the
+ * trust level it always had: readable, syncable as a create, and never able to
+ * overwrite or delete something that already exists. It clears itself the
+ * moment the owning device genuinely edits the record, because that write goes
+ * through encryptRecord with real content and no marker.
+ */
+const PROVENANCE_FIELD = '_prov';
+
+/** The only provenance value: content inherited from an unauthenticated v1 row. */
+export const PROVENANCE_LEGACY = 'legacy';
+
+/**
  * SHA-256 of a binary field's bytes, base64. Accepts the three shapes
  * isBinaryValue() admits. A Uint8Array VIEW hashes only its own window, which is
  * what we want: that window is what gets stored.
@@ -676,6 +702,12 @@ export async function encryptRecord(plainFields, key, options = {}) {
   // through `plainFields`.
   if (typeof options.table === 'string' && options.table.length > 0) {
     payload[TABLE_BINDING_FIELD] = options.table;
+  }
+
+  // See PROVENANCE_FIELD. Only the re-seal sweep passes this, and only for a row
+  // that arrived as v1 - i.e. one whose header this vault never authenticated.
+  if (options.provenance === PROVENANCE_LEGACY) {
+    payload[PROVENANCE_FIELD] = PROVENANCE_LEGACY;
   }
 
   const { ciphertext, iv } = await encryptJSON(payload, key);
@@ -908,6 +940,11 @@ export async function decryptRecord(record, key, options = {}) {
   out._binaryTampered = binaryCheck.tampered;
   out._binaryUnverified = binaryCheck.unverified;
   out._tableUnverified = sealedTable === null;
+  // See PROVENANCE_FIELD: this envelope is authentic, but its CONTENT was
+  // inherited from a v1 row whose header nothing ever authenticated. Surfaced as
+  // its own flag so the gates can treat it exactly like a missing binding - may
+  // create, never overwrite or delete - instead of trusting the seal alone.
+  out._headerUnverified = payload[PROVENANCE_FIELD] === PROVENANCE_LEGACY;
   out._tableTampered =
     expectedTable !== null && sealedTable !== null && sealedTable !== expectedTable;
   // `_headerTampered` is the single flag every consumer already gates on, so a

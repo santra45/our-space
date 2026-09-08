@@ -2130,7 +2130,12 @@ export class PeerSyncManager {
       // this device HOLDS, while this only ever decrypts the row ARRIVING, so an
       // envelope harvested before binding existed would otherwise stay a
       // permanent capability against that id no matter how often we sweep.
-      if (plain && (plain._binaryUnverified === true || plain._tableUnverified === true)) {
+      if (
+        plain &&
+        (plain._binaryUnverified === true ||
+          plain._tableUnverified === true ||
+          plain._headerUnverified === true)
+      ) {
         return { ok: true, unverified: true };
       }
       return { ok: true, unverified: false };

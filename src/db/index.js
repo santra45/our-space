@@ -40,6 +40,7 @@ import {
   isLegacyRecord,
   recordCarriesAuthenticatedPayload,
   recordHasAuthenticatedHeader,
+  PROVENANCE_LEGACY,
 } from '../services/crypto.js';
 
 /** Tables that participate in P2P sync and in backups. */
@@ -438,7 +439,22 @@ export class SweetheartDatabase extends Dexie {
             plain.id = row.id;
             plain.updatedAt = Number.isFinite(row.updatedAt) ? row.updatedAt : 0;
             plain.deleted = row.deleted === true;
-            rewritten.push(await encryptRecord(plain, key, { table: tableName }));
+            // CRITICAL: a v1 row's header was never authenticated by this
+            // vault, and re-encrypting it cannot retroactively make it so.
+            // Without this marker the sweep is an escalation: an attacker who
+            // gets a v1 row CREATED here (the create path is deliberately
+            // permissive) would have it come back out as a fully-bound v2
+            // envelope over their chosen id, timestamp, delete flag and bytes,
+            // and it would then be accepted as an authenticated overwrite
+            // against the partner's irreplaceable data. The marker preserves the
+            // weakness instead of laundering it away, and clears itself when the
+            // owning device genuinely edits the record.
+            rewritten.push(
+              await encryptRecord(plain, key, {
+                table: tableName,
+                ...(isLegacy ? { provenance: PROVENANCE_LEGACY } : {}),
+              })
+            );
           } catch {
             stats.failed++;
           }
@@ -929,7 +945,11 @@ async function verifyRowIntegrity(row, key, tableName) {
     // before binding existed. Without this verdict such an envelope stays a
     // permanent capability against that id - on every device, however many
     // times either side sweeps.
-    if (plain._binaryUnverified === true || plain._tableUnverified === true) {
+    if (
+      plain._binaryUnverified === true ||
+      plain._tableUnverified === true ||
+      plain._headerUnverified === true
+    ) {
       return 'unverified';
     }
     return 'ok';

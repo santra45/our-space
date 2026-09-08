@@ -1684,6 +1684,112 @@ async function run() {
     qBoundPlan.totals.updated === 1 && qBoundPlan.totals.unauthenticated === 0
   );
 
+  /* -------- 11sexies. the re-seal sweep must not launder a forged row ------ */
+  section('11sexies. The sweep cannot upgrade an attacker-authored row into an authenticated one');
+
+  // The full kill chain an adversarial reviewer executed end to end, and the
+  // control run that isolated the escalation step.
+  //
+  // Attacker holds a harvested .vault FILE and its FILE passphrase. Never the
+  // vault passphrase; they cannot read a single record. Destroy-only.
+  //  1. Any v2 row in the file yields a ciphertext/iv pair made under the vault
+  //     key. Renamed to <base>Cipher/<base>Iv it satisfies the payload check,
+  //     because decryptLegacyRecord simply decryptText()s it.
+  //  2. They aim a v1 row at a real id with a chosen updatedAt and garbage
+  //     bytes. decryptLegacyRecord stamps _headerTampered AND _binaryTampered
+  //     false by construction - v1 has no sealed header to disagree with.
+  //  3. On a device that LACKS that id - a rescue restore onto a replacement
+  //     phone, the app's own advertised flow - the create path accepts it. The
+  //     preview reads "Added: 1" with no warning.
+  //  4. The sweep then re-sealed it into a fully bound v2 envelope over the
+  //     attacker's id, timestamp, delete flag and bytes. That is the escalation.
+  //  5. It synced to the partner and destroyed the real photo, with no
+  //     confirmation UI anywhere on that path.
+  //
+  // The transport gate was never the weakness - the control below proves a v1
+  // row is refused an overwrite directly. Only the sweep made it authentic.
+  const sxDonor = await encryptRecord(
+    { id: 'sxDonor', updatedAt: NOW, deleted: false, note: 'any row from the file' },
+    key,
+    { table: 'letters' }
+  );
+  // NOT a tombstone: ab842f6 already refuses those at create. This is the
+  // variant that mattered - an overwrite, which replaces the letter body (and
+  // for a memory, the photo bytes) just as destructively.
+  const sxForged = {
+    id: 'let-victim',
+    updatedAt: NOW + 60 * MINUTE,
+    deleted: false,
+    v: 1,
+    // The decoy: a genuine ciphertext under the vault key, wearing a v1 name.
+    contentCipher: sxDonor.ciphertext,
+    contentIv: sxDonor.iv,
+  };
+
+  // Control: straight at a device that HAS the id, with no sweep in between.
+  const sxVictimStore = new FakeVaultStore({
+    letters: [
+      await encryptRecord(
+        { id: 'let-victim', updatedAt: NOW, deleted: false, content: 'The real letter' },
+        key,
+        { table: 'letters' }
+      ),
+    ],
+  });
+  const sxDirectPlan = await sxVictimStore.planBackupMerge({ letters: [sxForged] }, key);
+  check(
+    'CONTROL: a v1 forgery is refused an overwrite directly',
+    sxDirectPlan.totals.updated === 0 && sxDirectPlan.totals.unauthenticated === 1
+  );
+
+  // The chain: create it on a device that lacks the id, then sweep.
+  const sxLaunderStore = new FakeVaultStore({});
+  const sxCreatedPlan = await sxLaunderStore.planBackupMerge({ letters: [sxForged] }, key);
+  check('the forgery is still CREATED on a device that lacks the id', sxCreatedPlan.totals.added === 1);
+  await sxLaunderStore.applyBackupMerge(sxCreatedPlan);
+
+  const sxSweepStats = await sxLaunderStore.migrateLegacyRecords(key);
+  check('the sweep does re-seal it into a v2 envelope', sxSweepStats.migrated === 1);
+
+  const sxLaundered = await sxLaunderStore.table('letters').get('let-victim');
+  check('and the re-sealed row IS a v2 envelope', sxLaundered.v === 2);
+
+  const sxLaunderedPlain = await decryptRecord(sxLaundered, key, { table: 'letters' });
+  check(
+    'but it is marked as content this vault never authenticated',
+    sxLaunderedPlain._headerUnverified === true
+  );
+
+  // The whole point: the sxLaundered row still cannot destroy anything.
+  const sxAsWire = { ...sxLaundered };
+  const sxChainPlan = await sxVictimStore.planBackupMerge({ letters: [sxAsWire] }, key);
+  check(
+    'THE POINT: the laundered row still cannot overwrite the real letter',
+    sxChainPlan.totals.deleted === 0 && sxChainPlan.totals.unauthenticated === 1
+  );
+  await sxVictimStore.applyBackupMerge(sxChainPlan);
+  const sxVictimSurvivor = await sxVictimStore.table('letters').get('let-victim');
+  const sxVictimPlain = await decryptRecord(sxVictimSurvivor, key, { table: 'letters' });
+  check(
+    'the real letter body survived the full chain',
+    sxVictimPlain.content === 'The real letter'
+  );
+
+  // A genuinely local v1 row must still migrate and still be usable.
+  const sxHonestLegacy = {
+    id: 'let-mine-from-v1',
+    updatedAt: NOW,
+    deleted: false,
+    v: 1,
+    contentCipher: sxDonor.ciphertext,
+    contentIv: sxDonor.iv,
+  };
+  const sxHonestStore = new FakeVaultStore({ letters: [sxHonestLegacy] });
+  const sxHonestStats = await sxHonestStore.migrateLegacyRecords(key);
+  check('an honest local v1 row still migrates', sxHonestStats.migrated === 1);
+  const sxHonestAfter = await sxHonestStore.table('letters').get('let-mine-from-v1');
+  check('and is still readable afterwards', sxHonestAfter.v === 2);
+
   section('11c. A backup whose origin cannot be established is `unknown`, not `same`');
 
   // ImportPreview had branches for 'foreign' and 'no-local-vault' and none for
