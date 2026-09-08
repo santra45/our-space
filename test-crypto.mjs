@@ -1341,6 +1341,53 @@ async function run() {
     peerSync._incomingWins(tieRealPhoto, tieGenuineEdit) === true
   );
 
+  /* ------------- 11quater. hostile rows must not create or crash ----------- */
+  section('11quater. A hostile row cannot insert an invisible delete or abort the import');
+
+  // Both from adversarial probes A4 and A6.
+  const forgedNewTombstone = {
+    id: 'bkt-default-3',
+    updatedAt: NOW,
+    deleted: true,
+    v: 1,
+    textCipher: decoy.ciphertext,
+    textIv: decoy.iv,
+  };
+  const tombPlan = await liveStore.planBackupMerge({ bucketList: [forgedNewTombstone] }, key);
+  check(
+    'a tombstone for an id we have never seen is refused, not "added"',
+    tombPlan.totals.added === 0 && tombPlan.totals.invalid === 1
+  );
+  check('and it queues no write', tombPlan.writes.length === 0);
+  const noGhost = await liveStore.table('bucketList').get('bkt-default-3');
+  check('so no invisible row is left to suppress the starter seed', !noGhost);
+
+  // A huge number as imageBlob used to throw RangeError OUTSIDE the try, which
+  // aborted the whole restore; a merely large one allocated first, then failed.
+  const hugeAlloc = await encryptRecord(
+    { id: 'mem-huge', updatedAt: NOW, deleted: false, caption: 'x' },
+    key
+  );
+  const goodRow = await encryptRecord(
+    { id: 'mem-good', updatedAt: NOW, deleted: false, caption: 'keep me' },
+    key
+  );
+  let survivedHostileBlob = true;
+  let hostilePlan = null;
+  try {
+    hostilePlan = await liveStore.planBackupMerge(
+      { memories: [{ ...hugeAlloc, imageBlob: 9e15 }, goodRow] },
+      key
+    );
+  } catch {
+    survivedHostileBlob = false;
+  }
+  check('a 9e15 imageBlob does not abort the whole import', survivedHostileBlob);
+  check(
+    'the hostile row is rejected as invalid, and the legitimate row still lands',
+    hostilePlan && hostilePlan.totals.invalid === 1 && hostilePlan.totals.added === 1
+  );
+
   section('11c. A backup whose origin cannot be established is `unknown`, not `same`');
 
   // ImportPreview had branches for 'foreign' and 'no-local-vault' and none for

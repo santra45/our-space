@@ -581,8 +581,22 @@ export class SweetheartDatabase extends Dexie {
           const existing = existingRows[i];
           const row = chunk[i];
           if (!existing) {
-            // Nothing here to destroy. A v1 row is allowed to CREATE, because the
-            // worst case is a junk row the user can delete, not a lost photo.
+            // A tombstone for an id we have never seen deletes nothing, and it is
+            // not harmless: it is invisible in every list (they all filter on
+            // `deleted`), so the user cannot see or remove it, and a seeded table
+            // checks only `count() > 0` before seeding - so one forged tombstone
+            // at bkt-default-1 permanently suppresses all six starter items on
+            // that device. sanitizeImportedRecord also allows a stamp up to 48h
+            // ahead, letting it outrank genuine later writes at that id. Nothing
+            // legitimate needs to insert a delete, so refuse it.
+            if (row.deleted === true) {
+              stats.invalid++;
+              continue;
+            }
+            // Otherwise there is nothing here to destroy, so a v1 row may create.
+            // It could still be a junk row - but it is a VISIBLE junk row the
+            // user can delete, which is the property the earlier note claimed
+            // without checking the tombstone case.
             stats.added++;
             writes.push({ table: tableName, row });
             continue;
@@ -920,8 +934,28 @@ function sanitizeImportedRecord(tableName, record) {
       return null;
     }
   } else if (out.imageBlob !== undefined) {
-    const bytes =
-      out.imageBlob instanceof Uint8Array ? out.imageBlob : new Uint8Array(out.imageBlob || []);
+    // `out.imageBlob` came straight out of parsed backup JSON, so it can be any
+    // value at all. Two ways that used to hurt, both before the size check
+    // below could run:
+    //   imageBlob: 9e15         -> new Uint8Array(9e15) throws RangeError, which
+    //                              is NOT caught here, so ONE hostile row aborts
+    //                              an otherwise legitimate 20,000-row restore.
+    //   imageBlob: 419430400    -> allocates 400MB of zeros first, then fails the
+    //                              size check. A few such rows is a reliable OOM.
+    // A number is never a valid blob, so reject anything that is not already
+    // bytes or a real byte container, and bound the length BEFORE allocating.
+    let bytes;
+    if (out.imageBlob instanceof Uint8Array) {
+      bytes = out.imageBlob;
+    } else if (out.imageBlob instanceof ArrayBuffer) {
+      if (out.imageBlob.byteLength > MAX_IMAGE_BLOB_BYTES) return null;
+      bytes = new Uint8Array(out.imageBlob);
+    } else if (Array.isArray(out.imageBlob)) {
+      if (out.imageBlob.length > MAX_IMAGE_BLOB_BYTES) return null;
+      bytes = new Uint8Array(out.imageBlob);
+    } else {
+      return null;
+    }
     if (bytes.byteLength > MAX_IMAGE_BLOB_BYTES) return null;
     out.imageBlob = bytes;
   }
