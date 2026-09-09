@@ -272,6 +272,7 @@ const ALLOWED_MESSAGE_TYPES = new Set([
   'SYNC_ERROR',
   'LIVE_RECORD_BROADCAST',
   'SYNC_CONFIG',
+  'LOVE_BURST',
   'PING',
   'PONG',
 ]);
@@ -1358,6 +1359,10 @@ export class PeerSyncManager {
 
       case 'LIVE_RECORD_BROADCAST':
         await this._applySingleLiveRecord(decrypted.record);
+        break;
+
+      case 'LOVE_BURST':
+        this.emit('love-burst', { timestamp: decrypted.timestamp || Date.now() });
         break;
 
       default:
@@ -2575,6 +2580,29 @@ export class PeerSyncManager {
     }
 
     this.emit('config-synced', { coupleNames, startDate, updatedAt });
+  }
+
+  /* ----------------------------------------------------------------------- *
+   * Ephemeral interactions
+   * ----------------------------------------------------------------------- */
+
+  /**
+   * Sends an instantaneous romantic confetti burst signal to the connected partner.
+   * Ephemeral: does not touch IndexedDB.
+   *
+   * @returns {Promise<boolean>} true if the message was sent over an authorized channel
+   */
+  async sendLoveBurst() {
+    if (!this.isConnected || !this.isAuthorized || !this.cryptoKey) return false;
+    try {
+      await this._send({
+        type: 'LOVE_BURST',
+        timestamp: Date.now(),
+      });
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   /* ----------------------------------------------------------------------- *

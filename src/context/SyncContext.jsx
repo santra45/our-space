@@ -15,6 +15,8 @@ import React, { createContext, useContext, useState, useEffect, useRef } from 'r
 import peerSync from '../services/peerSync';
 import { useVault } from './VaultContext';
 import { parseInvite, PEER_ID_REGEX } from '../utils/invite';
+import { fireCelebrationBurst } from '../components/common/ConfettiBurst';
+import { useHaptics } from '../hooks/useHaptics';
 
 const SyncContext = createContext(null);
 
@@ -60,6 +62,7 @@ function removeStored(key) {
 
 export function SyncProvider({ children }) {
   const { cryptoKey, isUnlocked, vaultConfig } = useVault();
+  const { celebration } = useHaptics();
   const [myPeerId, setMyPeerId] = useState(null);
   const [partnerId, setPartnerId] = useState(() => readStored(PAIRED_PARTNER_KEY));
   const [syncStatus, setSyncStatus] = useState({ state: 'disconnected' });
@@ -194,8 +197,20 @@ export function SyncProvider({ children }) {
       setLastSyncNotice(`Synced ${data?.count || 1} new item(s) from partner 💕`);
     };
 
+    const handleLoveBurst = () => {
+      if (!isMounted) return;
+      try {
+        fireCelebrationBurst();
+        celebration();
+      } catch (err) {
+        console.error('Error triggering love burst:', err);
+      }
+      setLastSyncNotice('Your partner sent you a love burst! 💕');
+    };
+
     peerSync.on('status', handleStatus);
     peerSync.on('data-updated', handleDataUpdated);
+    peerSync.on('love-burst', handleLoveBurst);
 
     // Read any pairing intent that arrived through a link BEFORE dialling
     // anything, and scrub the peer id out of the address bar either way.
@@ -252,6 +267,7 @@ export function SyncProvider({ children }) {
       isMounted = false;
       peerSync.off('status', handleStatus);
       peerSync.off('data-updated', handleDataUpdated);
+      peerSync.off('love-burst', handleLoveBurst);
       if (dialTimerRef.current) {
         clearTimeout(dialTimerRef.current);
         dialTimerRef.current = null;
@@ -424,6 +440,20 @@ export function SyncProvider({ children }) {
 
   const isAuthorized = AUTHORIZED_STATES.has(syncStatus.state);
 
+  const sendLoveBurst = async () => {
+    if (!isAuthorized) {
+      setLastSyncNotice('Partner is not connected right now 💕');
+      return false;
+    }
+    const sent = await peerSync.sendLoveBurst();
+    if (sent) {
+      setLastSyncNotice('Love burst sent to partner! 💕');
+    } else {
+      setLastSyncNotice('Could not send love burst. Check connection 💕');
+    }
+    return sent;
+  };
+
   return (
     <SyncContext.Provider
       value={{
@@ -439,6 +469,7 @@ export function SyncProvider({ children }) {
         reconnectToPartner,
         unpairPartner,
         syncNow,
+        sendLoveBurst,
         disconnect,
         pendingInvite,
         confirmPendingInvite,

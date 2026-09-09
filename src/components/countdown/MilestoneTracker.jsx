@@ -15,6 +15,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Heart, Calendar, Sparkles, Plus, Trophy, Award, Trash2, AlertTriangle } from 'lucide-react';
 import { useVault } from '../../context/VaultContext';
+import { useSync } from '../../context/SyncContext';
 import { useLiveCounter } from '../../hooks/useLiveCounter';
 import {
   calculateNextMilestone,
@@ -72,11 +73,13 @@ function milestoneSortKey(record) {
 
 export function MilestoneTracker() {
   const { vaultConfig, cryptoKey, updateVaultSettings } = useVault();
+  const { sendLoveBurst } = useSync();
   const startDate = vaultConfig?.startDate || toLocalDateInput();
   const { totalDays, hours, minutes, seconds } = useLiveCounter(startDate);
   const milestones = calculateNextMilestone(startDate);
   const { celebration, tap } = useHaptics();
 
+  const [isSendingBurst, setIsSendingBurst] = useState(false);
   const [isEditingDate, setIsEditingDate] = useState(false);
   const [newDate, setNewDate] = useState(startDate);
   const [isAddingMilestone, setIsAddingMilestone] = useState(false);
@@ -321,14 +324,23 @@ export function MilestoneTracker() {
         {/* Heart Burst Trigger */}
         <div className="mt-4 pt-4 border-t border-blush-100/70 flex justify-center">
           <BouncyButton
-            onClick={() => {
+            onClick={async () => {
               celebration();
               fireCelebrationBurst();
+              if (sendLoveBurst && !isSendingBurst) {
+                setIsSendingBurst(true);
+                try {
+                  await sendLoveBurst();
+                } finally {
+                  setTimeout(() => setIsSendingBurst(false), 1000);
+                }
+              }
             }}
             variant="secondary"
             className="text-xs py-2 px-4 rounded-full gap-1.5"
+            disabled={isSendingBurst}
           >
-            <span>Send Love Burst 💕</span>
+            <span>{isSendingBurst ? 'Sending Love... 💕' : 'Send Love Burst 💕'}</span>
           </BouncyButton>
         </div>
       </GlassCard>

@@ -3030,6 +3030,47 @@ async function run() {
   const survivor = await decryptRecord(await tamperStore.table('memories').get('mem-intact-2'), key);
   check('and the intact ones landed, readable', survivor.caption === 'Intact two');
 
+  /* --------------------------------- 16. real-time WebRTC ephemeral signals */
+  section('16. Real-time WebRTC ephemeral signals (Love Burst)');
+
+  const burstSavedKey = peerSync.cryptoKey;
+  const burstSavedAuth = peerSync.isAuthorized;
+
+  peerSync.cryptoKey = null;
+  peerSync.isAuthorized = false;
+  check('sendLoveBurst fails when vault is locked / key missing', (await peerSync.sendLoveBurst()) === false);
+
+  peerSync.cryptoKey = key;
+  peerSync.isAuthorized = false;
+  check('sendLoveBurst fails when channel is unauthorized', (await peerSync.sendLoveBurst()) === false);
+
+  let loveBurstReceived = null;
+  const onLoveBurst = (data) => {
+    loveBurstReceived = data;
+  };
+  peerSync.on('love-burst', onLoveBurst);
+
+  const burstPayload = await encryptJSON({ type: 'LOVE_BURST', timestamp: 1700000000000 }, key);
+  await peerSync._handleMessage({
+    protocol: 'SWEETHEART_V2',
+    payload: burstPayload,
+  });
+  check('incoming LOVE_BURST is dropped when peer is unauthorized', loveBurstReceived === null);
+
+  peerSync.isAuthorized = true;
+  await peerSync._handleMessage({
+    protocol: 'SWEETHEART_V2',
+    payload: burstPayload,
+  });
+  check(
+    'incoming LOVE_BURST emits love-burst event with timestamp when authorized',
+    loveBurstReceived !== null && loveBurstReceived.timestamp === 1700000000000
+  );
+
+  peerSync.off('love-burst', onLoveBurst);
+  peerSync.cryptoKey = burstSavedKey;
+  peerSync.isAuthorized = burstSavedAuth;
+
   /* ------------------------------------------------------- verdict */
   console.log('\n' + '='.repeat(64));
   if (failures.length > 0) {
