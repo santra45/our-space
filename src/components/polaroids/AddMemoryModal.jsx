@@ -179,7 +179,11 @@ export function AddMemoryModal({ isOpen, onClose, cryptoKey }) {
           initial={{ opacity: 0, scale: 0.9, y: 20 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.9, y: 20 }}
-          className="w-full max-w-sm bg-white rounded-3xl p-5 shadow-2xl border border-blush-100 relative overflow-hidden"
+          // max-h + overflow-y-auto, matching SyncHubModal. Without a height cap,
+          // `overflow-hidden` silently clipped everything past the fold on a short
+          // screen - and the Save button lives at the bottom, so on a phone there
+          // was no way to reach it at all.
+          className="w-full max-h-[90vh] max-w-sm overflow-y-auto overscroll-contain bg-white rounded-3xl p-5 shadow-2xl border border-blush-100 relative"
         >
           {/* Close button */}
           <button
@@ -204,7 +208,9 @@ export function AddMemoryModal({ isOpen, onClose, cryptoKey }) {
             {/* Image Picker / Preview */}
             {previewUrl ? (
               <div className="relative aspect-[4/5] rounded-2xl overflow-hidden bg-slate-100 border-2 border-blush-200">
-                <img src={previewUrl} alt="Preview" className="w-full h-full object-cover" />
+                {/* object-contain, not cover: this preview is a promise about what
+                    gets saved, so it must not crop what the stored photo keeps. */}
+                <img src={previewUrl} alt="Preview" className="w-full h-full object-contain" />
                 <button
                   type="button"
                   onClick={clearPhoto}

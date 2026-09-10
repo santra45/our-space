@@ -225,7 +225,8 @@ export function PolaroidWall() {
               <img
                 src={activePreview.imageUrl}
                 alt="Full polaroid"
-                className="w-full h-full object-cover"
+                // Opened deliberately to look at the photo, so show all of it.
+                className="w-full h-full object-contain"
               />
             </div>
             <p className="font-handwriting text-2xl text-center text-slate-800">
