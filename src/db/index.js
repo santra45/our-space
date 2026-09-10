@@ -55,6 +55,7 @@ export const SYNCED_TABLES = Object.freeze([
   'letters',
   'bucketList',
   'loveBursts',
+  'dailyAnswers',
 ]);
 
 /**
@@ -148,6 +149,18 @@ export class SweetheartDatabase extends Dexie {
       letters: 'id, updatedAt, _del',
       bucketList: 'id, updatedAt, _del',
       loveBursts: 'id, updatedAt, _del',
+    });
+
+    /** Version 4 adds `dailyAnswers`. Same reasoning as 3: no migration needed. */
+    this.version(4).stores({
+      vaultMeta: 'id',
+      memories: 'id, updatedAt, _del',
+      milestones: 'id, updatedAt, _del',
+      dateIdeas: 'id, updatedAt, _del',
+      letters: 'id, updatedAt, _del',
+      bucketList: 'id, updatedAt, _del',
+      loveBursts: 'id, updatedAt, _del',
+      dailyAnswers: 'id, updatedAt, _del',
     });
 
     this._installTombstoneHooks();

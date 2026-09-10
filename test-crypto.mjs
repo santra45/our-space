@@ -3703,6 +3703,243 @@ async function run() {
   );
 
 
+  /* =============================================================== 18
+   * THE DAILY QUESTION
+   *
+   * The whole feature rests on one claim: two phones that have not spoken
+   * all week still land on the same question. Nothing coordinates that - it
+   * falls out of both holding the same key - so it is what most of this
+   * section is about.
+   */
+  section('18. The daily question: same question, both phones, no server');
+
+  const dq = await import('./src/services/dailyQuestion.js');
+  const bank = await import('./src/data/dailyQuestions.js');
+
+  /* -- the bank itself ----------------------------------------------------- */
+
+  const dqIds = bank.ALL_QUESTIONS.map((x) => x.id);
+  check('every question has a unique id', new Set(dqIds).size === dqIds.length);
+  check(
+    'and no two questions are the same text',
+    new Set(bank.ALL_QUESTIONS.map((x) => x.text)).size === bank.ALL_QUESTIONS.length
+  );
+  // A handful end in a full stop on purpose - the ones whose tail is an
+  // instruction ("and be honest.") read wrong with a question mark on the end.
+  check(
+    'every question is a real prompt, not a placeholder',
+    bank.ALL_QUESTIONS.every(
+      (x) => x.text.length > 20 && /[?.]$/.test(x.text.trim()) && !/TODO|FIXME|xxx/i.test(x.text)
+    )
+  );
+
+  /* -- THE POINT: both phones agree, having never spoken -------------------- */
+
+  // Her phone. Same passphrase and salt, so the same key - derived separately,
+  // exactly as it would be on a device that has never connected to his.
+  const dqHerKey = await fastKey(passphrase, salt);
+  const dqDay = new Date('2026-09-10T09:00:00Z');
+
+  const dqHis = await dq.getQuestionForDay(key, dqDay);
+  const dqHers = await dq.getQuestionForDay(dqHerKey, dqDay);
+  check(
+    'two devices holding the same key land on the same question, with no sync',
+    dqHis.question.id === dqHers.question.id
+  );
+  check(
+    'and on the same day string',
+    dqHis.day === dqHers.day && dqHis.day === '2026-09-10'
+  );
+
+  const dqStranger = await deriveKeyFromPassphrase(
+    'a completely different couple passphrase',
+    generateSalt(),
+    { iterations: 2000 }
+  );
+  const dqOther = await dq.getQuestionForDay(dqStranger, dqDay);
+  const dqOrderMine = await dq.buildQuestionOrder(key);
+  const dqOrderOther = await dq.buildQuestionOrder(dqStranger);
+  check(
+    'a different vault gets a different order entirely',
+    !dqOrderMine.every((x, i) => x.id === dqOrderOther[i].id)
+  );
+  void dqOther;
+
+  /* -- no repeats, which plain modulo could not manage ---------------------- */
+
+  const dqSeen = new Set();
+  const dqStart = dq.dayIndex(dqDay);
+  for (let i = 0; i < dqOrderMine.length; i++) {
+    const when = (dqStart + i) * 86400000;
+    dqSeen.add((await dq.getQuestionForDay(key, when)).question.id);
+  }
+  check(
+    'walking a full cycle asks every question exactly once - no repeats at all',
+    dqSeen.size === dqOrderMine.length
+  );
+
+  /* -- appending a batch does not disturb the one already in progress ------- */
+
+  const dqBatchTwo = {
+    id: 'b2',
+    questions: Array.from({ length: 40 }, (_, i) => ({
+      id: 'b2-' + i,
+      tone: 'light',
+      text: 'A later question number ' + i + '?',
+    })),
+  };
+  const dqBefore = await dq.buildQuestionOrder(key, bank.QUESTION_BATCHES);
+  const dqAfter = await dq.buildQuestionOrder(key, [...bank.QUESTION_BATCHES, dqBatchTwo]);
+  check(
+    'adding a batch leaves the existing order byte-for-byte where it was',
+    dqBefore.every((x, i) => x.id === dqAfter[i].id)
+  );
+  check(
+    'and the new questions land after it, never in the middle',
+    dqAfter.slice(dqBefore.length).every((x) => x.id.startsWith('b2-'))
+  );
+
+  /* -- answers: one record per person per MONTH ----------------------------- */
+
+  const dqStore = new FakeVaultStore();
+  const HIM = 'him-device';
+  const HER = 'her-device';
+  let dqClock = 1700000000000;
+  const dqOpts = { store: dqStore, timestamp: () => (dqClock += 1000) };
+
+  const dqRow = await dq.saveAnswer({
+    cryptoKey: key,
+    ownerId: HIM,
+    questionId: dqHis.question.id,
+    text: 'The thing I never say out loud.',
+    when: dqDay,
+    ...dqOpts,
+  });
+  check(
+    'an answer is sealed like every other record, not stored in the clear',
+    recordHasAuthenticatedHeader(dqRow) && dqRow.answers === undefined
+  );
+
+  await dq.saveAnswer({
+    cryptoKey: key,
+    ownerId: HIM,
+    questionId: 'b1-002',
+    text: 'A second day.',
+    when: new Date('2026-09-11T09:00:00Z'),
+    ...dqOpts,
+  });
+  await dq.saveAnswer({
+    cryptoKey: key,
+    ownerId: HIM,
+    questionId: 'b1-003',
+    text: 'A third day.',
+    when: new Date('2026-09-12T09:00:00Z'),
+    ...dqOpts,
+  });
+  check(
+    'three days of answers are ONE row, not three - this is what keeps sync small',
+    (await dqStore.table(dq.ANSWER_TABLE).toArray()).length === 1
+  );
+
+  /* -- THE GATE: her answer is not readable until yours exists -------------- */
+
+  const dqFreshDay = new Date('2026-09-20T09:00:00Z');
+  const dqQ = await dq.getQuestionForDay(key, dqFreshDay);
+
+  await dq.saveAnswer({
+    cryptoKey: key,
+    ownerId: HER,
+    questionId: dqQ.question.id,
+    text: 'Something she would only say once.',
+    when: dqFreshDay,
+    ...dqOpts,
+  });
+
+  const dqBeforeMine = await dq.readDay({
+    cryptoKey: key,
+    ownerId: HIM,
+    when: dqFreshDay,
+    store: dqStore,
+  });
+  check(
+    'her answer is withheld until his own is written',
+    dqBeforeMine.partnerAnswer === null
+  );
+  check(
+    'but he is told she HAS answered - a locked box, not an empty room',
+    dqBeforeMine.partnerHasAnswered === true
+  );
+
+  await dq.saveAnswer({
+    cryptoKey: key,
+    ownerId: HIM,
+    questionId: dqQ.question.id,
+    text: 'His own answer, written blind.',
+    when: dqFreshDay,
+    ...dqOpts,
+  });
+  const dqAfterMine = await dq.readDay({
+    cryptoKey: key,
+    ownerId: HIM,
+    when: dqFreshDay,
+    store: dqStore,
+  });
+  check(
+    'and it opens the moment he answers',
+    dqAfterMine.partnerAnswer !== null &&
+      dqAfterMine.partnerAnswer.text === 'Something she would only say once.'
+  );
+  check(
+    'his own answer reads back unchanged',
+    dqAfterMine.mine.text === 'His own answer, written blind.'
+  );
+
+  /* -- the archive honours the same gate ------------------------------------ */
+
+  // A day only she answered. It must not appear in his archive either, or the
+  // gate would just be a different door into the same room.
+  await dq.saveAnswer({
+    cryptoKey: key,
+    ownerId: HER,
+    questionId: 'b1-010',
+    text: 'A day he never answered.',
+    when: new Date('2026-09-25T09:00:00Z'),
+    ...dqOpts,
+  });
+  const dqArchive = await dq.listAnswered({ cryptoKey: key, ownerId: HIM, store: dqStore });
+  check(
+    'the archive lists only days he actually answered',
+    dqArchive.every((entry) => entry.mine !== null) &&
+      !dqArchive.some((entry) => entry.day === '2026-09-25')
+  );
+  check(
+    'newest first, so it reads as a diary',
+    dqArchive.length > 1 && dqArchive[0].day > dqArchive[dqArchive.length - 1].day
+  );
+  check(
+    'and each entry carries the question it was answering',
+    dqArchive.every((entry) => entry.question === null || typeof entry.question.text === 'string')
+  );
+
+  /* -- a rewritten answer record is not evidence of anything ---------------- */
+
+  const dqHerId = dq.answerRecordId('2026-09', HER);
+  const dqHonest = await dqStore.table(dq.ANSWER_TABLE).get(dqHerId);
+  await dqStore
+    .table(dq.ANSWER_TABLE)
+    .put({ ...dqHonest, updatedAt: dqHonest.updatedAt + 5000 });
+  const dqTampered = await dq.readDay({
+    cryptoKey: key,
+    ownerId: HIM,
+    when: dqFreshDay,
+    store: dqStore,
+  });
+  check(
+    'an answer whose header was rewritten is refused, like every other record',
+    dqTampered.partnerAnswer === null && dqTampered.partnerHasAnswered === false
+  );
+
+
   /* ------------------------------------------------------- verdict */
   console.log('\n' + '='.repeat(64));
   if (failures.length > 0) {
