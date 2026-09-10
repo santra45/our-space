@@ -265,20 +265,31 @@ export function VaultProvider({ children }) {
 
   /**
    * Reads vaultMeta for a flow that cannot continue without it.
+   *
+   * `quiet` exists because `error` is only ever painted by the lock screen. A
+   * caller living somewhere else - the sync hub, say - has to report its own
+   * failures, and setting `error` from there would leave a message nobody can
+   * read sitting around to surface at the next lock.
+   *
+   * @param {{ quiet?: boolean }} [options]
    * @returns {Promise<Object|null>}
    */
-  const readMetaOrExplain = useCallback(async () => {
+  const readMetaOrExplain = useCallback(async (options = {}) => {
+    const quiet = options.quiet === true;
+    const fail = (message) => {
+      if (!quiet) setError(message);
+      return null;
+    };
+
     let meta;
     try {
       meta = await db.vaultMeta.get('config');
     } catch (err) {
       console.error('Could not read vault metadata:', err);
-      setError('We could not open your space. Try again in a moment.');
-      return null;
+      return fail('We could not open your space. Try again in a moment.');
     }
     if (!meta || !meta.salt) {
-      setError('There is nothing here yet. Start your space, or join your partner’s.');
-      return null;
+      return fail('There is nothing here yet. Start your space, or join your partner’s.');
     }
     return meta;
   }, []);
@@ -308,7 +319,7 @@ export function VaultProvider({ children }) {
       setError(
         code === 'stale'
           ? 'Quick unlock needs setting up again on this phone. Use your passphrase just this once.'
-          : code === 'unsupported'
+          : code === 'unsupported' || code === 'no-prf'
             ? 'This phone cannot do quick unlock. Your passphrase still works.'
             : 'That did not work. Use your passphrase just this once.'
       );
@@ -352,15 +363,20 @@ export function VaultProvider({ children }) {
    * passphrase would seal a key that opens nothing, and the only symptom would
    * be a fingerprint prompt that succeeds and then refuses to let her in.
    *
+   * Returns the REASON on failure rather than a bare false. This runs from the
+   * sync hub, which paints its own messages - handing back only `false` is what
+   * made a failed setup look like nothing had happened at all.
+   *
    * @param {string} passphrase
-   * @returns {Promise<boolean>}
+   * @returns {Promise<{ ok: boolean, code?: 'no-vault'|'wrong-passphrase'|
+   *   'cancelled'|'unsupported'|'no-prf'|'failed' }>}
    */
   const enableQuickUnlock = useCallback(
     async (passphrase) => {
       setError(null);
 
-      const meta = await readMetaOrExplain();
-      if (!meta) return false;
+      const meta = await readMetaOrExplain({ quiet: true });
+      if (!meta) return { ok: false, code: 'no-vault' };
 
       let derived;
       try {
@@ -371,8 +387,7 @@ export function VaultProvider({ children }) {
           { iterations: meta.kdfIterations }
         );
       } catch {
-        setError('That passphrase does not match this space. Double-check and try again.');
-        return false;
+        return { ok: false, code: 'wrong-passphrase' };
       }
 
       try {
@@ -383,19 +398,11 @@ export function VaultProvider({ children }) {
           normalize: derived.normalized,
         });
       } catch (err) {
-        const code = err && err.code;
-        if (code !== 'cancelled') {
-          setError(
-            code === 'unsupported'
-              ? 'This phone cannot do quick unlock.'
-              : 'We could not set that up. Try again in a moment.'
-          );
-        }
-        return false;
+        return { ok: false, code: (err && err.code) || 'failed' };
       }
 
       setQuickUnlock((prev) => ({ ...prev, enrolled: true }));
-      return true;
+      return { ok: true };
     },
     [readMetaOrExplain]
   );

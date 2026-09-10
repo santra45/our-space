@@ -24,8 +24,17 @@
  * Only ciphertext, a credential id, and two salts. The sealed blob is inert on
  * its own: reproducing the wrapping key needs the authenticator, which will not
  * act without a live user-verification check. Copying localStorage to another
- * device gets you nothing. The passphrase itself is never written down, in any
- * form - that was the original sin this codebase already removed once.
+ * device gets you nothing on its own. The passphrase itself is never written
+ * down, in any form - that was the original sin this codebase already removed.
+ *
+ * ONE HONEST CAVEAT ABOUT "THIS DEVICE"
+ * Where the passkey lands is the platform's call, not ours. Google Password
+ * Manager and iCloud Keychain both SYNC passkeys across an account, so the PRF
+ * secret is not necessarily device-bound - a second phone signed into the same
+ * account could reproduce the same bytes. What stays local is the sealed blob
+ * itself, which lives in this origin's localStorage and syncs nowhere. Opening
+ * the vault needs both halves, so the trade still holds; it is just an account
+ * boundary rather than a hardware one.
  *
  * WHAT THIS DELIBERATELY GIVES UP
  * Anyone who can unlock the phone can open the vault. That is the entire trade,
@@ -64,7 +73,7 @@ export class QuickUnlockError extends Error {
   constructor(code, message) {
     super(message);
     this.name = 'QuickUnlockError';
-    /** @type {'unsupported'|'cancelled'|'stale'|'failed'} */
+    /** @type {'unsupported'|'cancelled'|'stale'|'failed'|'no-prf'} */
     this.code = code;
   }
 }
@@ -210,15 +219,24 @@ function wrapAad(vaultSalt, credentialId) {
  * Runs a get() ceremony and returns the PRF bytes.
  * @param {string} credentialId - base64
  * @param {Uint8Array} prfSaltBytes
+ * @param {string[]} [transports] - What the credential said it speaks. Passing
+ *   it back helps the browser go straight to the right authenticator instead
+ *   of offering a chooser.
  * @returns {Promise<Uint8Array>}
  */
-async function getPrfViaAssertion(credentialId, prfSaltBytes) {
+async function getPrfViaAssertion(credentialId, prfSaltBytes, transports) {
   let assertion;
   try {
     assertion = await navigator.credentials.get({
       publicKey: {
         challenge: randomBytes(CHALLENGE_BYTES),
-        allowCredentials: [{ id: base64ToBuffer(credentialId), type: 'public-key' }],
+        allowCredentials: [
+          {
+            id: base64ToBuffer(credentialId),
+            type: 'public-key',
+            ...(Array.isArray(transports) && transports.length ? { transports } : {}),
+          },
+        ],
         userVerification: 'required',
         timeout: CEREMONY_TIMEOUT_MS,
         extensions: { prf: { eval: { first: prfSaltBytes } } },
@@ -231,7 +249,9 @@ async function getPrfViaAssertion(credentialId, prfSaltBytes) {
 
   const prf = readPrfOutput(assertion);
   if (!prf) {
-    throw new QuickUnlockError('unsupported', 'This device did not return PRF output.');
+    // The check itself passed, so the sensor is fine. This passkey store just
+    // will not do PRF, which is a different problem with a different answer.
+    throw new QuickUnlockError('no-prf', 'The passkey store returned no PRF output.');
   }
   return prf;
 }
@@ -286,7 +306,12 @@ export async function enableBiometricUnlock({ passphrase, vaultSalt, iterations,
         authenticatorSelection: {
           authenticatorAttachment: 'platform',
           userVerification: 'required',
-          residentKey: 'discouraged',
+          // Google Password Manager and iCloud Keychain both store passkeys as
+          // DISCOVERABLE credentials, and PRF rides along on the passkey. Asking
+          // for 'discouraged' - which is what we did first - asks for the one
+          // shape neither of them really implements.
+          residentKey: 'required',
+          requireResidentKey: true,
         },
         // We have no server and verify nothing, so attestation would be a
         // privacy leak we could not even make use of.
@@ -302,11 +327,23 @@ export async function enableBiometricUnlock({ passphrase, vaultSalt, iterations,
 
   const credentialId = bufferToBase64(credential.rawId);
 
+  let transports = [];
+  try {
+    const reported = credential.response && credential.response.getTransports;
+    if (typeof reported === 'function') {
+      const list = credential.response.getTransports();
+      if (Array.isArray(list)) transports = list;
+    }
+  } catch {
+    // Optional everywhere. Its absence costs us nothing but a chooser.
+  }
+
   // Some browsers hand back PRF output on create(), others only on get(). Take
-  // it if it is there, and run one more ceremony if it is not.
+  // it if it is there, and run one more ceremony if it is not - that second
+  // prompt is the browser being awkward, not us asking twice for fun.
   let prfOutput = readPrfOutput(credential);
   if (!prfOutput) {
-    prfOutput = await getPrfViaAssertion(credentialId, prfSaltBytes);
+    prfOutput = await getPrfViaAssertion(credentialId, prfSaltBytes, transports);
   }
 
   let keyBits = null;
@@ -346,6 +383,7 @@ export async function enableBiometricUnlock({ passphrase, vaultSalt, iterations,
       wrapIv: bufferToBase64(wrapIv),
       wrapped: bufferToBase64(sealed),
       vaultSalt,
+      transports,
       iterations: Number.isFinite(iterations) ? iterations : null,
       createdAt: Date.now(),
     });
@@ -388,7 +426,11 @@ export async function unlockWithBiometric(vaultSalt) {
   }
 
   const prfSaltBytes = new Uint8Array(base64ToBuffer(record.prfSalt));
-  const prfOutput = await getPrfViaAssertion(record.credentialId, prfSaltBytes);
+  const prfOutput = await getPrfViaAssertion(
+    record.credentialId,
+    prfSaltBytes,
+    record.transports
+  );
 
   let keyBits = null;
   try {

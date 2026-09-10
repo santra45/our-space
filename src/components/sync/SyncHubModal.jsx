@@ -505,6 +505,7 @@ export function SyncHubModal({ isOpen, onClose }) {
   const [quickUnlockOpen, setQuickUnlockOpen] = useState(false);
   const [quickUnlockBusy, setQuickUnlockBusy] = useState(false);
   const [quickUnlockNote, setQuickUnlockNote] = useState('');
+  const [quickUnlockProblem, setQuickUnlockProblem] = useState('');
   const [partnerInputId, setPartnerInputId] = useState('');
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [copySuccess, setCopySuccess] = useState(false);
@@ -652,29 +653,50 @@ export function SyncHubModal({ isOpen, onClose }) {
     setPromptBusy(false);
   };
 
+  /**
+   * Every branch here has to say something.
+   *
+   * The first version of this leaned on the vault `error` banner, which only
+   * the lock screen ever draws - so a setup that failed looked exactly like a
+   * setup that had not been tried, and the only clue was the button coming
+   * back. The wording is deliberately different per cause: what she reads is
+   * how we find out which one happened.
+   */
+  const QUICK_UNLOCK_PROBLEMS = {
+    'wrong-passphrase': 'That passphrase does not match this space. Have another go.',
+    cancelled: 'That got stopped partway, so nothing changed. Try again when you are ready.',
+    unsupported: 'This phone will not do the fingerprint trick. Your passphrase still works.',
+    'no-prf': 'This phone checked your fingerprint, but its passkeys cannot hold a key for us.',
+    'no-vault': 'We could not read your space just now. Try again in a moment.',
+    failed: 'That did not finish. Try again in a moment.',
+  };
+
   const handleTurnOnQuickUnlock = async (e) => {
     e.preventDefault();
     tap();
     setQuickUnlockNote('');
+    setQuickUnlockProblem('');
     setQuickUnlockBusy(true);
 
-    const ok = await enableQuickUnlock(quickUnlockPassphrase);
+    const result = await enableQuickUnlock(quickUnlockPassphrase);
 
     setQuickUnlockBusy(false);
-    if (ok) {
+    if (result && result.ok) {
       setQuickUnlockPassphrase('');
       setQuickUnlockOpen(false);
       setQuickUnlockNote('Done. Next time, just a touch. 💕');
       return;
     }
-    // enableQuickUnlock already told her what went wrong, in the banner that
-    // VaultProvider renders. Saying it twice here would just be noise.
+
+    const code = (result && result.code) || 'failed';
+    setQuickUnlockProblem(QUICK_UNLOCK_PROBLEMS[code] || QUICK_UNLOCK_PROBLEMS.failed);
   };
 
   const handleTurnOffQuickUnlock = () => {
     tap();
     disableQuickUnlock();
     setQuickUnlockPassphrase('');
+    setQuickUnlockProblem('');
     setQuickUnlockOpen(false);
     setQuickUnlockNote('Turned off. Your passphrase still opens everything.');
   };
@@ -1197,6 +1219,7 @@ export function SyncHubModal({ isOpen, onClose }) {
                     onClick={() => {
                       setQuickUnlockOpen(false);
                       setQuickUnlockPassphrase('');
+                      setQuickUnlockProblem('');
                     }}
                     className="py-2 rounded-xl border border-slate-200 text-[11px] font-bold text-slate-600 hover:bg-slate-50"
                   >
@@ -1221,6 +1244,7 @@ export function SyncHubModal({ isOpen, onClose }) {
                   onClick={() => {
                     tap();
                     setQuickUnlockNote('');
+                    setQuickUnlockProblem('');
                     setQuickUnlockOpen(true);
                   }}
                   className="text-[11px] font-bold text-blush-600 hover:text-blush-700 underline shrink-0"
@@ -1232,6 +1256,12 @@ export function SyncHubModal({ isOpen, onClose }) {
 
             {quickUnlockNote && (
               <p className="text-[10px] text-emerald-600 font-semibold mt-2">{quickUnlockNote}</p>
+            )}
+
+            {quickUnlockProblem && (
+              <p role="alert" className="text-[10px] text-rose-600 font-semibold mt-2 leading-relaxed">
+                {quickUnlockProblem}
+              </p>
             )}
           </div>
         )}

@@ -3106,6 +3106,7 @@ async function run() {
     const secrets = new Map();
     let counter = 0;
     let dismiss = false;
+    let withholdPrf = false;
 
     const refuse = () => {
       const err = new Error('dismissed');
@@ -3118,6 +3119,11 @@ async function run() {
       dismissNext(v) {
         dismiss = v;
       },
+      // The Android symptom: the fingerprint check passes, and the passkey
+      // store simply does not do PRF.
+      withholdPrfNext(v) {
+        withholdPrf = v;
+      },
       credentials: {
         async create() {
           if (dismiss) throw refuse();
@@ -3128,6 +3134,7 @@ async function run() {
           secrets.set(bioB64(rawId), secret);
           return {
             rawId: rawId.buffer,
+            response: { getTransports: () => ['internal'] },
             // Like Chrome: PRF is enabled on create but returns no results,
             // which forces the module down its second-ceremony path.
             getClientExtensionResults: () => ({ prf: { enabled: true } }),
@@ -3138,6 +3145,9 @@ async function run() {
           const id = bioB64(new Uint8Array(publicKey.allowCredentials[0].id));
           const secret = secrets.get(id);
           if (!secret) throw refuse();
+          if (withholdPrf) {
+            return { getClientExtensionResults: () => ({ prf: { enabled: false } }) };
+          }
           const first = await fakePrf(secret, publicKey.extensions.prf.eval.first);
           return { getClientExtensionResults: () => ({ prf: { results: { first } } }) };
         },
@@ -3312,6 +3322,44 @@ async function run() {
   check(
     'normalize:false seals the bits the vault was actually built with',
     (await bioOpens(bioRawSecret, bioRawOpened.key)) === 'keyed on the raw string'
+  );
+
+  /* -- a store that verifies but will not do PRF -------------------------- */
+
+  // This is precisely what a passkey store without PRF looks like from here:
+  // the fingerprint check passes, and no key material comes back. It has to be
+  // its own answer - 'cancelled' would be a lie, and silence was the bug.
+  bio.forgetBiometricUnlock();
+  fakeAuth.withholdPrfNext(true);
+  await checkThrows(
+    'a passkey store that verifies but returns no PRF reports no-prf',
+    () =>
+      bio.enableBiometricUnlock({
+        passphrase: bioPass,
+        vaultSalt: bioSalt,
+        iterations: bioIters,
+        normalize: true,
+      }),
+    (err) => err.code === 'no-prf'
+  );
+  check(
+    'a failed enrolment writes nothing at all',
+    bioStore.size === 0 && bio.isBiometricEnrolled(bioSalt) === false
+  );
+  fakeAuth.withholdPrfNext(false);
+
+  /* -- transports are remembered for the next ceremony -------------------- */
+
+  await bio.enableBiometricUnlock({
+    passphrase: bioPass,
+    vaultSalt: bioSalt,
+    iterations: bioIters,
+    normalize: true,
+  });
+  const bioStored = JSON.parse(Array.from(bioStore.values())[0]);
+  check(
+    'the credential transports are stored, so unlock can skip the chooser',
+    eq(bioStored.transports, ['internal'])
   );
 
   /* -- forgetting it ------------------------------------------------------ */
