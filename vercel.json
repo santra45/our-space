@@ -6,9 +6,6 @@
       "*": false
     }
   },
-  "github": {
-    "silent": true
-  },
   "headers": [
     {
       "source": "/(.*)",
