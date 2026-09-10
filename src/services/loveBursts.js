@@ -33,13 +33,11 @@
  */
 
 import db from '../db/index.js';
-import { generateUrlSafeNonce } from './crypto.js';
+import { getDeviceId } from './deviceId.js';
 
 /** The table these live in. Declared in db/index.js version 3. */
 export const LOVE_BURST_TABLE = 'loveBursts';
 
-/** This device's tag, so it can recognise its own tally and skip it. */
-const OWNER_KEY = 'sweetheart_burst_owner_v1';
 
 /** `{ counts: { [recordId]: number } }` - how far we had counted last time. */
 const SEEN_KEY = 'sweetheart_burst_seen_v1';
@@ -64,31 +62,14 @@ function writeStored(key, value) {
   }
 }
 
-let ownerIdCache = null;
-
 /**
- * A stable random tag for this device, minted once.
- *
- * Deliberately NOT the peer id. That one is allowed to change - it is
- * regenerated on a broker collision - and a device whose tag moved would start
- * a second tally beside its own, which reads to the partner as a brand new
- * person arriving with a backlog.
+ * This device's tag. Shared with every other feature that needs to know which
+ * of the two devices wrote a record - see services/deviceId.js.
  *
  * @returns {string}
  */
 export function getBurstOwnerId() {
-  if (ownerIdCache) return ownerIdCache;
-
-  const stored = readStored(OWNER_KEY);
-  if (typeof stored === 'string' && /^[A-Za-z0-9_-]{8,64}$/.test(stored)) {
-    ownerIdCache = stored;
-    return ownerIdCache;
-  }
-
-  const minted = generateUrlSafeNonce(12);
-  writeStored(OWNER_KEY, minted);
-  ownerIdCache = minted;
-  return ownerIdCache;
+  return getDeviceId();
 }
 
 /** @returns {string} The record id this device writes its own tally into. */

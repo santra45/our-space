@@ -28,6 +28,9 @@ export default {
           200: '#e2dcff',
           300: '#cdbeff',
           400: '#b196ff',
+          500: '#9a76ff',
+          600: '#7c52f0',
+          700: '#5f37c4',
         },
         matcha: {
           50: '#f4f8f3',

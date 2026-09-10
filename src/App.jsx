@@ -17,6 +17,7 @@ import DateRoulette from './components/scratchoff/DateRoulette';
 import SecretCapsule from './components/capsule/SecretCapsule';
 import BucketList from './components/bucketlist/BucketList';
 import SyncHubModal from './components/sync/SyncHubModal';
+import DailyQuestion from './components/daily/DailyQuestion';
 
 function AppContent() {
   const { isUnlocked } = useVault();
@@ -57,7 +58,18 @@ function AppContent() {
               coming back re-mounts it cleanly rather than showing a stale error.
             */}
             <ErrorBoundary key={`boundary-${activeTab}`}>
-              {activeTab === 'countdown' && <MilestoneTracker />}
+              {/*
+                The daily question rides on the landing tab rather than taking a
+                sixth slot in the nav. A daily habit cannot live behind
+                navigation - this way it is simply the first thing on screen,
+                every time.
+              */}
+              {activeTab === 'countdown' && (
+                <>
+                  <DailyQuestion />
+                  <MilestoneTracker />
+                </>
+              )}
               {activeTab === 'polaroids' && <PolaroidWall />}
               {activeTab === 'roulette' && <DateRoulette />}
               {activeTab === 'capsule' && <SecretCapsule />}
