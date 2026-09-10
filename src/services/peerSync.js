@@ -49,6 +49,7 @@ import {
 } from './crypto.js';
 import { PEER_ID_REGEX } from '../utils/invite.js';
 import db, { SYNCED_TABLES, MAX_IMAGE_BLOB_BYTES, MAX_RECORDS_PER_TABLE } from '../db/index.js';
+import { buildIceServers } from './iceServers.js';
 // Wire ceilings live in one place so the local photo limit can be derived from
 // them; see services/limits.js for why they used to drift.
 import {
@@ -485,11 +486,10 @@ export class PeerSyncManager {
       throw new Error('Invalid custom Peer ID format');
     }
 
-    const iceServers = [
-      { urls: 'stun:stun.l.google.com:19302' },
-      { urls: 'stun:stun1.l.google.com:19302' },
-      { urls: 'stun:global.stun.twilio.com:3478' },
-    ];
+    // STUN plus a relay to fall back to. Two phones both on mobile data can
+    // have no direct route to each other at all, and without somewhere to
+    // relay through, that is simply a connection that never happens.
+    const iceServers = buildIceServers();
 
     this.initPromise = new Promise((resolve, reject) => {
       let peerId = customId;

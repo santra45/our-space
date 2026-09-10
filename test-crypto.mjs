@@ -3032,6 +3032,56 @@ async function run() {
   const survivor = await decryptRecord(await tamperStore.table('memories').get('mem-intact-2'), key);
   check('and the intact ones landed, readable', survivor.caption === 'Intact two');
 
+  /* ------------------------------------------------- 15b. finding a route */
+  //
+  // A malformed iceServers list does not fail loudly - it just means the two
+  // phones never connect, which looks identical to bad luck with the network.
+  section('15b. ICE servers: somewhere to fall back to');
+
+  const ice = await import('./src/services/iceServers.js');
+
+  const iceDefault = ice.buildIceServers({});
+  check(
+    'STUN comes first and is never replaced by configuration',
+    iceDefault[0].urls.startsWith('stun:')
+  );
+  check(
+    'a relay is present by default, so mobile-data-to-mobile-data can still work',
+    ice.hasTurnConfigured({}) === true
+  );
+  check(
+    'and it is last, so ICE only reaches for it when nothing direct worked',
+    (() => {
+      const last = iceDefault[iceDefault.length - 1];
+      return Array.isArray(last.urls) && last.urls.every((u) => u.startsWith('turn'));
+    })()
+  );
+  check(
+    'every relay entry carries credentials - one without them is silently useless',
+    iceDefault
+      .filter((s) => String(s.urls).includes('turn:') || String(s.urls).includes('turns:'))
+      .every((s) => !!s.username && !!s.credential)
+  );
+
+  const iceOwn = ice.resolveTurnConfig({
+    VITE_TURN_URLS: 'turn:my.relay:3478, turns:my.relay:5349',
+    VITE_TURN_USERNAME: 'me',
+    VITE_TURN_CREDENTIAL: 'secret',
+  });
+  check(
+    'a complete override replaces the public default',
+    eq(iceOwn.urls, ['turn:my.relay:3478', 'turns:my.relay:5349']) &&
+      iceOwn.username === 'me'
+  );
+
+  // Half a configuration is worse than none: a relay with the wrong
+  // credentials does not complain, it just never connects.
+  const iceHalf = ice.resolveTurnConfig({ VITE_TURN_URLS: 'turn:my.relay:3478' });
+  check(
+    'a half-configured relay is ignored rather than half-applied',
+    iceHalf.username === 'openrelayproject'
+  );
+
   /* ------------------------------------------- 16. love bursts, as records */
   //
   // These used to be a fire-and-forget wire message, so one sent to a phone

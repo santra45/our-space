@@ -39,7 +39,7 @@ plain HTTP will not work.
 ```bash
 npm run build     # production build into dist/
 npm run preview   # serve the built output
-npm test          # crypto + sync test suite (379 assertions, plain node, no browser)
+npm test          # crypto + sync test suite (385 assertions, plain node, no browser)
 ```
 
 ---
@@ -54,6 +54,13 @@ The two phones talk to each other over **WebRTC**, peer to peer. A public PeerJS
 introduces them — it sees IP addresses and random peer IDs while connecting, and nothing
 else. Once the data channel opens, everything flows directly between the devices, already
 encrypted before it leaves.
+
+When a direct route is impossible — both phones on mobile data behind carrier-grade NAT,
+which is the normal case for a couple who are apart — it falls back to a **TURN relay**.
+That is a free public one by default, requiring no account and no setup. A relay only
+forwards; the traffic is already encrypted with your key before it gets there. Point the
+app at your own relay with the variables in `.env.example` if you would rather not share
+the public quota.
 
 Sync is last-write-wins on a per-record timestamp, and it converges from both directions:
 each phone sends the other a manifest of what it has, and asks only for what it is missing
@@ -196,9 +203,11 @@ crypto and the camera will both fail. Either use a tunnel that terminates TLS (`
 
 ## Known limits
 
-- **Carrier NAT can block a direct connection.** There is no TURN relay configured, only
-  STUN. Two phones on mobile data behind carrier-grade NAT may fail to connect; the app
-  says so rather than spinning. On the same Wi-Fi it is reliable.
+- **A relayed connection goes through a third party.** When the two phones cannot reach
+  each other directly they fall back to a public relay, which forwards the traffic without
+  being able to read it — records are already encrypted before they leave, and WebRTC wraps
+  that again. It does see that two addresses are talking. The free relay also shares a
+  20GB monthly pool with everyone else using it.
 - **A reload asks for the passphrase again** unless that phone has fingerprint unlock
   turned on. The key is memory-only by design.
 - **Both phones must be online together** to sync. Nothing queues server-side.
@@ -217,6 +226,7 @@ src/
   services/
     crypto.js           Encryption, key derivation, record envelopes, time-lock sealing
     peerSync.js         WebRTC transport, pairing handshake, replication protocol
+    iceServers.js       How the two phones find a route, including the relay fallback
     vaultKey.js         In-memory key holder
     biometricUnlock.js  Fingerprint unlock — seals the key behind the phone sensor
     loveBursts.js       Love burst tallies, so one sent to a closed app still lands

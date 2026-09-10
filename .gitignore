@@ -25,12 +25,15 @@ dist-ssr
 *.sw?
 
 # Environment variables & local vaults
+#
+# The negation has to come LAST. A broader `.env*` further down silently
+# re-ignored .env.example and the template could not be committed at all.
 .env
 .env.*
+.env*
 !.env.example
 *.vault
 .vercel
-.env*
 
 # Local dev tooling
 .claude/
