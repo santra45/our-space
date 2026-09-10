@@ -18,6 +18,7 @@ uploaded anywhere.
 | **Date Roulette** | Scratch-off card that picks a date idea, with confetti |
 | **Capsule** | Love letters, optionally sealed until a future date |
 | **Bucket List** | Shared checklist with progress, ticked from either phone |
+| **Love Burst** | A tap that sets off confetti on the other phone, saved until she opens it |
 
 Plus a **Sync Hub** for pairing the two phones, fingerprint unlock on each device, and an
 encrypted `.vault` backup you can save anywhere.
@@ -38,7 +39,7 @@ plain HTTP will not work.
 ```bash
 npm run build     # production build into dist/
 npm run preview   # serve the built output
-npm test          # crypto + sync test suite (369 assertions, plain node, no browser)
+npm test          # crypto + sync test suite (379 assertions, plain node, no browser)
 ```
 
 ---
@@ -218,6 +219,7 @@ src/
     peerSync.js         WebRTC transport, pairing handshake, replication protocol
     vaultKey.js         In-memory key holder
     biometricUnlock.js  Fingerprint unlock — seals the key behind the phone sensor
+    loveBursts.js       Love burst tallies, so one sent to a closed app still lands
     limits.js           Size ceilings shared by storage and the wire
   db/index.js         Dexie schema, backup import/export, record integrity gates
   context/            VaultContext (lock/unlock), SyncContext (pairing lifecycle)

@@ -12,11 +12,20 @@
  *     an unrecognised peer waits behind an explicit confirmation.
  */
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
+import { useLiveQuery } from 'dexie-react-hooks';
 import peerSync from '../services/peerSync';
 import { useVault } from './VaultContext';
 import { parseInvite, PEER_ID_REGEX } from '../utils/invite';
 import { fireCelebrationBurst } from '../components/common/ConfettiBurst';
 import { useHaptics } from '../hooks/useHaptics';
+import db from '../db';
+import {
+  LOVE_BURST_TABLE,
+  sendLoveBurst as writeLoveBurst,
+  collectUnseenBursts,
+  markBurstsSeen,
+  describeBursts,
+} from '../services/loveBursts';
 
 const SyncContext = createContext(null);
 
@@ -197,20 +206,8 @@ export function SyncProvider({ children }) {
       setLastSyncNotice(`Synced ${data?.count || 1} new item(s) from partner 💕`);
     };
 
-    const handleLoveBurst = () => {
-      if (!isMounted) return;
-      try {
-        fireCelebrationBurst();
-        celebration();
-      } catch (err) {
-        console.error('Error triggering love burst:', err);
-      }
-      setLastSyncNotice('Your partner sent you a love burst! 💕');
-    };
-
     peerSync.on('status', handleStatus);
     peerSync.on('data-updated', handleDataUpdated);
-    peerSync.on('love-burst', handleLoveBurst);
 
     // Read any pairing intent that arrived through a link BEFORE dialling
     // anything, and scrub the peer id out of the address bar either way.
@@ -267,7 +264,6 @@ export function SyncProvider({ children }) {
       isMounted = false;
       peerSync.off('status', handleStatus);
       peerSync.off('data-updated', handleDataUpdated);
-      peerSync.off('love-burst', handleLoveBurst);
       if (dialTimerRef.current) {
         clearTimeout(dialTimerRef.current);
         dialTimerRef.current = null;
@@ -435,23 +431,103 @@ export function SyncProvider({ children }) {
     peerSync.disconnect();
   };
 
+  const isAuthorized = AUTHORIZED_STATES.has(syncStatus.state);
+
+  // Read by the burst watcher to pick its wording. A ref rather than a
+  // dependency: connecting must not re-run the watcher and replay a burst.
+  const isAuthorizedRef = useRef(isAuthorized);
+  isAuthorizedRef.current = isAuthorized;
+
+  /**
+   * Watches the burst tallies and celebrates anything not celebrated yet.
+   *
+   * ONE PATH FOR BOTH CASES, on purpose. A burst that arrives while she has
+   * the app open lands here as a live-record broadcast; one sent while her
+   * phone was off lands here through the ordinary manifest diff on the next
+   * connection. Either way it is a row changing, this fires, and she finds out.
+   * The previous version listened for a wire message instead, so anything sent
+   * to a phone that was not listening was simply gone.
+   *
+   * It runs on unlock too, which is what makes "while you were away" work: the
+   * rows are already on disk by then, waiting to be counted.
+   */
+  const burstRows = useLiveQuery(
+    () => (isUnlocked && cryptoKey ? db.table(LOVE_BURST_TABLE).toArray() : []),
+    [isUnlocked, cryptoKey],
+    []
+  );
+
+  // A cheap change signal. Both fields are plaintext by design, so noticing a
+  // change costs no decryption - only actually counting does.
+  const burstSignal = (burstRows || [])
+    .map((row) => `${row.id}:${row.updatedAt}`)
+    .sort()
+    .join('|');
+
+  useEffect(() => {
+    if (!isUnlocked || !cryptoKey) return undefined;
+
+    let cancelled = false;
+    (async () => {
+      const unseen = await collectUnseenBursts(cryptoKey);
+      if (cancelled || unseen.total <= 0) return;
+
+      // Mark BEFORE celebrating. If the confetti throws, or the tab is closed
+      // mid-animation, the alternative is replaying the same burst on every
+      // launch forever.
+      markBurstsSeen(unseen.records);
+
+      try {
+        fireCelebrationBurst();
+        celebration();
+      } catch (err) {
+        console.error('Could not play the love burst:', err);
+      }
+
+      setLastSyncNotice(describeBursts(unseen.total, isAuthorizedRef.current));
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+    // celebration is a stable haptics helper; including it would re-run this on
+    // every render and re-fire the confetti.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isUnlocked, cryptoKey, burstSignal]);
+
   const clearSyncError = () => setSyncError(null);
   const clearSyncWarning = () => setSyncWarning(null);
 
-  const isAuthorized = AUTHORIZED_STATES.has(syncStatus.state);
-
+  /**
+   * Sends a love burst, connected or not.
+   *
+   * This used to refuse outright when the partner was offline, which is
+   * precisely the moment you most want to tell someone you were thinking of
+   * them. It is a record now: writing it is the send, and the broadcast below
+   * is only a shortcut for when she happens to be listening. If she is not,
+   * the next manifest diff carries it over with everything else.
+   */
   const sendLoveBurst = async () => {
-    if (!isAuthorized) {
-      setLastSyncNotice('Partner is not connected right now 💕');
+    if (!cryptoKey) {
+      setLastSyncNotice('Unlock Our Space first 💕');
       return false;
     }
-    const sent = await peerSync.sendLoveBurst();
-    if (sent) {
+
+    let row;
+    try {
+      row = await writeLoveBurst(cryptoKey);
+    } catch {
+      setLastSyncNotice('Could not send that just now 💕');
+      return false;
+    }
+
+    if (isAuthorized) {
+      peerSync.broadcastLiveRecord(LOVE_BURST_TABLE, row);
       setLastSyncNotice('Love burst sent to partner! 💕');
     } else {
-      setLastSyncNotice('Could not send love burst. Check connection 💕');
+      setLastSyncNotice('Saved 💕 She will see it the moment you two connect.');
     }
-    return sent;
+    return true;
   };
 
   return (

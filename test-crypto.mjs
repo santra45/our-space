@@ -3032,46 +3032,147 @@ async function run() {
   const survivor = await decryptRecord(await tamperStore.table('memories').get('mem-intact-2'), key);
   check('and the intact ones landed, readable', survivor.caption === 'Intact two');
 
-  /* --------------------------------- 16. real-time WebRTC ephemeral signals */
-  section('16. Real-time WebRTC ephemeral signals (Love Burst)');
+  /* ------------------------------------------- 16. love bursts, as records */
+  //
+  // These used to be a fire-and-forget wire message, so one sent to a phone
+  // that was not listening simply never happened. They are records now, which
+  // is what makes the offline case work at all - and the offline case is the
+  // whole point, so it is what most of this section is about.
+  section('16. Love bursts survive a partner who is not listening');
 
-  const burstSavedKey = peerSync.cryptoKey;
-  const burstSavedAuth = peerSync.isAuthorized;
-
-  peerSync.cryptoKey = null;
-  peerSync.isAuthorized = false;
-  check('sendLoveBurst fails when vault is locked / key missing', (await peerSync.sendLoveBurst()) === false);
-
-  peerSync.cryptoKey = key;
-  peerSync.isAuthorized = false;
-  check('sendLoveBurst fails when channel is unauthorized', (await peerSync.sendLoveBurst()) === false);
-
-  let loveBurstReceived = null;
-  const onLoveBurst = (data) => {
-    loveBurstReceived = data;
-  };
-  peerSync.on('love-burst', onLoveBurst);
-
-  const burstPayload = await encryptJSON({ type: 'LOVE_BURST', timestamp: 1700000000000 }, key);
-  await peerSync._handleMessage({
-    protocol: 'SWEETHEART_V2',
-    payload: burstPayload,
+  const burstStore = new FakeVaultStore();
+  const burstLocal = new Map();
+  Object.defineProperty(globalThis, 'localStorage', {
+    value: {
+      getItem: (k) => (burstLocal.has(k) ? burstLocal.get(k) : null),
+      setItem: (k, v) => burstLocal.set(k, String(v)),
+      removeItem: (k) => burstLocal.delete(k),
+    },
+    configurable: true,
+    writable: true,
   });
-  check('incoming LOVE_BURST is dropped when peer is unauthorized', loveBurstReceived === null);
 
-  peerSync.isAuthorized = true;
-  await peerSync._handleMessage({
-    protocol: 'SWEETHEART_V2',
-    payload: burstPayload,
-  });
+  const bursts = await import('./src/services/loveBursts.js');
+  let burstClock = 1700000000000;
+  const burstOpts = { store: burstStore, timestamp: () => (burstClock += 1000) };
+
+  /* -- sending, with nobody on the other end ------------------------------ */
+
+  const burstRow1 = await bursts.sendLoveBurst(key, burstOpts);
   check(
-    'incoming LOVE_BURST emits love-burst event with timestamp when authorized',
-    loveBurstReceived !== null && loveBurstReceived.timestamp === 1700000000000
+    'a burst can be sent with no connection at all - it is just a write',
+    burstRow1 && typeof burstRow1.id === 'string'
+  );
+  check(
+    'and it is sealed like every other record, not stored in the clear',
+    recordHasAuthenticatedHeader(burstRow1) &&
+      burstRow1.count === undefined &&
+      burstRow1.ciphertext !== undefined
   );
 
-  peerSync.off('love-burst', onLoveBurst);
-  peerSync.cryptoKey = burstSavedKey;
-  peerSync.isAuthorized = burstSavedAuth;
+  const burstMine = await burstStore.getDecrypted(
+    bursts.LOVE_BURST_TABLE,
+    bursts.ownBurstRecordId(),
+    key
+  );
+  check('the first burst leaves a tally of one', burstMine.count === 1);
+
+  await bursts.sendLoveBurst(key, burstOpts);
+  await bursts.sendLoveBurst(key, burstOpts);
+  const burstMine3 = await burstStore.getDecrypted(
+    bursts.LOVE_BURST_TABLE,
+    bursts.ownBurstRecordId(),
+    key
+  );
+  check('three taps make one record, not three', burstMine3.count === 3);
+  check(
+    'the whole table is still one row - this is what keeps sync manifests small',
+    (await burstStore.table(bursts.LOVE_BURST_TABLE).toArray()).length === 1
+  );
+
+  /* -- and the sender is never told about their own ----------------------- */
+
+  const burstOwn = await bursts.collectUnseenBursts(key, { store: burstStore });
+  check('a device never celebrates its own tally', burstOwn.total === 0);
+
+  /* -- the partner side --------------------------------------------------- */
+
+  // The module caches its owner id, so the test drives the partner side by
+  // writing her tally straight in rather than pretending to be her device.
+  const HER_ID = 'burst-her-device-tag';
+  const putHerTally = async (count, lastSentAt) => {
+    const row = await encryptRecord(
+      { id: HER_ID, count, lastSentAt, updatedAt: (burstClock += 1000) },
+      key,
+      { table: bursts.LOVE_BURST_TABLE }
+    );
+    await burstStore.table(bursts.LOVE_BURST_TABLE).put(row);
+    return row;
+  };
+
+  await putHerTally(3, burstClock);
+
+  // A device looking for the FIRST time at a tally that is already at three:
+  // a phone that just restored a backup, or had its storage cleared. Greeting
+  // her with "3 love bursts" she has in fact already seen would be a bug
+  // wearing a nice hat, so the absence of any memory means start from today.
+  burstLocal.delete('sweetheart_burst_seen_v1');
+  const burstFirstLook = await bursts.collectUnseenBursts(key, { store: burstStore });
+  check(
+    'a first look adopts the tally where it stands instead of replaying history',
+    burstFirstLook.total === 0
+  );
+
+  /* -- THE POINT: bursts sent while he was away ---------------------------- */
+
+  await putHerTally(6, burstClock);
+  const burstAway = await bursts.collectUnseenBursts(key, { store: burstStore });
+  check(
+    'three bursts sent while the app was closed are all counted on return',
+    burstAway.total === 3
+  );
+  check(
+    'and the wording says so',
+    bursts.describeBursts(burstAway.total, false) ===
+      'Your partner sent you 3 love bursts while you were away 💕'
+  );
+  check(
+    'while a live one reads as happening now',
+    bursts.describeBursts(1, true) === 'Your partner sent you a love burst! 💕'
+  );
+
+  /* -- and are not replayed on the next launch ---------------------------- */
+
+  bursts.markBurstsSeen(burstAway.records);
+  const burstAgain = await bursts.collectUnseenBursts(key, { store: burstStore });
+  check('once shown, the same bursts are not counted again', burstAgain.total === 0);
+
+  await putHerTally(7, burstClock);
+  const burstOneMore = await bursts.collectUnseenBursts(key, { store: burstStore });
+  check('but the next one still lands', burstOneMore.total === 1);
+  bursts.markBurstsSeen(burstOneMore.records);
+
+  /* -- a tally that goes backwards is not a negative burst ---------------- */
+
+  await putHerTally(2, burstClock);
+  const burstBackwards = await bursts.collectUnseenBursts(key, { store: burstStore });
+  check(
+    'a tally that somehow went backwards is ignored, not counted as negative',
+    burstBackwards.total === 0
+  );
+
+  /* -- a rewritten record is not evidence of anything --------------------- */
+
+  await putHerTally(50, burstClock);
+  const burstHonest = await burstStore.table(bursts.LOVE_BURST_TABLE).get(HER_ID);
+  await burstStore
+    .table(bursts.LOVE_BURST_TABLE)
+    .put({ ...burstHonest, updatedAt: burstHonest.updatedAt + 5000 });
+  const burstTampered = await bursts.collectUnseenBursts(key, { store: burstStore });
+  check(
+    'a burst tally whose header was rewritten is refused, like every other record',
+    burstTampered.total === 0
+  );
 
   /* ============================================================== 17
    * QUICK UNLOCK (fingerprint / face)

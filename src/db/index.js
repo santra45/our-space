@@ -54,6 +54,7 @@ export const SYNCED_TABLES = Object.freeze([
   'dateIdeas',
   'letters',
   'bucketList',
+  'loveBursts',
 ]);
 
 /**
@@ -112,15 +113,15 @@ export class SweetheartDatabase extends Dexie {
     super('SweetheartVaultDB');
 
     /**
-     * The only schema this app has ever shipped to anyone.
-     *
      * Indexes are the primary key plus the two things sync compares without a
      * key. Nothing else is indexed, because nothing else is readable.
      *
-     * DO NOT RENUMBER THIS TO 1. The number is what IndexedDB compares against
-     * the version already on a device, and a lower number is a downgrade: Dexie
-     * refuses to open, and the vault looks like it has vanished. It stays 2
-     * forever, whatever else is deleted around it.
+     * DO NOT RENUMBER THESE DOWNWARDS. The number is what IndexedDB compares
+     * against the version already on a device, and a lower one is a downgrade:
+     * Dexie refuses to open, and the vault looks like it has vanished.
+     *
+     * Version 2 is kept declared even though 3 supersedes it. Dexie wants the
+     * whole ladder, and a device sitting on 2 climbs it on next open.
      */
     this.version(2).stores({
       vaultMeta: 'id',
@@ -129,6 +130,24 @@ export class SweetheartDatabase extends Dexie {
       dateIdeas: 'id, updatedAt, _del',
       letters: 'id, updatedAt, _del',
       bucketList: 'id, updatedAt, _del',
+    });
+
+    /**
+     * Version 3 adds `loveBursts` and changes nothing else.
+     *
+     * There is deliberately no upgrade function. Adding a store needs no data
+     * migration - Dexie creates the empty table and every existing row is
+     * untouched - and an upgrade function that runs over a vault it cannot
+     * decrypt is a way to lose records, not to gain a table.
+     */
+    this.version(3).stores({
+      vaultMeta: 'id',
+      memories: 'id, updatedAt, _del',
+      milestones: 'id, updatedAt, _del',
+      dateIdeas: 'id, updatedAt, _del',
+      letters: 'id, updatedAt, _del',
+      bucketList: 'id, updatedAt, _del',
+      loveBursts: 'id, updatedAt, _del',
     });
 
     this._installTombstoneHooks();
