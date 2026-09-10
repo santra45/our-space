@@ -31,3 +31,6 @@ dist-ssr
 *.vault
 .vercel
 .env*
+
+# Local dev tooling
+.claude/
