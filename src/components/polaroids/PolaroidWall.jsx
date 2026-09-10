@@ -211,25 +211,37 @@ export function PolaroidWall() {
           onClick={() => setActivePreview(null)}
           className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md"
         >
+          {/*
+            NO fixed aspect ratio anywhere in here, deliberately. The grid card is
+            a polaroid and crops to its frame on purpose; this view is the
+            opposite - it exists to show the photo exactly as it was taken. The
+            panel sizes itself to the image rather than the image being poured
+            into the panel, so a portrait gets a tall narrow frame, a landscape a
+            wide short one, and neither is letterboxed with grey bars.
+          */}
           <div
             onClick={(e) => e.stopPropagation()}
-            className="max-w-sm w-full bg-white p-4 pb-6 rounded-3xl shadow-2xl relative"
+            className="relative max-w-[92vw] bg-white p-3 pb-5 rounded-3xl shadow-2xl"
           >
             <button
               onClick={() => setActivePreview(null)}
-              className="absolute -top-3 -right-3 w-8 h-8 bg-white text-slate-700 rounded-full flex items-center justify-center shadow-lg font-bold"
+              className="absolute -top-3 -right-3 w-8 h-8 bg-white text-slate-700 rounded-full flex items-center justify-center shadow-lg font-bold z-10"
             >
               <X className="w-4 h-4" />
             </button>
-            <div className="aspect-[4/5] rounded-2xl overflow-hidden bg-black/5 mb-3">
+            <div className="rounded-2xl overflow-hidden bg-black/5">
+              {/*
+                w-auto/h-auto keeps the image at its own proportions; the two max
+                bounds only ever shrink it to fit the screen. No upscaling, so a
+                small photo stays sharp instead of being blown up to fill a frame.
+              */}
               <img
                 src={activePreview.imageUrl}
                 alt="Full polaroid"
-                // Opened deliberately to look at the photo, so show all of it.
-                className="w-full h-full object-contain"
+                className="block w-auto h-auto max-w-full max-h-[70vh] mx-auto"
               />
             </div>
-            <p className="font-handwriting text-2xl text-center text-slate-800">
+            <p className="font-handwriting text-2xl text-center text-slate-800 mt-3 max-w-full break-words">
               {activePreview.caption}
             </p>
           </div>
