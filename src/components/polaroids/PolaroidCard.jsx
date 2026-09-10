@@ -165,11 +165,16 @@ function PolaroidCardBase({ memory, cryptoKey, onSelect }) {
           </div>
         )}
 
-        {/* Delete button (visible on hover / tap) */}
+        {/*
+          Always visible, never hover-gated. `group-hover` never fires on a
+          phone, and opacity-0 does not stop clicks - so this was an invisible
+          delete sitting on the corner of every photo, firing on a tap that was
+          meant to open it. active: is here because hover: is dead on touch.
+        */}
         <button
           onClick={handleDelete}
           disabled={deleting}
-          className="absolute top-2 right-2 w-7 h-7 bg-black/40 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-rose-500 disabled:opacity-40"
+          className="absolute top-2 right-2 w-7 h-7 bg-black/40 backdrop-blur-sm text-white rounded-full flex items-center justify-center transition-colors hover:bg-rose-500 active:bg-rose-500 disabled:opacity-40"
           title="Delete memory"
         >
           <Trash2 className="w-3.5 h-3.5" />
