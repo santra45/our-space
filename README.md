@@ -19,8 +19,8 @@ uploaded anywhere.
 | **Capsule** | Love letters, optionally sealed until a future date |
 | **Bucket List** | Shared checklist with progress, ticked from either phone |
 
-Plus a **Sync Hub** for pairing the two phones, and an encrypted `.vault` backup you can
-save anywhere.
+Plus a **Sync Hub** for pairing the two phones, fingerprint unlock on each device, and an
+encrypted `.vault` backup you can save anywhere.
 
 ---
 
@@ -38,7 +38,7 @@ plain HTTP will not work.
 ```bash
 npm run build     # production build into dist/
 npm run preview   # serve the built output
-npm test          # crypto + sync test suite (329 assertions, plain node, no browser)
+npm test          # crypto + sync test suite (356 assertions, plain node, no browser)
 ```
 
 ---
@@ -80,6 +80,10 @@ read each other's records.
 The derived key is a non-extractable `CryptoKey` held only in memory. The practical
 consequence: **reloading the page asks for the passphrase again.** That is the cost of not
 storing it anywhere, and it is deliberate.
+
+Each phone can opt out of the retyping on its own terms — see [Opening it with a
+fingerprint](#opening-it-with-a-fingerprint). That stores a sealed copy of the *key*, never
+the passphrase, and only that phone can unseal it.
 
 Keys derive at 600,000 PBKDF2 iterations. The count is recorded on the vault itself rather
 than assumed, so it can be raised later without locking an existing vault out.
@@ -123,6 +127,38 @@ for later. The app reconnects on its own when you unlock your phone or come back
 
 ---
 
+## Opening it with a fingerprint
+
+Retyping a 16-character passphrase every time the browser drops the tab gets old fast, and
+a phone drops tabs constantly. So each device can keep the key behind its own fingerprint
+or face check instead.
+
+Sync Hub → **Open with a touch** → *Set it up*, and type the passphrase once more. After
+that the lock screen leads with a single button, with the passphrase still one tap away
+whenever you want it.
+
+It is per-device and entirely optional. Turning it off forgets the sealed key immediately.
+
+**What it costs.** Anyone who can unlock that phone can open your space. That is the whole
+trade — if it is not one you want on a particular device, do not turn it on there.
+
+**What gets stored.** Ciphertext, and nothing else. Unsealing it needs the phone to run a
+real fingerprint or face check first, so copying the browser storage somewhere else gets
+nothing on its own. The passphrase is still never written down, in any form.
+
+**Where the passkey ends up is the platform’s call, not the app’s.** Android hands it to
+Google Password Manager, iOS to iCloud Keychain, and both of those sync across your
+account — so that half is tied to the account rather than the handset. The sealed half
+stays in one browser on one device and syncs nowhere, and you need both to get in. It is
+an account boundary, not a hardware one.
+
+**It needs a recent browser.** This rides on the WebAuthn PRF extension: Chrome 116+, or
+Safari on iOS 18+. Where it is missing the option simply is not shown and nothing changes.
+Setting it up asks for the check twice on Chrome — the browser will not hand over the key
+material during registration, so a second prompt has to ask for it. Unlocking is one touch.
+
+---
+
 ## Deploying
 
 The build is static files, so anything that serves a folder works — Vercel, Cloudflare
@@ -160,7 +196,8 @@ crypto and the camera will both fail. Either use a tunnel that terminates TLS (`
 - **Carrier NAT can block a direct connection.** There is no TURN relay configured, only
   STUN. Two phones on mobile data behind carrier-grade NAT may fail to connect; the app
   says so rather than spinning. On the same Wi-Fi it is reliable.
-- **A reload asks for the passphrase again** — see above; the key is memory-only by design.
+- **A reload asks for the passphrase again** unless that phone has fingerprint unlock
+  turned on. The key is memory-only by design.
 - **Both phones must be online together** to sync. Nothing queues server-side.
 - **App icons are SVG only.** iOS ignores SVG icons, so a home-screen install there falls
   back to a screenshot. Generating a PNG set (192/512, plus a maskable variant with ~20%
@@ -175,15 +212,16 @@ crypto and the camera will both fail. Either use a tunnel that terminates TLS (`
 ```
 src/
   services/
-    crypto.js      Encryption, key derivation, record envelopes, time-lock sealing
-    peerSync.js    WebRTC transport, pairing handshake, replication protocol
-    vaultKey.js    In-memory key holder
-    limits.js      Size ceilings shared by storage and the wire
-  db/index.js      Dexie schema, backup import/export, record integrity gates
-  context/         VaultContext (lock/unlock), SyncContext (pairing lifecycle)
-  components/      One folder per screen, plus layout/ common/ sync/
-  utils/           Dates, image compression, invite links
-test-crypto.mjs    Test suite — runs in plain node, no browser needed
+    crypto.js           Encryption, key derivation, record envelopes, time-lock sealing
+    peerSync.js         WebRTC transport, pairing handshake, replication protocol
+    vaultKey.js         In-memory key holder
+    biometricUnlock.js  Fingerprint unlock — seals the key behind the phone sensor
+    limits.js           Size ceilings shared by storage and the wire
+  db/index.js         Dexie schema, backup import/export, record integrity gates
+  context/            VaultContext (lock/unlock), SyncContext (pairing lifecycle)
+  components/         One folder per screen, plus layout/ common/ sync/
+  utils/              Dates, image compression, invite links
+test-crypto.mjs       Test suite — runs in plain node, no browser needed
 ```
 
 ---
@@ -207,5 +245,9 @@ A few invariants the tests hold in place, worth knowing before changing anything
 - **Timestamps only move forward.** Records are stamped from a monotonic clock rather than
   raw `Date.now()`, so a phone with a slow clock can still win a merge and a phone whose
   clock jumped into the future recovers instead of poisoning every write.
+- **A key is not trusted just because the sensor accepted it.** Fingerprint unlock unseals
+  a stored key, and that key still has to open the vault canary before it is adopted.
+  Without that step a key left over from an older vault would be taken as working and then
+  fail on every record it touched.
 
 Stack: React 18, Vite, Tailwind, Dexie, PeerJS, Framer Motion. No backend to run.
