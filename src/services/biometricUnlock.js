@@ -43,7 +43,13 @@
  * biometric never locks anyone out of their own memories.
  */
 
-import { bufferToBase64, base64ToBuffer, deriveVaultKeyBits, importVaultKeyFromBits } from './crypto.js';
+import {
+  bufferToBase64,
+  base64ToBuffer,
+  isValidBase64,
+  deriveVaultKeyBits,
+  importVaultKeyFromBits,
+} from './crypto.js';
 
 /** Bump this if the sealed-blob shape ever changes; old records are discarded. */
 const STORAGE_KEY = 'sweetheart_quick_unlock_v1';
@@ -73,8 +79,48 @@ export class QuickUnlockError extends Error {
   constructor(code, message) {
     super(message);
     this.name = 'QuickUnlockError';
-    /** @type {'unsupported'|'cancelled'|'stale'|'failed'|'no-prf'} */
+    /** @type {'unsupported'|'cancelled'|'stale'|'failed'|'no-prf'|'already-registered'} */
     this.code = code;
+  }
+}
+
+/**
+ * The Signal API speaks base64url; everything else here speaks plain base64.
+ */
+function base64ToBase64Url(value) {
+  return value.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+/**
+ * Tells the passkey provider that a credential we made is dead to us.
+ *
+ * WHY THIS MATTERS MORE THAN IT LOOKS
+ * Every enrolment mints a passkey, and the provider - Google Password Manager,
+ * iCloud Keychain - keeps it forever unless someone says otherwise. Without
+ * this, turning quick unlock off, or an enrolment that fell over halfway,
+ * silently left an "Our Space" entry in the password manager that the user had
+ * to hunt down and delete by hand. Retiring it is the only tidy-up we can do.
+ *
+ * Best effort by design: the Signal API is recent, and a provider that does not
+ * have it is no worse off than before. Never awaited, never throws.
+ *
+ * @param {string} credentialId - base64, as stored.
+ */
+function retireCredential(credentialId) {
+  try {
+    if (typeof credentialId !== 'string' || !credentialId) return;
+    if (typeof window === 'undefined' || !window.PublicKeyCredential) return;
+    const signal = window.PublicKeyCredential.signalUnknownCredential;
+    if (typeof signal !== 'function') return;
+
+    const result = window.PublicKeyCredential.signalUnknownCredential({
+      rpId: window.location.hostname,
+      credentialId: base64ToBase64Url(credentialId),
+    });
+    // Fire and forget. A provider that refuses is not an error we can act on.
+    if (result && typeof result.catch === 'function') result.catch(() => {});
+  } catch {
+    // Unsupported, or blocked. Nothing to do and nothing worth saying.
   }
 }
 
@@ -96,6 +142,11 @@ function classifyCeremonyError(err) {
   if (name === 'NotSupportedError' || name === 'SecurityError') {
     return new QuickUnlockError('unsupported', 'This device cannot do quick unlock.');
   }
+  if (name === 'InvalidStateError') {
+    // excludeCredentials did its job: this authenticator already holds the
+    // passkey we were about to make a second copy of.
+    return new QuickUnlockError('already-registered', 'This device already has one.');
+  }
   return new QuickUnlockError('failed', 'The unlock check did not complete.');
 }
 
@@ -109,6 +160,13 @@ function readRecord() {
     if (!parsed || typeof parsed !== 'object') return null;
     if (!parsed.credentialId || !parsed.prfSalt || !parsed.wrapped || !parsed.wrapIv) return null;
     if (typeof parsed.vaultSalt !== 'string') return null;
+    // Shape is not enough - the fields have to be decodable. A record that is
+    // malformed rather than merely wrong is treated as "never set up", which
+    // puts the setup button back instead of failing every unlock forever.
+    if (!isValidBase64(parsed.prfSalt)) return null;
+    if (!isValidBase64(parsed.wrapIv)) return null;
+    if (!isValidBase64(parsed.wrapped)) return null;
+    if (!isValidBase64(parsed.credentialId)) return null;
     return parsed;
   } catch {
     // Storage blocked, or a half-written record. Either way: not enrolled.
@@ -125,8 +183,22 @@ function writeRecord(record) {
   }
 }
 
-/** Removes the enrolment. Idempotent, and safe when storage is blocked. */
-export function forgetBiometricUnlock() {
+/**
+ * Removes the enrolment, and asks the passkey provider to drop the credential
+ * that went with it. Idempotent, and safe when storage is blocked.
+ *
+ * @param {{ keepCredential?: boolean }} [options] - Set when the credential is
+ *   being retired by the caller instead, so it is not signalled twice.
+ */
+export function forgetBiometricUnlock(options = {}) {
+  try {
+    if (options.keepCredential !== true) {
+      const record = readRecord();
+      if (record) retireCredential(record.credentialId);
+    }
+  } catch {
+    // A record we cannot read is a credential we cannot name. Carry on.
+  }
   try {
     localStorage.removeItem(STORAGE_KEY);
   } catch {
@@ -283,6 +355,23 @@ export async function enableBiometricUnlock({ passphrase, vaultSalt, iterations,
 
   const prfSaltBytes = randomBytes(PRF_SALT_BYTES);
 
+  // Anything left here from before has to go, and its passkey with it.
+  //
+  // excludeCredentials looked like the tidier answer and is a trap: a stale
+  // record belongs to a vault that no longer exists, the UI offers "Set it up"
+  // rather than "Turn off" in that state, and InvalidStateError would strand
+  // her with no way forward at all. Retiring it up front reaches the same end -
+  // no duplicate passkey - and always leaves a path through.
+  //
+  // Only stale records are cleared here. One matching this vault is not
+  // reachable from the UI, and if it ever became reachable it must not be
+  // thrown away before its replacement exists.
+  const previous = readRecord();
+  if (previous && previous.vaultSalt !== vaultSalt) {
+    retireCredential(previous.credentialId);
+    forgetBiometricUnlock({ keepCredential: true });
+  }
+
   let credential;
   try {
     credential = await navigator.credentials.create({
@@ -327,6 +416,14 @@ export async function enableBiometricUnlock({ passphrase, vaultSalt, iterations,
 
   const credentialId = bufferToBase64(credential.rawId);
 
+  // FROM HERE ON A PASSKEY EXISTS. Every path out of this function that is not
+  // a stored, working enrolment has to retire it, or it becomes another dead
+  // "Our Space" entry in the user's password manager for them to clean up.
+  const abandon = (err) => {
+    retireCredential(credentialId);
+    return err;
+  };
+
   let transports = [];
   try {
     const reported = credential.response && credential.response.getTransports;
@@ -343,7 +440,27 @@ export async function enableBiometricUnlock({ passphrase, vaultSalt, iterations,
   // prompt is the browser being awkward, not us asking twice for fun.
   let prfOutput = readPrfOutput(credential);
   if (!prfOutput) {
-    prfOutput = await getPrfViaAssertion(credentialId, prfSaltBytes, transports);
+    // An explicit `enabled: false` is the provider saying it will not do PRF at
+    // all. Believe it the first time: prompting again would spend a second
+    // fingerprint check to be told the same thing.
+    let enabled;
+    try {
+      const results = credential.getClientExtensionResults();
+      enabled = results && results.prf ? results.prf.enabled : undefined;
+    } catch {
+      enabled = undefined;
+    }
+    if (enabled === false) {
+      throw abandon(
+        new QuickUnlockError('no-prf', 'The provider declined PRF at registration.')
+      );
+    }
+
+    try {
+      prfOutput = await getPrfViaAssertion(credentialId, prfSaltBytes, transports);
+    } catch (err) {
+      throw abandon(err);
+    }
   }
 
   let keyBits = null;
@@ -390,8 +507,18 @@ export async function enableBiometricUnlock({ passphrase, vaultSalt, iterations,
     if (!stored) {
       throw new QuickUnlockError('failed', 'This browser would not save the setup.');
     }
+
+    // The replacement is on disk, so the one it replaced is safe to retire.
+    // Order matters: doing this any earlier would risk retiring the only
+    // working credential on a setup that then failed.
+    if (previous && previous.credentialId !== credentialId) {
+      retireCredential(previous.credentialId);
+    }
   } catch (err) {
-    forgetBiometricUnlock();
+    // keepCredential: this one is retired by abandon(), not by the record - the
+    // record may never have been written, and signalling twice is noise.
+    forgetBiometricUnlock({ keepCredential: true });
+    retireCredential(credentialId);
     if (err instanceof QuickUnlockError) throw err;
     throw new QuickUnlockError('failed', 'Quick unlock could not be set up.');
   } finally {
@@ -454,10 +581,16 @@ export async function unlockWithBiometric(vaultSalt) {
     return { key, iterations: Number.isFinite(record.iterations) ? record.iterations : null };
   } catch (err) {
     if (err instanceof QuickUnlockError) throw err;
-    // The blob failed its auth tag. It cannot start working again later, so
-    // clearing it here is what stops a permanent retry loop on the lock screen.
-    forgetBiometricUnlock();
-    throw new QuickUnlockError('stale', 'The saved key could not be opened.');
+
+    // ONLY an auth-tag failure proves the blob is permanently dead - AES-GCM
+    // reports that as OperationError. Wiping on *any* exception was too eager:
+    // a transient import failure would throw away a perfectly good enrolment
+    // and quietly demote her to typing the passphrase forever.
+    if (err && err.name === 'OperationError') {
+      forgetBiometricUnlock();
+      throw new QuickUnlockError('stale', 'The saved key could not be opened.');
+    }
+    throw new QuickUnlockError('failed', 'The saved key could not be read this time.');
   } finally {
     zero(keyBits);
     zero(prfOutput);

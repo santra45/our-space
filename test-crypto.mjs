@@ -3107,6 +3107,8 @@ async function run() {
     let counter = 0;
     let dismiss = false;
     let withholdPrf = false;
+    let denyPrfAtCreate = false;
+    const counts = { create: 0, get: 0 };
 
     const refuse = () => {
       const err = new Error('dismissed');
@@ -3116,8 +3118,14 @@ async function run() {
 
     return {
       secrets,
+      counts,
       dismissNext(v) {
         dismiss = v;
+      },
+      // A provider that says up front it will not do PRF. Believing it saves a
+      // second fingerprint prompt that could only ever fail.
+      denyPrfAtCreateNext(v) {
+        denyPrfAtCreate = v;
       },
       // The Android symptom: the fingerprint check passes, and the passkey
       // store simply does not do PRF.
@@ -3126,12 +3134,20 @@ async function run() {
       },
       credentials: {
         async create() {
+          counts.create += 1;
           if (dismiss) throw refuse();
           counter += 1;
           const rawId = new Uint8Array(16);
           rawId[0] = counter;
           const secret = crypto.getRandomValues(new Uint8Array(32));
           secrets.set(bioB64(rawId), secret);
+          if (denyPrfAtCreate) {
+            return {
+              rawId: rawId.buffer,
+              response: { getTransports: () => ['internal'] },
+              getClientExtensionResults: () => ({ prf: { enabled: false } }),
+            };
+          }
           return {
             rawId: rawId.buffer,
             response: { getTransports: () => ['internal'] },
@@ -3141,6 +3157,7 @@ async function run() {
           };
         },
         async get({ publicKey }) {
+          counts.get += 1;
           if (dismiss) throw refuse();
           const id = bioB64(new Uint8Array(publicKey.allowCredentials[0].id));
           const secret = secrets.get(id);
@@ -3156,6 +3173,8 @@ async function run() {
   }
 
   const bioStore = new Map();
+  /** Everything the app has asked the passkey provider to forget. */
+  const retired = [];
   const fakeAuth = makeFakeAuthenticator();
 
   const define = (name, value) =>
@@ -3168,8 +3187,12 @@ async function run() {
     crypto: globalThis.crypto,
     btoa: globalThis.btoa,
     atob: globalThis.atob,
+    location: { hostname: 'localhost' },
     PublicKeyCredential: {
       isUserVerifyingPlatformAuthenticatorAvailable: async () => true,
+      signalUnknownCredential: async (options) => {
+        retired.push(options);
+      },
     },
   });
   define('localStorage', {
@@ -3360,6 +3383,159 @@ async function run() {
   check(
     'the credential transports are stored, so unlock can skip the chooser',
     eq(bioStored.transports, ['internal'])
+  );
+
+  /* -- a provider that declines PRF up front is believed the first time ---- */
+
+  bio.forgetBiometricUnlock();
+  retired.length = 0;
+  fakeAuth.counts.create = 0;
+  fakeAuth.counts.get = 0;
+  fakeAuth.denyPrfAtCreateNext(true);
+
+  await checkThrows(
+    'a create() that reports prf.enabled:false reports no-prf',
+    () =>
+      bio.enableBiometricUnlock({
+        passphrase: bioPass,
+        vaultSalt: bioSalt,
+        iterations: bioIters,
+        normalize: true,
+      }),
+    (err) => err.code === 'no-prf'
+  );
+  check(
+    'and does NOT spend a second fingerprint prompt to be told the same thing',
+    fakeAuth.counts.create === 1 && fakeAuth.counts.get === 0
+  );
+  check(
+    'the passkey it just made is retired, not left in the password manager',
+    retired.length === 1
+  );
+  fakeAuth.denyPrfAtCreateNext(false);
+
+  /* -- retired ids are base64url, which is what the Signal API reads -------- */
+
+  check(
+    'the retired credential id carries no +, / or = padding',
+    retired.length === 1 && !/[+/=]/.test(retired[0].credentialId)
+  );
+  check(
+    'and it names the right relying party',
+    retired.length === 1 && retired[0].rpId === 'localhost'
+  );
+
+  /* -- a half-written record is "not set up", not a permanent failure ------ */
+
+  await bio.enableBiometricUnlock({
+    passphrase: bioPass,
+    vaultSalt: bioSalt,
+    iterations: bioIters,
+    normalize: true,
+  });
+  const bioMalformedKey = Array.from(bioStore.keys())[0];
+  const bioMalformed = JSON.parse(bioStore.get(bioMalformedKey));
+  bioStore.set(
+    bioMalformedKey,
+    JSON.stringify({ ...bioMalformed, wrapped: 'not valid base64 !!!' })
+  );
+  check(
+    'a record with an undecodable field reads as never set up',
+    bio.isBiometricEnrolled(bioSalt) === false
+  );
+  await checkThrows(
+    'and unlocking says so rather than failing forever',
+    () => bio.unlockWithBiometric(bioSalt),
+    (err) => err.code === 'stale'
+  );
+
+  /* -- only an auth-tag failure may destroy a working enrolment ------------ */
+
+  bio.forgetBiometricUnlock();
+  await bio.enableBiometricUnlock({
+    passphrase: bioPass,
+    vaultSalt: bioSalt,
+    iterations: bioIters,
+    normalize: true,
+  });
+
+  // A transient failure that is NOT AES-GCM rejecting the tag. Wiping on this
+  // would throw away a perfectly good setup and quietly demote her to typing
+  // the passphrase forever.
+  const bioRealCrypto = globalThis.crypto;
+  globalThis.window.crypto = {
+    getRandomValues: (a) => bioRealCrypto.getRandomValues(a),
+    subtle: {
+      importKey: (...a) => bioRealCrypto.subtle.importKey(...a),
+      deriveKey: (...a) => bioRealCrypto.subtle.deriveKey(...a),
+      deriveBits: (...a) => bioRealCrypto.subtle.deriveBits(...a),
+      encrypt: (...a) => bioRealCrypto.subtle.encrypt(...a),
+      sign: (...a) => bioRealCrypto.subtle.sign(...a),
+      decrypt: async () => {
+        throw new TypeError('simulated transient failure, not a bad auth tag');
+      },
+    },
+  };
+
+  await checkThrows(
+    'a non-OperationError during unseal reports failed, not stale',
+    () => bio.unlockWithBiometric(bioSalt),
+    (err) => err.code === 'failed'
+  );
+  globalThis.window.crypto = bioRealCrypto;
+  check(
+    'and leaves the enrolment alone, because nothing proved it was dead',
+    bio.isBiometricEnrolled(bioSalt) === true
+  );
+
+  /* -- re-enrolling for a NEW vault does not orphan the old passkey --------- */
+
+  // Starting a new space mints a new salt, which strands the sealed key. The UI
+  // offers "Set it up" in that state and never "Turn off", so if this path could
+  // not clear the old record by itself she would have no way through at all.
+  bio.forgetBiometricUnlock();
+  await bio.enableBiometricUnlock({
+    passphrase: bioPass,
+    vaultSalt: bioSalt,
+    iterations: bioIters,
+    normalize: true,
+  });
+  const bioOldId = JSON.parse(Array.from(bioStore.values())[0]).credentialId;
+
+  const bioNewVaultSalt = generateSalt();
+  retired.length = 0;
+  await bio.enableBiometricUnlock({
+    passphrase: bioPass,
+    vaultSalt: bioNewVaultSalt,
+    iterations: bioIters,
+    normalize: true,
+  });
+
+  check(
+    'setting up for a new space succeeds instead of being refused as a duplicate',
+    bio.isBiometricEnrolled(bioNewVaultSalt) === true
+  );
+  check(
+    'and the stranded passkey is retired rather than left behind',
+    retired.some(
+      (r) =>
+        r.credentialId === bioOldId.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+    )
+  );
+  check(
+    'exactly one enrolment record survives, not two',
+    bioStore.size === 1
+  );
+
+  /* -- turning it off retires the passkey too ------------------------------ */
+
+  retired.length = 0;
+  const bioLiveId = JSON.parse(Array.from(bioStore.values())[0]).credentialId;
+  bio.forgetBiometricUnlock();
+  check(
+    'turning quick unlock off retires its passkey rather than orphaning it',
+    retired.length === 1 &&
+      retired[0].credentialId === bioLiveId.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
   );
 
   /* -- forgetting it ------------------------------------------------------ */

@@ -668,6 +668,8 @@ export function SyncHubModal({ isOpen, onClose }) {
     unsupported: 'This phone will not do the fingerprint trick. Your passphrase still works.',
     'no-prf': 'This phone checked your fingerprint, but its passkeys cannot hold a key for us.',
     'no-vault': 'We could not read your space just now. Try again in a moment.',
+    'already-registered':
+      'This phone already has a key saved for us. Turn it off first, then set it up again.',
     failed: 'That did not finish. Try again in a moment.',
   };
 

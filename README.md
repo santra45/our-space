@@ -38,7 +38,7 @@ plain HTTP will not work.
 ```bash
 npm run build     # production build into dist/
 npm run preview   # serve the built output
-npm test          # crypto + sync test suite (356 assertions, plain node, no browser)
+npm test          # crypto + sync test suite (369 assertions, plain node, no browser)
 ```
 
 ---
@@ -137,7 +137,9 @@ Sync Hub → **Open with a touch** → *Set it up*, and type the passphrase once
 that the lock screen leads with a single button, with the passphrase still one tap away
 whenever you want it.
 
-It is per-device and entirely optional. Turning it off forgets the sealed key immediately.
+It is per-device and entirely optional. Turning it off forgets the sealed key and asks
+your password manager to drop the passkey that went with it, so nothing dead is left
+behind for you to clean up by hand.
 
 **What it costs.** Anyone who can unlock that phone can open your space. That is the whole
 trade — if it is not one you want on a particular device, do not turn it on there.
