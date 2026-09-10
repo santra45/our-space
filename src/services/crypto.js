@@ -234,6 +234,82 @@ export async function deriveKeyFromPassphrase(passphrase, saltBase64, options) {
 }
 
 /**
+ * Derives the vault key as RAW BITS instead of as a CryptoKey.
+ *
+ * WHY THIS EXISTS, AND WHY IT IS THIS NARROW
+ * Everywhere else the master key is deliberately non-extractable, so that not
+ * even script running in this page can read its bytes. Quick unlock needs those
+ * bytes exactly once - at enrolment - so it can seal them under a key that only
+ * this phone's own fingerprint sensor can reproduce.
+ *
+ * It uses deriveBits rather than an extractable deriveKey on purpose: that way
+ * an extractable CryptoKey never exists at all, so there is nothing for a later
+ * bug to hand to setVaultKey and nothing extra left sitting in the heap.
+ *
+ * The bits are byte-identical to what deriveKeyFromPassphrase produces for the
+ * same passphrase, salt and iteration count - PBKDF2 output is PBKDF2 output,
+ * and an AES-GCM-256 key is simply its first 256 bits.
+ *
+ * @param {string} passphrase
+ * @param {string} saltBase64
+ * @param {number|{ iterations?: number, normalize?: boolean }} [options]
+ * @returns {Promise<ArrayBuffer>} 32 raw bytes.
+ */
+export async function deriveVaultKeyBits(passphrase, saltBase64, options) {
+  const opts = typeof options === 'number' ? { iterations: options } : options || {};
+  const iterations = Number.isFinite(opts.iterations)
+    ? Math.floor(opts.iterations)
+    : PBKDF2_ITERATIONS_CURRENT;
+  const shouldNormalize = opts.normalize !== false;
+  const effective = shouldNormalize ? normalizePassphrase(passphrase) : passphrase;
+
+  if (typeof effective !== 'string' || effective.length < MIN_PASSPHRASE_LENGTH) {
+    throw new Error(`Passphrase must be at least ${MIN_PASSPHRASE_LENGTH} characters long`);
+  }
+  if (!isValidBase64(saltBase64)) {
+    throw new Error('Invalid vault salt');
+  }
+
+  const passphraseKey = await getCrypto().subtle.importKey(
+    'raw',
+    new TextEncoder().encode(effective),
+    { name: 'PBKDF2' },
+    false,
+    ['deriveBits']
+  );
+
+  return await getCrypto().subtle.deriveBits(
+    { name: 'PBKDF2', salt: base64ToBuffer(saltBase64), iterations, hash: 'SHA-256' },
+    passphraseKey,
+    AES_KEY_LENGTH
+  );
+}
+
+/**
+ * Rebuilds the master key from raw bits as a NON-EXTRACTABLE CryptoKey.
+ *
+ * This is the only door those bits are allowed back through: they go in, and
+ * what comes out can encrypt and decrypt but can never be exported again.
+ * Quick unlock calls it once the fingerprint check has handed back the bytes.
+ *
+ * @param {ArrayBuffer|Uint8Array} rawBits - 32 bytes.
+ * @returns {Promise<CryptoKey>} AES-GCM key, extractable: false.
+ */
+export async function importVaultKeyFromBits(rawBits) {
+  const bytes = rawBits instanceof Uint8Array ? rawBits : new Uint8Array(rawBits);
+  if (bytes.byteLength !== AES_KEY_LENGTH / 8) {
+    throw new Error('importVaultKeyFromBits: expected 32 bytes of key material');
+  }
+  return await getCrypto().subtle.importKey(
+    'raw',
+    bytes,
+    { name: 'AES-GCM', length: AES_KEY_LENGTH },
+    false,
+    ['encrypt', 'decrypt']
+  );
+}
+
+/**
  * Derives the vault key by trying every plausible derivation until one verifies.
  *
  * This is the function unlock paths should call. It transparently handles:

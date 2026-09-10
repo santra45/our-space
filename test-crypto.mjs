@@ -84,6 +84,8 @@ import {
   // kdf
   deriveKeyFromPassphrase,
   deriveKeyWithVerification,
+  deriveVaultKeyBits,
+  importVaultKeyFromBits,
   normalizePassphrase,
   PBKDF2_ITERATIONS_CURRENT,
   MIN_PASSPHRASE_LENGTH,
@@ -3071,6 +3073,261 @@ async function run() {
   peerSync.cryptoKey = burstSavedKey;
   peerSync.isAuthorized = burstSavedAuth;
 
+  /* ============================================================== 17
+   * QUICK UNLOCK (fingerprint / face)
+   *
+   * The real biometricUnlock.js runs here. Only two things are faked, and
+   * both are storage-shaped: localStorage, and the authenticator itself.
+   *
+   * The fake authenticator behaves like a real one where it matters - the
+   * same credential and the same salt produce the same 32 bytes, a different
+   * credential produces different bytes, and a dismissed prompt throws
+   * NotAllowedError. Everything the module does with those bytes is its own.
+   */
+  section('17. Quick unlock: sealing the vault key behind the phone sensor');
+
+  const bioB64 = (bytes) => Buffer.from(bytes).toString('base64');
+
+  /** Decrypts, or resolves null. A wrong key must fail a check, not crash the run. */
+  const bioOpens = async (sealed, key) => {
+    try {
+      return await decryptText(sealed.ciphertext, sealed.iv, key);
+    } catch {
+      return null;
+    }
+  };
+
+  async function fakePrf(secret, saltBytes) {
+    const k = await crypto.subtle.importKey('raw', secret, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+    return await crypto.subtle.sign('HMAC', k, saltBytes);
+  }
+
+  function makeFakeAuthenticator() {
+    const secrets = new Map();
+    let counter = 0;
+    let dismiss = false;
+
+    const refuse = () => {
+      const err = new Error('dismissed');
+      err.name = 'NotAllowedError';
+      return err;
+    };
+
+    return {
+      secrets,
+      dismissNext(v) {
+        dismiss = v;
+      },
+      credentials: {
+        async create() {
+          if (dismiss) throw refuse();
+          counter += 1;
+          const rawId = new Uint8Array(16);
+          rawId[0] = counter;
+          const secret = crypto.getRandomValues(new Uint8Array(32));
+          secrets.set(bioB64(rawId), secret);
+          return {
+            rawId: rawId.buffer,
+            // Like Chrome: PRF is enabled on create but returns no results,
+            // which forces the module down its second-ceremony path.
+            getClientExtensionResults: () => ({ prf: { enabled: true } }),
+          };
+        },
+        async get({ publicKey }) {
+          if (dismiss) throw refuse();
+          const id = bioB64(new Uint8Array(publicKey.allowCredentials[0].id));
+          const secret = secrets.get(id);
+          if (!secret) throw refuse();
+          const first = await fakePrf(secret, publicKey.extensions.prf.eval.first);
+          return { getClientExtensionResults: () => ({ prf: { results: { first } } }) };
+        },
+      },
+    };
+  }
+
+  const bioStore = new Map();
+  const fakeAuth = makeFakeAuthenticator();
+
+  const define = (name, value) =>
+    Object.defineProperty(globalThis, name, { value, configurable: true, writable: true });
+
+  // window must carry the real crypto/btoa/atob: crypto.js reaches for
+  // window.* the moment one exists, and every other section still needs it.
+  define('window', {
+    isSecureContext: true,
+    crypto: globalThis.crypto,
+    btoa: globalThis.btoa,
+    atob: globalThis.atob,
+    PublicKeyCredential: {
+      isUserVerifyingPlatformAuthenticatorAvailable: async () => true,
+    },
+  });
+  define('localStorage', {
+    getItem: (k) => (bioStore.has(k) ? bioStore.get(k) : null),
+    setItem: (k, v) => bioStore.set(k, String(v)),
+    removeItem: (k) => bioStore.delete(k),
+  });
+  define('navigator', { credentials: fakeAuth.credentials });
+
+  const bio = await import('./src/services/biometricUnlock.js');
+
+  const bioPass = 'quick-unlock-passphrase-16';
+  const bioSalt = generateSalt();
+  const bioIters = 2000;
+
+  /* -- the two new crypto primitives agree with the old derivation ------- */
+
+  const bioBits = await deriveVaultKeyBits(bioPass, bioSalt, { iterations: bioIters });
+  const bioFromBits = await importVaultKeyFromBits(bioBits);
+  const bioFromPass = await deriveKeyFromPassphrase(bioPass, bioSalt, { iterations: bioIters });
+
+  const bioProbe = await encryptText('same key or not', bioFromBits);
+  check(
+    'deriveVaultKeyBits produces the same key as deriveKeyFromPassphrase',
+    (await decryptText(bioProbe.ciphertext, bioProbe.iv, bioFromPass)) === 'same key or not'
+  );
+  check('importVaultKeyFromBits returns a NON-extractable key', bioFromBits.extractable === false);
+  await checkThrows(
+    'importVaultKeyFromBits rejects key material of the wrong size',
+    () => importVaultKeyFromBits(new Uint8Array(16))
+  );
+
+  /* -- enrol, then unlock ------------------------------------------------ */
+
+  await bio.enableBiometricUnlock({
+    passphrase: bioPass,
+    vaultSalt: bioSalt,
+    iterations: bioIters,
+    normalize: true,
+  });
+  check('enableBiometricUnlock stores a sealed record', bioStore.size === 1);
+
+  const bioRaw = Array.from(bioStore.values())[0];
+  check(
+    'the stored record does not contain the passphrase',
+    !bioRaw.includes(bioPass) && !bioRaw.includes(normalizePassphrase(bioPass))
+  );
+
+  const bioOpened = await bio.unlockWithBiometric(bioSalt);
+  const bioSecret = await encryptText('a letter only the vault key opens', bioFromPass);
+  check(
+    'unlockWithBiometric returns a key that opens real vault ciphertext',
+    (await bioOpens(bioSecret, bioOpened.key)) === 'a letter only the vault key opens'
+  );
+  check('the unsealed key is NON-extractable too', bioOpened.key.extractable === false);
+  check('the vault iteration count survives the round trip', bioOpened.iterations === bioIters);
+  check('isBiometricEnrolled agrees for this salt', bio.isBiometricEnrolled(bioSalt) === true);
+
+  /* -- a dismissed prompt must NOT destroy the enrolment ------------------ */
+
+  fakeAuth.dismissNext(true);
+  await checkThrows(
+    'a dismissed prompt reports cancelled, not failure',
+    () => bio.unlockWithBiometric(bioSalt),
+    (err) => err.code === 'cancelled'
+  );
+  fakeAuth.dismissNext(false);
+  check(
+    'a dismissed prompt leaves the enrolment intact',
+    bio.isBiometricEnrolled(bioSalt) === true && bioStore.size === 1
+  );
+
+  /* -- a sealed key is bound to ITS vault --------------------------------- */
+
+  const bioOtherSalt = generateSalt();
+  await checkThrows(
+    'a sealed key refuses a different vault salt',
+    () => bio.unlockWithBiometric(bioOtherSalt),
+    (err) => err.code === 'stale'
+  );
+  check(
+    'and clears itself, because it can never be useful again',
+    bioStore.size === 0 && bio.isBiometricEnrolled(bioSalt) === false
+  );
+
+  /* -- tampering with the sealed blob ------------------------------------- */
+
+  await bio.enableBiometricUnlock({
+    passphrase: bioPass,
+    vaultSalt: bioSalt,
+    iterations: bioIters,
+    normalize: true,
+  });
+  const bioKey = Array.from(bioStore.keys())[0];
+  const bioRecord = JSON.parse(bioStore.get(bioKey));
+  const bioFlipped = new Uint8Array(base64ToBuffer(bioRecord.wrapped));
+  bioFlipped[0] ^= 0xff;
+  bioStore.set(bioKey, JSON.stringify({ ...bioRecord, wrapped: bufferToBase64(bioFlipped) }));
+
+  await checkThrows(
+    'a flipped byte in the sealed key fails its auth tag',
+    () => bio.unlockWithBiometric(bioSalt),
+    (err) => err.code === 'stale'
+  );
+  check('a tampered record is cleared rather than retried forever', bioStore.size === 0);
+
+  /* -- another phone cannot open it --------------------------------------- */
+
+  await bio.enableBiometricUnlock({
+    passphrase: bioPass,
+    vaultSalt: bioSalt,
+    iterations: bioIters,
+    normalize: true,
+  });
+  // Same stored blob, different authenticator secret: exactly what copying
+  // localStorage to another device would look like.
+  for (const id of fakeAuth.secrets.keys()) {
+    fakeAuth.secrets.set(id, crypto.getRandomValues(new Uint8Array(32)));
+  }
+  await checkThrows(
+    'the sealed key is useless to a different authenticator',
+    () => bio.unlockWithBiometric(bioSalt),
+    (err) => err.code === 'stale'
+  );
+
+  /* -- the normalize flag is honoured, not assumed ------------------------ */
+
+  // A vault keyed on the RAW string, trailing space and all - what a phone
+  // keyboard produced before normalizePassphrase existed. Sealing the
+  // normalised bits here would unseal perfectly and then decrypt nothing.
+  const bioRawPass = 'trailing-space-passphrase ';
+  const bioRawSalt = generateSalt();
+  const bioRawKey = await deriveKeyFromPassphrase(bioRawPass, bioRawSalt, {
+    iterations: bioIters,
+    normalize: false,
+  });
+  check(
+    'the raw and normalised forms of that passphrase really do differ',
+    normalizePassphrase(bioRawPass) !== bioRawPass
+  );
+
+  await bio.enableBiometricUnlock({
+    passphrase: bioRawPass,
+    vaultSalt: bioRawSalt,
+    iterations: bioIters,
+    normalize: false,
+  });
+  const bioRawOpened = await bio.unlockWithBiometric(bioRawSalt);
+  const bioRawSecret = await encryptText('keyed on the raw string', bioRawKey);
+  check(
+    'normalize:false seals the bits the vault was actually built with',
+    (await bioOpens(bioRawSecret, bioRawOpened.key)) === 'keyed on the raw string'
+  );
+
+  /* -- forgetting it ------------------------------------------------------ */
+
+  bio.forgetBiometricUnlock();
+  check(
+    'forgetBiometricUnlock leaves nothing behind',
+    bioStore.size === 0 && bio.isBiometricEnrolled(bioRawSalt) === false
+  );
+  await checkThrows(
+    'and unlocking afterwards reports it is simply not set up',
+    () => bio.unlockWithBiometric(bioRawSalt),
+    (err) => err.code === 'stale'
+  );
+
+
   /* ------------------------------------------------------- verdict */
   console.log('\n' + '='.repeat(64));
   if (failures.length > 0) {
@@ -3090,6 +3347,8 @@ async function run() {
   console.log('  - peerSync transport: admission control, backoff, flood breaker, fatal close.');
   console.log('  - getSyncSafeTimestamp() localStorage floor, and softDelete() using it.');
   console.log('  - SecretCapsule retro-seal re-read/verify loop.');
+  console.log('  - The WebAuthn ceremony itself: section 17 fakes the authenticator,');
+  console.log('    so browser UI, platform support and PRF availability are untested.');
   console.log('Sections 11-15 run the SHIPPED db/index.js methods against an in-memory');
   console.log('table store; only the storage is fake, and the precedence rule is proved');
   console.log("to be peerSync's own by spying on it.");

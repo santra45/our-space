@@ -36,6 +36,7 @@ import {
   RefreshCw,
   CheckCircle2,
   AlertTriangle,
+  Fingerprint,
 } from 'lucide-react';
 import { useVault, DESTROY_CONFIRMATION_PHRASE, localDateString } from '../../context/VaultContext';
 import {
@@ -214,6 +215,9 @@ export function LockScreen() {
     vaultSalt,
     error: vaultError,
     clearError,
+    quickUnlockAvailable,
+    quickUnlockEnrolled,
+    unlockWithQuickUnlock,
   } = useVault();
 
   const [passphrase, setPassphrase] = useState('');
@@ -225,6 +229,13 @@ export function LockScreen() {
   const [mode, setMode] = useState('unlock'); // 'unlock' | 'setup' | 'join' | 'restore'
   const [loading, setLoading] = useState(false);
   const [localError, setLocalError] = useState(null);
+
+  /**
+   * When quick unlock is set up, the passphrase field starts out of the way -
+   * that is the entire point of the feature. It is always one tap from coming
+   * back, and it comes back on its own the moment quick unlock fails.
+   */
+  const [showPassphraseForm, setShowPassphraseForm] = useState(false);
 
   // Destructive-path confirmation state
   const [confirmText, setConfirmText] = useState('');
@@ -505,6 +516,33 @@ export function LockScreen() {
     }
   };
 
+  /** Quick unlock only leads the screen when it can actually work. */
+  const quickUnlockOffered = quickUnlockAvailable && quickUnlockEnrolled;
+
+  const handleQuickUnlock = async () => {
+    setLocalError(null);
+    if (vaultError) clearError();
+    setLoading(true);
+    tap();
+
+    const success = await unlockWithQuickUnlock();
+    setLoading(false);
+
+    if (success) {
+      if (inviteData && inviteData.partnerPeerId && !inviteIsForAnotherVault) {
+        rememberPartnerId(inviteData.partnerPeerId);
+      }
+      setPassphrase('');
+      celebration();
+      fireHeartConfetti();
+      return;
+    }
+
+    // Dismissed, failed, or stale - it does not matter which. She is standing
+    // at a locked door, so the other key goes back on the table.
+    setShowPassphraseForm(true);
+  };
+
   const handleUnlock = async (e) => {
     e.preventDefault();
     setLocalError(null);
@@ -767,7 +805,9 @@ export function LockScreen() {
                   <span>Locked</span>
                 </div>
                 <p className="text-xs text-slate-500 mt-2">
-                  Enter the passphrase you two share to open your memories and notes.
+                  {quickUnlockOffered && !showPassphraseForm
+                    ? 'One touch, and you are back in your memories and notes.'
+                    : 'Enter the passphrase you two share to open your memories and notes.'}
                 </p>
               </div>
 
@@ -792,45 +832,73 @@ export function LockScreen() {
                 </div>
               )}
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-1">
-                  Secret Passphrase
-                </label>
-                <div className="relative">
-                  <input
-                    type={showPassword ? 'text' : 'password'}
-                    value={passphrase}
-                    onChange={(e) => {
-                      setPassphrase(e.target.value);
-                      if (localError) setLocalError(null);
-                      if (vaultError) clearError();
-                    }}
-                    placeholder={`Enter your secret passphrase (min ${MIN_PASSPHRASE_LENGTH} chars)...`}
-                    required
-                    minLength={MIN_PASSPHRASE_LENGTH}
-                    autoFocus
-                    className="w-full px-4 py-3 pl-10 pr-11 bg-white/70 border border-blush-200 rounded-2xl text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-blush-400 placeholder:text-slate-400 transition"
-                  />
-                  <KeyRound className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
+              {quickUnlockOffered && !showPassphraseForm && (
+                <div className="space-y-3">
+                  <BouncyButton
+                    type="button"
+                    onClick={handleQuickUnlock}
+                    disabled={loading}
+                    className="w-full py-4 text-base font-bold shadow-md shadow-blush-300/40 gap-2"
+                  >
+                    <Fingerprint className="w-5 h-5" />
+                    <span>{loading ? 'Opening…' : 'Open with a touch 💕'}</span>
+                  </BouncyButton>
+
+                  {errorBanner}
+
                   <button
                     type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3.5 top-3.5 text-slate-400 hover:text-slate-600"
+                    onClick={() => setShowPassphraseForm(true)}
+                    className="w-full text-xs text-slate-400 hover:text-slate-600 underline"
                   >
-                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    Use the passphrase instead
                   </button>
                 </div>
-              </div>
+              )}
 
-              {errorBanner}
+              {(!quickUnlockOffered || showPassphraseForm) && (
+                <>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-600 mb-1">
+                      Secret Passphrase
+                    </label>
+                    <div className="relative">
+                      <input
+                        type={showPassword ? 'text' : 'password'}
+                        value={passphrase}
+                        onChange={(e) => {
+                          setPassphrase(e.target.value);
+                          if (localError) setLocalError(null);
+                          if (vaultError) clearError();
+                        }}
+                        placeholder={`Enter your secret passphrase (min ${MIN_PASSPHRASE_LENGTH} chars)...`}
+                        required
+                        minLength={MIN_PASSPHRASE_LENGTH}
+                        autoFocus
+                        className="w-full px-4 py-3 pl-10 pr-11 bg-white/70 border border-blush-200 rounded-2xl text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-blush-400 placeholder:text-slate-400 transition"
+                      />
+                      <KeyRound className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword(!showPassword)}
+                        className="absolute right-3.5 top-3.5 text-slate-400 hover:text-slate-600"
+                      >
+                        {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </div>
 
-              <BouncyButton
-                type="submit"
-                disabled={loading || !passphrase.trim()}
-                className="w-full py-3.5 text-base font-bold shadow-md shadow-blush-300/40"
-              >
-                {loading ? 'Opening…' : 'Unlock Our Space 💕'}
-              </BouncyButton>
+                  {errorBanner}
+
+                  <BouncyButton
+                    type="submit"
+                    disabled={loading || !passphrase.trim()}
+                    className="w-full py-3.5 text-base font-bold shadow-md shadow-blush-300/40"
+                  >
+                    {loading ? 'Opening…' : 'Unlock Our Space 💕'}
+                  </BouncyButton>
+                </>
+              )}
 
               <div className="pt-2 flex flex-col gap-1.5 text-center">
                 <button

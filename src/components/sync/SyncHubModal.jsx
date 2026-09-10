@@ -25,6 +25,7 @@ import {
   Download,
   Upload,
   ShieldCheck,
+  Fingerprint,
   ShieldAlert,
   Zap,
   HelpCircle,
@@ -491,7 +492,19 @@ export function SyncHubModal({ isOpen, onClose }) {
     syncNow,
     connectionType,
   } = useSync();
-  const { vaultSalt, vaultConfig, cryptoKey } = useVault();
+  const {
+    vaultSalt,
+    vaultConfig,
+    cryptoKey,
+    quickUnlockAvailable,
+    quickUnlockEnrolled,
+    enableQuickUnlock,
+    disableQuickUnlock,
+  } = useVault();
+  const [quickUnlockPassphrase, setQuickUnlockPassphrase] = useState('');
+  const [quickUnlockOpen, setQuickUnlockOpen] = useState(false);
+  const [quickUnlockBusy, setQuickUnlockBusy] = useState(false);
+  const [quickUnlockNote, setQuickUnlockNote] = useState('');
   const [partnerInputId, setPartnerInputId] = useState('');
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [copySuccess, setCopySuccess] = useState(false);
@@ -637,6 +650,33 @@ export function SyncHubModal({ isOpen, onClose }) {
     setPassphrasePrompt(null);
     setPromptError('');
     setPromptBusy(false);
+  };
+
+  const handleTurnOnQuickUnlock = async (e) => {
+    e.preventDefault();
+    tap();
+    setQuickUnlockNote('');
+    setQuickUnlockBusy(true);
+
+    const ok = await enableQuickUnlock(quickUnlockPassphrase);
+
+    setQuickUnlockBusy(false);
+    if (ok) {
+      setQuickUnlockPassphrase('');
+      setQuickUnlockOpen(false);
+      setQuickUnlockNote('Done. Next time, just a touch. 💕');
+      return;
+    }
+    // enableQuickUnlock already told her what went wrong, in the banner that
+    // VaultProvider renders. Saying it twice here would just be noise.
+  };
+
+  const handleTurnOffQuickUnlock = () => {
+    tap();
+    disableQuickUnlock();
+    setQuickUnlockPassphrase('');
+    setQuickUnlockOpen(false);
+    setQuickUnlockNote('Turned off. Your passphrase still opens everything.');
   };
 
   const handleExportBackup = () => {
@@ -1114,6 +1154,87 @@ export function SyncHubModal({ isOpen, onClose }) {
             Only pair with a code you recognise.
           </p>
         </div>
+
+        {/* Quick unlock. Only offered where the hardware can actually do it -
+            on a device without a sensor this section simply is not there. */}
+        {quickUnlockAvailable && (
+          <div className="pt-3 border-t border-slate-100 mb-4">
+            <p className="text-[11px] font-bold text-slate-600 mb-2 flex items-center gap-1.5">
+              <Fingerprint className="w-3.5 h-3.5 text-blush-500" />
+              <span>Open with a touch</span>
+            </p>
+
+            {quickUnlockEnrolled ? (
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-[10px] text-slate-500 leading-relaxed flex-1">
+                  This phone opens your space with your fingerprint or face.
+                </p>
+                <button
+                  type="button"
+                  onClick={handleTurnOffQuickUnlock}
+                  className="text-[11px] font-bold text-slate-500 hover:text-rose-600 underline shrink-0"
+                >
+                  Turn off
+                </button>
+              </div>
+            ) : quickUnlockOpen ? (
+              <form onSubmit={handleTurnOnQuickUnlock} className="space-y-2">
+                <p className="text-[10px] text-slate-500 leading-relaxed">
+                  Type your passphrase once more and this phone will remember it for you.
+                  Anyone who can unlock this phone will be able to open your space.
+                </p>
+                <input
+                  type="password"
+                  value={quickUnlockPassphrase}
+                  onChange={(e) => setQuickUnlockPassphrase(e.target.value)}
+                  placeholder="Your passphrase"
+                  autoComplete="current-password"
+                  className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blush-400"
+                />
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setQuickUnlockOpen(false);
+                      setQuickUnlockPassphrase('');
+                    }}
+                    className="py-2 rounded-xl border border-slate-200 text-[11px] font-bold text-slate-600 hover:bg-slate-50"
+                  >
+                    Not now
+                  </button>
+                  <BouncyButton
+                    type="submit"
+                    disabled={quickUnlockBusy || !quickUnlockPassphrase.trim()}
+                    className="py-2 text-[11px] font-bold disabled:opacity-50"
+                  >
+                    {quickUnlockBusy ? 'Setting up…' : 'Set it up'}
+                  </BouncyButton>
+                </div>
+              </form>
+            ) : (
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-[10px] text-slate-500 leading-relaxed flex-1">
+                  Skip typing the passphrase on this phone every time.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    tap();
+                    setQuickUnlockNote('');
+                    setQuickUnlockOpen(true);
+                  }}
+                  className="text-[11px] font-bold text-blush-600 hover:text-blush-700 underline shrink-0"
+                >
+                  Set it up
+                </button>
+              </div>
+            )}
+
+            {quickUnlockNote && (
+              <p className="text-[10px] text-emerald-600 font-semibold mt-2">{quickUnlockNote}</p>
+            )}
+          </div>
+        )}
 
         {/* Encrypted Backup & Restore section */}
         <div className="pt-3 border-t border-slate-100">

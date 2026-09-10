@@ -51,6 +51,13 @@ import {
   PBKDF2_ITERATIONS_CURRENT,
 } from '../services/crypto';
 import { setVaultKey, getVaultKey, clearVaultKey, subscribeVaultKey } from '../services/vaultKey';
+import {
+  isBiometricAvailable,
+  isBiometricEnrolled,
+  enableBiometricUnlock,
+  unlockWithBiometric,
+  forgetBiometricUnlock,
+} from '../services/biometricUnlock';
 import peerSync from '../services/peerSync';
 
 const VaultContext = createContext(null);
@@ -158,6 +165,27 @@ export function VaultProvider({ children }) {
   const [error, setError] = useState(null);
   const [warning, setWarning] = useState(null);
 
+  /**
+   * Quick unlock (fingerprint / face) on THIS device.
+   *
+   * 'available' is about the hardware and is asked once. 'enrolled' is about
+   * this particular vault and is re-asked whenever the salt moves, because
+   * starting a new space or restoring a backup strands the old sealed key.
+   */
+  const [quickUnlock, setQuickUnlock] = useState({ available: false, enrolled: false });
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const available = await isBiometricAvailable();
+      if (cancelled) return;
+      setQuickUnlock({ available, enrolled: available && isBiometricEnrolled(vaultSalt) });
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [vaultSalt]);
+
   const clearError = useCallback(() => setError(null), []);
   const clearWarning = useCallback(() => setWarning(null), []);
 
@@ -234,6 +262,149 @@ export function VaultProvider({ children }) {
     },
     [adoptKey]
   );
+
+  /**
+   * Reads vaultMeta for a flow that cannot continue without it.
+   * @returns {Promise<Object|null>}
+   */
+  const readMetaOrExplain = useCallback(async () => {
+    let meta;
+    try {
+      meta = await db.vaultMeta.get('config');
+    } catch (err) {
+      console.error('Could not read vault metadata:', err);
+      setError('We could not open your space. Try again in a moment.');
+      return null;
+    }
+    if (!meta || !meta.salt) {
+      setError('There is nothing here yet. Start your space, or join your partner’s.');
+      return null;
+    }
+    return meta;
+  }, []);
+
+  /**
+   * Opens the vault with this device's fingerprint or face.
+   *
+   * A dismissed prompt is NOT an error - she may simply have changed her mind,
+   * and the passphrase form is sitting right there. It returns false quietly and
+   * says nothing.
+   *
+   * @returns {Promise<boolean>}
+   */
+  const unlockWithQuickUnlock = useCallback(async () => {
+    setError(null);
+
+    const meta = await readMetaOrExplain();
+    if (!meta) return false;
+
+    let result;
+    try {
+      result = await unlockWithBiometric(meta.salt);
+    } catch (err) {
+      const code = err && err.code;
+      if (code === 'cancelled') return false;
+      setQuickUnlock((prev) => ({ ...prev, enrolled: isBiometricEnrolled(meta.salt) }));
+      setError(
+        code === 'stale'
+          ? 'Quick unlock needs setting up again on this phone. Use your passphrase just this once.'
+          : code === 'unsupported'
+            ? 'This phone cannot do quick unlock. Your passphrase still works.'
+            : 'That did not work. Use your passphrase just this once.'
+      );
+      return false;
+    }
+
+    // THE KEY IS NOT TRUSTED YET. It unsealed, which only proves the phone's
+    // sensor agreed - not that these bytes still open this vault. Without the
+    // canary a sealed key left over from an older vault would be adopted as
+    // working and then fail on every single record it touched.
+    let payload = null;
+    try {
+      payload = await readCanary(result.key, meta);
+    } catch {
+      payload = null;
+    }
+    if (!payload) {
+      forgetBiometricUnlock();
+      setQuickUnlock((prev) => ({ ...prev, enrolled: false }));
+      setError('Quick unlock needs setting up again on this phone. Use your passphrase for now.');
+      return false;
+    }
+
+    adoptKey(
+      result.key,
+      meta.salt,
+      result.iterations || meta.kdfIterations || PBKDF2_ITERATIONS_CURRENT,
+      {
+        coupleNames: sanitizeCoupleNames(payload.coupleNames),
+        startDate: payload.startDate || '',
+        updatedAt: payload.updatedAt || meta.updatedAt || 0,
+      }
+    );
+    return true;
+  }, [adoptKey, readMetaOrExplain]);
+
+  /**
+   * Sets quick unlock up on this device.
+   *
+   * The passphrase is proved against the vault FIRST. Enrolling on an unverified
+   * passphrase would seal a key that opens nothing, and the only symptom would
+   * be a fingerprint prompt that succeeds and then refuses to let her in.
+   *
+   * @param {string} passphrase
+   * @returns {Promise<boolean>}
+   */
+  const enableQuickUnlock = useCallback(
+    async (passphrase) => {
+      setError(null);
+
+      const meta = await readMetaOrExplain();
+      if (!meta) return false;
+
+      let derived;
+      try {
+        derived = await deriveKeyWithVerification(
+          passphrase,
+          meta.salt,
+          async (candidate) => !!(await readCanary(candidate, meta)),
+          { iterations: meta.kdfIterations }
+        );
+      } catch {
+        setError('That passphrase does not match this space. Double-check and try again.');
+        return false;
+      }
+
+      try {
+        await enableBiometricUnlock({
+          passphrase,
+          vaultSalt: meta.salt,
+          iterations: derived.iterations,
+          normalize: derived.normalized,
+        });
+      } catch (err) {
+        const code = err && err.code;
+        if (code !== 'cancelled') {
+          setError(
+            code === 'unsupported'
+              ? 'This phone cannot do quick unlock.'
+              : 'We could not set that up. Try again in a moment.'
+          );
+        }
+        return false;
+      }
+
+      setQuickUnlock((prev) => ({ ...prev, enrolled: true }));
+      return true;
+    },
+    [readMetaOrExplain]
+  );
+
+  /** Forgets the sealed key on this device. The passphrase is unaffected. */
+  const disableQuickUnlock = useCallback(() => {
+    forgetBiometricUnlock();
+    setQuickUnlock((prev) => ({ ...prev, enrolled: false }));
+  }, []);
 
   const checkCancelledRef = useRef(false);
 
@@ -909,6 +1080,11 @@ export function VaultProvider({ children }) {
         unlockVault,
         lockVault,
         updateVaultSettings,
+        quickUnlockAvailable: quickUnlock.available,
+        quickUnlockEnrolled: quickUnlock.enrolled,
+        unlockWithQuickUnlock,
+        enableQuickUnlock,
+        disableQuickUnlock,
       }}
     >
       {children}
