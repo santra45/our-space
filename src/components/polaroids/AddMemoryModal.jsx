@@ -104,7 +104,7 @@ export function AddMemoryModal({ isOpen, onClose, cryptoKey }) {
 
       // Step 1: shrink on the canvas. Throws (rather than passing the raw
       // original through) if the browser cannot re-encode it.
-      setStatusText('Optimizing photo...');
+      setStatusText('Getting it ready...');
       const { blob, mime } = await compressImage(selectedFile, {
         maxWidth: 1440,
         maxHeight: 1440,
@@ -309,7 +309,7 @@ export function AddMemoryModal({ isOpen, onClose, cryptoKey }) {
               disabled={saving || !selectedFile}
               className="w-full py-3 text-sm font-bold shadow-md shadow-blush-300/40"
             >
-              {saving ? statusText || 'Developing Polaroid...' : 'Develop Polaroid & Save 💕'}
+              {saving ? statusText || 'Developing Polaroid...' : 'Pin it up 💕'}
             </BouncyButton>
           </form>
         </motion.div>
