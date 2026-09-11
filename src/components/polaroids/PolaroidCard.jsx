@@ -190,7 +190,11 @@ function PolaroidCardBase({ memory, cryptoKey, onSelect }) {
 
       {/* Handwritten caption and date stamp */}
       <div className="mt-3 px-1 text-center">
-        <p className="font-handwriting text-xl text-slate-800 leading-tight truncate">
+        {/* Two lines, not one. `truncate` cut every caption on the wall to about
+            eleven characters - "the night you stayed up till 4am with me" came
+            out as "the night y..." - and the caption is the point of a polaroid.
+            The lightbox still shows it whole. */}
+        <p className="font-handwriting text-xl text-slate-800 leading-tight line-clamp-2 break-words">
           {caption || 'A special moment'}
         </p>
         <p className="text-[10px] text-slate-400 font-mono mt-0.5">
