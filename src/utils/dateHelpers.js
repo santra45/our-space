@@ -124,15 +124,16 @@ export function calculateLoveDuration(startDateStr) {
  * straight past it to the next one.
  *
  * @param {string} startDateStr
+ * @param {Date} [now] - The real clock by default. Tests pass one, so that
+ *   "today" is a fixed date rather than whatever day the suite runs on.
  * @returns {{ anniversary: Object, hundredDay: Object }|null}
  */
-export function calculateNextMilestone(startDateStr) {
+export function calculateNextMilestone(startDateStr, now = new Date()) {
   if (!startDateStr) return null;
 
   const start = parseLocalDate(startDateStr);
   if (Number.isNaN(start.getTime())) return null;
 
-  const now = new Date();
   const today = startOfLocalDay(now);
 
   let nextAnniversary = new Date(
@@ -150,6 +151,24 @@ export function calculateNextMilestone(startDateStr) {
   if (nextAnniversary.getTime() < today.getTime()) {
     nextAnniversary = new Date(
       today.getFullYear() + 1,
+      start.getMonth(),
+      start.getDate(),
+      0,
+      0,
+      0,
+      0
+    );
+  }
+
+  // The first anniversary is a year AFTER the start - never the start itself.
+  // On the start day, which is exactly what a brand-new space defaults to,
+  // "this year's" anniversary came out as today and the card read
+  // "Today! Year 0 Celebration": a party for zero years together, on the
+  // first screen she would ever see. The same guard covers a start date set
+  // in the future, which otherwise also reported year 0.
+  if (nextAnniversary.getFullYear() <= start.getFullYear()) {
+    nextAnniversary = new Date(
+      start.getFullYear() + 1,
       start.getMonth(),
       start.getDate(),
       0,

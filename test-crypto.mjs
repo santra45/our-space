@@ -3940,6 +3940,43 @@ async function run() {
   );
 
 
+  /* =============================================================== 19
+   * ANNIVERSARIES
+   *
+   * A brand-new space defaults its start date to today, so day zero is the
+   * FIRST screen anyone sees - and it used to throw a party for it.
+   */
+  section('19. Anniversaries: day zero is not one');
+
+  const { calculateNextMilestone } = await import('./src/utils/dateHelpers.js');
+  // Local noon, so neither a timezone nor a DST boundary can move the day.
+  const annNoon = (y, m, d) => new Date(y, m - 1, d, 12, 0, 0, 0);
+
+  const annZero = calculateNextMilestone('2026-09-11', annNoon(2026, 9, 11));
+  check(
+    'on the start day the next anniversary is a year away, not today',
+    annZero.anniversary.daysLeft === 365
+  );
+  check('and it is year 1, never year 0', annZero.anniversary.year === 1);
+
+  const annNext = calculateNextMilestone('2026-09-11', annNoon(2026, 9, 12));
+  check(
+    'the day after the start counts down to year 1',
+    annNext.anniversary.year === 1 && annNext.anniversary.daysLeft === 364
+  );
+
+  // The guard must not swallow a REAL anniversary.
+  const annReal = calculateNextMilestone('2025-09-11', annNoon(2026, 9, 11));
+  check('on a real first anniversary it is still today', annReal.anniversary.daysLeft === 0);
+  check('and it is year 1', annReal.anniversary.year === 1);
+
+  const annYears = calculateNextMilestone('2024-03-10', annNoon(2026, 9, 11));
+  check('a couple of years in, it counts to the right year', annYears.anniversary.year === 3);
+
+  const annFuture = calculateNextMilestone('2026-12-01', annNoon(2026, 9, 11));
+  check('a start date set in the future never reports year 0', annFuture.anniversary.year >= 1);
+
+
   /* ------------------------------------------------------- verdict */
   console.log('\n' + '='.repeat(64));
   if (failures.length > 0) {

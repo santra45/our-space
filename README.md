@@ -40,7 +40,7 @@ plain HTTP will not work.
 ```bash
 npm run build     # production build into dist/
 npm run preview   # serve the built output
-npm test          # crypto + sync test suite (404 assertions, plain node, no browser)
+npm test          # crypto + sync test suite (411 assertions, plain node, no browser)
 ```
 
 ---
