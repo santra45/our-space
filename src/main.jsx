@@ -9,6 +9,14 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App.jsx';
+// The handwriting face the cute parts lean on - polaroid captions, the daily
+// question, letters. Bundled, not fetched: the Content-Security-Policy only
+// allows fonts from our own origin, so a Google Fonts link would be blocked.
+// Before this the app asked for "Caveat" and never shipped it, so every
+// device fell back to whatever it had - Segoe Print on Windows, which looks
+// right, and something else entirely on the phones this is actually for.
+// Only weight 400 is used anywhere.
+import '@fontsource/caveat/400.css';
 import './index.css';
 
 /**
