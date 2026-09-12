@@ -156,7 +156,7 @@ export function QRScannerModal({ isOpen, onClose, onScanSuccess }) {
 
         <div className="text-center mb-4">
           <h3 className="text-base font-bold">Scan Partner's QR</h3>
-          <p className="text-xs text-slate-400">Point your camera at her screen to pair</p>
+          <p className="text-xs text-slate-400">Point your camera at their screen to pair</p>
         </div>
 
         {cameraError ? (

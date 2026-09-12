@@ -153,11 +153,11 @@ export function DailyQuestion() {
 
         <p className="text-[11px] text-slate-500 mt-2">
           {bothIn
-            ? 'You both answered. Tap to read hers 💕'
+            ? 'You both answered. Tap to read both 💕'
             : answered
-              ? 'Answered. Hers appears the moment she writes one.'
+              ? "Answered. Your partner's appears the moment they write one."
               : partnerWaiting
-                ? 'She has already answered. Yours unlocks it 💕'
+                ? 'Your partner has already answered. Yours unlocks it 💕'
                 : 'Tap to answer'}
         </p>
       </motion.button>
@@ -197,7 +197,7 @@ export function DailyQuestion() {
                         <div className="flex items-start gap-2 p-2.5 rounded-2xl bg-lavender-50 border border-lavender-100">
                           <Lock className="w-4 h-4 text-lavender-400 shrink-0 mt-0.5" />
                           <p className="text-[11px] leading-relaxed text-lavender-700">
-                            She has answered already. Write yours and you will both be able to
+                            Your partner has answered already. Write yours and you will both be able to
                             read them.
                           </p>
                         </div>
@@ -228,7 +228,7 @@ export function DailyQuestion() {
                       </BouncyButton>
 
                       <p className="text-[10px] text-slate-400 text-center leading-relaxed">
-                        You will not see hers until you have written yours.
+                        You will not see your partner&apos;s until you have written yours.
                       </p>
                     </form>
                   ) : (
@@ -254,7 +254,7 @@ export function DailyQuestion() {
                       ) : (
                         <div className="p-3 rounded-2xl bg-slate-50 border border-slate-100 text-center">
                           <p className="text-[11px] text-slate-500 leading-relaxed">
-                            Nothing from her yet today. It will appear here on its own.
+                            Nothing from your partner yet today. It will appear here on its own.
                           </p>
                         </div>
                       )}

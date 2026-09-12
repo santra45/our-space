@@ -1153,7 +1153,7 @@ export function SyncHubModal({ isOpen, onClose }) {
               className="inline-flex items-center gap-1 text-xs font-bold text-blush-600 hover:text-blush-700"
             >
               <Camera className="w-3.5 h-3.5" />
-              <span>Scan Her QR</span>
+              <span>Scan Partner's QR</span>
             </button>
           </div>
 

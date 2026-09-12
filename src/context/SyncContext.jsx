@@ -525,7 +525,7 @@ export function SyncProvider({ children }) {
       peerSync.broadcastLiveRecord(LOVE_BURST_TABLE, row);
       setLastSyncNotice('Love burst sent to partner! 💕');
     } else {
-      setLastSyncNotice('Saved 💕 She will see it the moment you two connect.');
+      setLastSyncNotice('Saved 💕 Your partner will see it the moment you two connect.');
     }
     return true;
   };
