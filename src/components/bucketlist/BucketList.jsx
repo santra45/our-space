@@ -14,7 +14,7 @@
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Plus, Check, Trophy, Trash2, AlertTriangle } from 'lucide-react';
+import { Plus, Check, Trophy, Trash2, AlertTriangle, Pencil } from 'lucide-react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import db from '../../db';
 import { useVault } from '../../context/VaultContext';
@@ -168,6 +168,9 @@ export function BucketList() {
   const [items, setItems] = useState([]);
   const [skippedCount, setSkippedCount] = useState(0);
   const [error, setError] = useState('');
+  const [editingId, setEditingId] = useState(null);
+  const [editText, setEditText] = useState('');
+  const [editCategory, setEditCategory] = useState('Romance');
   const { tap, celebration } = useHaptics();
 
   // Raw rows only. Everything worth filtering on is encrypted, so the query
@@ -364,6 +367,56 @@ export function BucketList() {
     [cryptoKey, tap]
   );
 
+  const handleStartEdit = useCallback(
+    (e, item) => {
+      e.stopPropagation();
+      tap();
+      setEditingId(item.id);
+      setEditText(item.text);
+      setEditCategory(item.category || 'Romance');
+    },
+    [tap]
+  );
+
+  const handleCancelEdit = useCallback(
+    (e) => {
+      if (e) e.stopPropagation();
+      tap();
+      setEditingId(null);
+      setEditText('');
+    },
+    [tap]
+  );
+
+  const handleSaveEdit = useCallback(
+    async (e, item) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const text = editText.trim();
+      if (!text || !cryptoKey) return;
+      tap();
+
+      try {
+        const row = await db.putEncrypted(
+          'bucketList',
+          {
+            ...stripInternalFields(item),
+            text,
+            category: editCategory,
+            updatedAt: nextTimestamp(),
+          },
+          cryptoKey
+        );
+        peerSync.broadcastLiveRecord('bucketList', row);
+        setEditingId(null);
+        setError('');
+      } catch {
+        setError('Could not save that dream. Our Space may have locked.');
+      }
+    },
+    [editText, editCategory, cryptoKey, tap]
+  );
+
   const handleAddItem = useCallback(
     async (e) => {
       e.preventDefault();
@@ -466,14 +519,14 @@ export function BucketList() {
             <label className="block text-xs font-semibold text-slate-600 mb-1">
               New Dream or Adventure
             </label>
-            <input
-              type="text"
+            <textarea
               value={newItemText}
               onChange={(e) => setNewItemText(e.target.value)}
               placeholder="e.g. Visit the Northern Lights..."
               required
               autoFocus
-              className="w-full px-3 py-2 text-xs bg-white border border-blush-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blush-400"
+              rows={2}
+              className="w-full px-3 py-2 text-xs bg-white border border-blush-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blush-400 resize-none"
             />
           </div>
 
@@ -502,60 +555,126 @@ export function BucketList() {
           <motion.div
             key={item.id}
             layout
-            onClick={() => toggleComplete(item)}
-            className={`p-3.5 rounded-2xl border transition flex items-center justify-between cursor-pointer select-none relative overflow-hidden group ${
-              item.completed
-                ? 'bg-matcha-50/70 border-matcha-200/80'
-                : 'bg-white/80 border-blush-100 hover:border-blush-300'
+            onClick={() => {
+              if (editingId !== item.id) {
+                toggleComplete(item);
+              }
+            }}
+            className={`p-3.5 rounded-2xl border transition relative overflow-hidden group ${
+              editingId === item.id
+                ? 'bg-white border-blush-300 shadow-md cursor-default'
+                : item.completed
+                ? 'bg-matcha-50/70 border-matcha-200/80 cursor-pointer select-none'
+                : 'bg-white/80 border-blush-100 hover:border-blush-300 cursor-pointer select-none'
             }`}
           >
-            <div className="flex items-center gap-3 pr-2 flex-1 min-w-0">
-              <div
-                className={`w-6 h-6 rounded-xl flex items-center justify-center transition flex-shrink-0 ${
-                  item.completed
-                    ? 'bg-matcha-300 text-emerald-900 shadow-sm'
-                    : 'border-2 border-blush-300 bg-white'
-                }`}
+            {editingId === item.id ? (
+              <form
+                onSubmit={(e) => handleSaveEdit(e, item)}
+                onClick={(e) => e.stopPropagation()}
+                className="space-y-2.5 w-full"
               >
-                {item.completed && <Check className="w-3.5 h-3.5 stroke-[3]" />}
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                    Edit Dream or Goal
+                  </label>
+                  <textarea
+                    value={editText}
+                    onChange={(e) => setEditText(e.target.value)}
+                    rows={2}
+                    required
+                    autoFocus
+                    className="w-full px-3 py-2 text-xs bg-white border border-blush-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blush-400 resize-none"
+                    placeholder="e.g. Visit the Northern Lights..."
+                  />
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                  <select
+                    value={editCategory}
+                    onChange={(e) => setEditCategory(e.target.value)}
+                    className="px-2.5 py-1.5 text-xs bg-white border border-blush-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blush-400"
+                  >
+                    <option value="Romance">Romance 💕</option>
+                    <option value="Travel">Travel ✈️</option>
+                    <option value="Adventures">Adventures 🌲</option>
+                    <option value="Silly">Silly & Fun 🤪</option>
+                  </select>
+
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={handleCancelEdit}
+                      className="py-1 px-2.5 text-xs text-slate-500 hover:text-slate-700 rounded-xl border border-slate-200 hover:bg-slate-50 transition font-medium"
+                    >
+                      Cancel
+                    </button>
+                    <BouncyButton type="submit" className="py-1 px-3 text-xs font-bold">
+                      Save
+                    </BouncyButton>
+                  </div>
+                </div>
+              </form>
+            ) : (
+              <div className="flex items-start justify-between gap-2 w-full">
+                <div className="flex items-start gap-3 pr-2 flex-1 min-w-0">
+                  <div
+                    className={`w-6 h-6 rounded-xl flex items-center justify-center transition flex-shrink-0 mt-0.5 ${
+                      item.completed
+                        ? 'bg-matcha-300 text-emerald-900 shadow-sm'
+                        : 'border-2 border-blush-300 bg-white'
+                    }`}
+                  >
+                    {item.completed && <Check className="w-3.5 h-3.5 stroke-[3]" />}
+                  </div>
+
+                  <div className="min-w-0 flex-1">
+                    <span
+                      className={`text-xs font-semibold leading-snug transition-all block break-all whitespace-pre-wrap min-w-0 ${
+                        item.completed ? 'line-through text-slate-400' : 'text-slate-700'
+                      }`}
+                    >
+                      {item.text}
+                    </span>
+                    <span className="block text-[10px] text-slate-400 font-medium mt-1">
+                      {item.category}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-1 flex-shrink-0 mt-0.5">
+                  {/* Completed Stamp Effect */}
+                  {item.completed && (
+                    <motion.div
+                      initial={{ scale: 2, rotate: -20, opacity: 0 }}
+                      animate={{ scale: 1, rotate: -8, opacity: 0.85 }}
+                      className="border-2 border-emerald-600 text-emerald-700 uppercase font-black text-[10px] px-2 py-0.5 rounded-md tracking-wider pointer-events-none mr-1"
+                    >
+                      COMPLETED
+                    </motion.div>
+                  )}
+
+                  {/* Edit Button */}
+                  <button
+                    type="button"
+                    onClick={(e) => handleStartEdit(e, item)}
+                    className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-300 hover:text-blush-500 hover:bg-blush-50 transition"
+                    title="Edit dream"
+                  >
+                    <Pencil className="w-3.5 h-3.5" />
+                  </button>
+
+                  {/* Delete Button */}
+                  <button
+                    type="button"
+                    onClick={(e) => handleDeleteItem(e, item.id)}
+                    className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-300 hover:text-rose-500 hover:bg-rose-50 transition"
+                    title="Delete dream"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
               </div>
-
-              <div className="min-w-0">
-                <span
-                  className={`text-xs font-semibold leading-snug transition-all block truncate ${
-                    item.completed ? 'line-through text-slate-400' : 'text-slate-700'
-                  }`}
-                >
-                  {item.text}
-                </span>
-                <span className="block text-[10px] text-slate-400 font-medium mt-0.5">
-                  {item.category}
-                </span>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2 flex-shrink-0">
-              {/* Completed Stamp Effect */}
-              {item.completed && (
-                <motion.div
-                  initial={{ scale: 2, rotate: -20, opacity: 0 }}
-                  animate={{ scale: 1, rotate: -8, opacity: 0.85 }}
-                  className="border-2 border-emerald-600 text-emerald-700 uppercase font-black text-[10px] px-2 py-0.5 rounded-md tracking-wider pointer-events-none"
-                >
-                  COMPLETED
-                </motion.div>
-              )}
-
-              {/* Delete Button */}
-              <button
-                type="button"
-                onClick={(e) => handleDeleteItem(e, item.id)}
-                className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-300 hover:text-rose-500 hover:bg-rose-50 transition"
-                title="Delete dream"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-              </button>
-            </div>
+            )}
           </motion.div>
         ))}
       </div>

@@ -13,7 +13,7 @@
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Heart, Calendar, Sparkles, Plus, Trophy, Award, Trash2, AlertTriangle } from 'lucide-react';
+import { Heart, Calendar, Sparkles, Plus, Trophy, Award, Trash2, AlertTriangle, Pencil } from 'lucide-react';
 import { useVault } from '../../context/VaultContext';
 import { useSync } from '../../context/SyncContext';
 import { useLiveCounter } from '../../hooks/useLiveCounter';
@@ -88,6 +88,9 @@ export function MilestoneTracker() {
   const [records, setRecords] = useState([]);
   const [skippedCount, setSkippedCount] = useState(0);
   const [error, setError] = useState('');
+  const [editingMilestoneId, setEditingMilestoneId] = useState(null);
+  const [editMilestoneTitle, setEditMilestoneTitle] = useState('');
+  const [editMilestoneDate, setEditMilestoneDate] = useState(() => toLocalDateInput());
 
   useEffect(() => {
     if (startDate) setNewDate(startDate);
@@ -240,6 +243,51 @@ export function MilestoneTracker() {
       }
     },
     [cryptoKey, tap]
+  );
+
+  const handleStartEditMilestone = useCallback(
+    (m) => {
+      tap();
+      setEditingMilestoneId(m.id);
+      setEditMilestoneTitle(m.title || '');
+      setEditMilestoneDate(m.date || toLocalDateInput());
+    },
+    [tap]
+  );
+
+  const handleCancelEditMilestone = useCallback(() => {
+    tap();
+    setEditingMilestoneId(null);
+    setEditMilestoneTitle('');
+  }, [tap]);
+
+  const handleSaveEditMilestone = useCallback(
+    async (e, m) => {
+      e.preventDefault();
+      const title = editMilestoneTitle.trim();
+      if (!title || !cryptoKey) return;
+      tap();
+
+      try {
+        const row = await db.putEncrypted(
+          'milestones',
+          {
+            ...stripInternalFields(m),
+            title,
+            date: editMilestoneDate,
+            updatedAt: nextTimestamp(),
+          },
+          cryptoKey
+        );
+        peerSync.broadcastLiveRecord('milestones', row);
+        setEditingMilestoneId(null);
+        setError('');
+        celebration();
+      } catch {
+        setError('Could not update that milestone. Our Space may have locked.');
+      }
+    },
+    [editMilestoneTitle, editMilestoneDate, cryptoKey, tap, celebration]
   );
 
   return (
@@ -430,13 +478,13 @@ export function MilestoneTracker() {
         {isAddingMilestone && (
           <form onSubmit={handleAddMilestone} className="space-y-3 mb-4 p-3 bg-white/80 rounded-2xl border border-blush-200">
             <div>
-              <input
-                type="text"
+              <textarea
                 value={milestoneTitle}
                 onChange={(e) => setMilestoneTitle(e.target.value)}
                 placeholder="e.g. First kiss, moved in together..."
                 required
-                className="w-full px-3 py-2 text-xs bg-white border border-blush-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blush-400"
+                rows={2}
+                className="w-full px-3 py-2 text-xs bg-white border border-blush-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blush-400 resize-none"
               />
             </div>
             <div className="flex items-center gap-2">
@@ -463,27 +511,83 @@ export function MilestoneTracker() {
             records.map((m) => (
               <div
                 key={m.id}
-                className="flex items-center justify-between p-3 bg-white/60 rounded-2xl border border-blush-100 hover:bg-white/80 transition group"
+                className="p-3 bg-white/60 rounded-2xl border border-blush-100 hover:bg-white/80 transition group"
               >
-                <div className="flex items-center gap-2.5 flex-1 min-w-0 pr-2">
-                  <div className="w-2 h-2 rounded-full bg-blush-400 flex-shrink-0" />
-                  <span className="text-xs font-bold text-slate-700 truncate">
-                    {m.title || 'A milestone'}
-                  </span>
-                </div>
-                <div className="flex items-center gap-2 flex-shrink-0">
-                  <span className="text-[11px] font-medium text-slate-400">
-                    {formatDatePretty(m.date)}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => handleDeleteMilestone(m.id)}
-                    className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-300 hover:text-rose-500 hover:bg-rose-50 transition"
-                    title="Delete milestone"
+                {editingMilestoneId === m.id ? (
+                  <form
+                    onSubmit={(e) => handleSaveEditMilestone(e, m)}
+                    className="space-y-2.5"
                   >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                </div>
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                        Edit Milestone
+                      </label>
+                      <textarea
+                        value={editMilestoneTitle}
+                        onChange={(e) => setEditMilestoneTitle(e.target.value)}
+                        rows={2}
+                        required
+                        autoFocus
+                        className="w-full px-3 py-2 text-xs bg-white border border-blush-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blush-400 resize-none"
+                        placeholder="e.g. First kiss, moved in together..."
+                      />
+                    </div>
+                    <div className="flex items-center justify-between gap-2">
+                      <input
+                        type="date"
+                        value={editMilestoneDate}
+                        onChange={(e) => setEditMilestoneDate(e.target.value)}
+                        required
+                        className="px-2.5 py-1 text-xs bg-white border border-blush-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blush-400"
+                      />
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={handleCancelEditMilestone}
+                          className="py-1 px-2.5 text-xs text-slate-500 hover:text-slate-700 rounded-xl border border-slate-200 hover:bg-slate-50 transition font-medium"
+                        >
+                          Cancel
+                        </button>
+                        <BouncyButton
+                          type="submit"
+                          className="py-1 px-3 text-xs font-bold"
+                        >
+                          Save
+                        </BouncyButton>
+                      </div>
+                    </div>
+                  </form>
+                ) : (
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-start gap-2.5 flex-1 min-w-0 pr-2">
+                      <div className="w-2 h-2 rounded-full bg-blush-400 flex-shrink-0 mt-1.5" />
+                      <span className="text-xs font-bold text-slate-700 break-all whitespace-pre-wrap leading-snug min-w-0">
+                        {m.title || 'A milestone'}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1 flex-shrink-0 mt-0.5">
+                      <span className="text-[11px] font-medium text-slate-400 whitespace-nowrap">
+                        {formatDatePretty(m.date)}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => handleStartEditMilestone(m)}
+                        className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-300 hover:text-blush-500 hover:bg-blush-50 transition"
+                        title="Edit milestone"
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteMilestone(m.id)}
+                        className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-300 hover:text-rose-500 hover:bg-rose-50 transition"
+                        title="Delete milestone"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             ))
           )}
