@@ -13,6 +13,7 @@
  * implemented in a screen is one refactor away from being rendered by accident.
  */
 import React, { useCallback, useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { MessageCircleHeart, X, Lock, Check, History } from 'lucide-react';
 import { useVault } from '../../context/VaultContext';
@@ -238,9 +239,26 @@ export function DailyQuestion() {
       </motion.button>
 
       {/* --------------------------------------------------------- the sheet */}
+      {/*
+        PORTALLED TO <body>, and it has to be.
+
+        This card lives inside <main>, which carries `relative z-10` - and that
+        makes it a stacking context, so every z-index inside it is resolved
+        AGAINST ITS SIBLINGS ONLY. The sheet asking for z-50 was therefore
+        asking to be at the top of a stack that the browser then painted, whole,
+        at z-10: underneath the z-40 bottom nav.
+
+        The result was not a cosmetic overlap. The last ~62px of the sheet sat
+        behind the nav and received none of its taps - elementFromPoint on the
+        archive button returned an icon in the nav - so on a phone-height screen
+        the archive was simply unreachable, and tapping it switched tabs
+        instead. Header.jsx hit the identical trap with the invite prompt and
+        solved it the same way.
+      */}
+      {createPortal(
       <AnimatePresence>
         {isOpen && (
-          <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-900/40 backdrop-blur-sm">
+          <div className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-900/40 backdrop-blur-sm">
             <motion.div
               initial={{ opacity: 0, y: 40 }}
               animate={{ opacity: 1, y: 0 }}
@@ -451,7 +469,9 @@ export function DailyQuestion() {
             </motion.div>
           </div>
         )}
-      </AnimatePresence>
+      </AnimatePresence>,
+      document.body
+      )}
     </>
   );
 }
