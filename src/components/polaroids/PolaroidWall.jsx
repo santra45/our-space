@@ -22,6 +22,7 @@ import db from '../../db';
 import { decryptRecord } from '../../services/crypto';
 import { parseLocalDate } from '../../utils/dateHelpers';
 import { useVault } from '../../context/VaultContext';
+import { usePeople } from '../../context/PeopleContext';
 import PolaroidCard from './PolaroidCard';
 import AddMemoryModal from './AddMemoryModal';
 import BouncyButton from '../common/BouncyButton';
@@ -39,6 +40,7 @@ function dateSortKey(record) {
 
 export function PolaroidWall() {
   const { cryptoKey } = useVault();
+  const { partnerName } = usePeople();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [activePreview, setActivePreview] = useState(null);
   const [wall, setWall] = useState(EMPTY_WALL);
@@ -176,7 +178,8 @@ export function PolaroidWall() {
           </div>
           <h3 className="text-base font-bold text-slate-700">No Polaroids Yet</h3>
           <p className="text-xs text-slate-500 max-w-xs mx-auto mt-1 mb-5">
-            Add your first photo together! It will be saved safely here and shared with your partner.
+            Add your first photo together! It will be saved safely here and shared with
+            {partnerName}.
           </p>
           <BouncyButton
             onClick={() => setIsModalOpen(true)}

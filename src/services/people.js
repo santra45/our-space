@@ -85,6 +85,13 @@ const TAG_PATTERN = /^[A-Za-z0-9_-]{8,64}$/;
  * "they has answered" is the bug every they/them string in an app eventually
  * ships with. Asking this table rather than writing the verb inline means a
  * sentence cannot be correct for one person and wrong for the other.
+ *
+ * THEY AGREE WITH THE PRONOUN, NOT WITH THE PERSON. Only reach for them when
+ * the subject of the sentence is `subject` from this same set. A NAME is always
+ * singular however that person refers to themselves - "Noor has answered", and
+ * never "Noor have answered" - and so is the `nameOf` fallback, "your partner".
+ * Using these beside a name is the same bug pointing the other way, and it is
+ * the easier one to write by accident, because the pronoun set is right there.
  */
 const PRONOUN_SETS = Object.freeze({
   she: { subject: 'she', object: 'her', possessive: 'her', independent: 'hers', has: 'has', is: 'is' },

@@ -1,10 +1,10 @@
 /**
  * src/components/daily/DailyQuestion.jsx
- * Today's question, on the first screen she sees.
+ * Today's question, on the first screen either of you sees.
  *
  * WHY A CARD AND NOT A TAB
  * A daily habit cannot live behind navigation. This sits at the top of the
- * landing tab, so it is the first thing in front of her every time she opens
+ * landing tab, so it is the first thing in front of them every time they open
  * the app - the rest of the feature (writing, the archive) opens from here.
  *
  * THE GATE IS NOT ENFORCED HERE
@@ -137,8 +137,9 @@ export function DailyQuestion() {
     refresh();
   }, [refresh]);
 
-  /* Her answer can land while this is open, so follow the table rather than
-     only reading once. */
+  /* Their answer can land while this is open, so follow the table rather than
+     only reading once. Their NAME can change under it too, which is why the
+     copy below reads it from context rather than capturing it. */
   useEffect(() => {
     const onUpdate = () => refresh();
     peerSync.on('data-updated', onUpdate);
@@ -203,6 +204,13 @@ export function DailyQuestion() {
   const partnerWaiting = !!(state && state.partnerHasAnswered) && !answered;
   const bothIn = answered && !!(state && state.partnerAnswer);
 
+  /*
+    "they writes one" is the bug every app with neutral copy eventually ships.
+    The pronoun set carries `has`/`have` for exactly this, so the verb is asked
+    for rather than assumed - see grammarOf in services/people.js.
+  */
+  const writeVerb = partnerGrammar.has === 'have' ? 'write' : 'writes';
+
   return (
     <>
       {/* ---------------------------------------------------------- the card */}
@@ -229,11 +237,11 @@ export function DailyQuestion() {
 
         <p className="text-[11px] text-slate-500 mt-2">
           {bothIn
-            ? 'You both answered. Tap to read both 💕'
+            ? `You both answered. Tap to read 💕`
             : answered
-              ? "Answered. Your partner's appears the moment they write one."
+              ? `Answered. ${partnerPossessive} appears the moment ${partnerGrammar.subject} ${writeVerb} one.`
               : partnerWaiting
-                ? 'Your partner has already answered. Yours unlocks it 💕'
+                ? `${partnerName} has already answered. Yours unlocks it 💕`
                 : 'Tap to answer'}
         </p>
       </motion.button>
@@ -296,8 +304,8 @@ export function DailyQuestion() {
                       <div className="flex items-start gap-2 p-2.5 rounded-2xl bg-lavender-50 border border-lavender-100">
                         <Lock className="w-4 h-4 text-lavender-400 shrink-0 mt-0.5" />
                         <p className="text-[11px] leading-relaxed text-lavender-700">
-                          You did not answer this one at the time. Write it now and what they
-                          wrote that day opens.
+                          You did not answer this one at the time. Write it now and what
+                          {partnerName} wrote that day opens.
                         </p>
                       </div>
                     }
@@ -338,15 +346,15 @@ export function DailyQuestion() {
                           <div className="flex items-start gap-2 p-2.5 rounded-2xl bg-lavender-50 border border-lavender-100">
                             <Lock className="w-4 h-4 text-lavender-400 shrink-0 mt-0.5" />
                             <p className="text-[11px] leading-relaxed text-lavender-700">
-                              Your partner has answered already. Write yours and you will both be
-                              able to read them.
+                              {partnerName} has answered already. Write yours and you will
+                              both be able to read them.
                             </p>
                           </div>
                         ) : null
                       }
                       footer={
                         <p className="text-[10px] text-slate-400 text-center leading-relaxed">
-                          You will not see your partner&apos;s until you have written yours.
+                          You will not see {partnerPossessive} until you have written yours.
                         </p>
                       }
                     />
@@ -364,7 +372,7 @@ export function DailyQuestion() {
                       {state.partnerAnswer ? (
                         <div className="p-3 rounded-2xl bg-lavender-50 border border-lavender-100">
                           <p className="text-[10px] font-bold text-lavender-500 uppercase tracking-wide mb-1">
-                            Them
+                            {partnerName}
                           </p>
                           <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap">
                             {state.partnerAnswer.text}
@@ -373,7 +381,7 @@ export function DailyQuestion() {
                       ) : (
                         <div className="p-3 rounded-2xl bg-slate-50 border border-slate-100 text-center">
                           <p className="text-[11px] text-slate-500 leading-relaxed">
-                            Nothing from your partner yet today. It will appear here on its own.
+                            Nothing from {partnerName} yet today. It will appear here on its own.
                           </p>
                         </div>
                       )}
@@ -434,7 +442,7 @@ export function DailyQuestion() {
                               <Lock className="w-3.5 h-3.5 text-lavender-400 shrink-0 mt-0.5" />
                               <span className="text-[11px] leading-relaxed text-lavender-700">
                                 {entry.question
-                                  ? 'You missed this one, and something of theirs is waiting behind it. Tap to answer it now 💕'
+                                  ? `You missed this one, and something of ${partnerPossessive} is waiting behind it. Tap to answer it now 💕`
                                   : 'You missed this one. The question it was asking is no longer in the app.'}
                               </span>
                             </button>
@@ -446,7 +454,7 @@ export function DailyQuestion() {
                               </p>
                               {entry.theirs && (
                                 <p className="text-[11px] text-slate-600 leading-relaxed whitespace-pre-wrap mt-1">
-                                  <span className="font-bold text-lavender-500">Them: </span>
+                                  <span className="font-bold text-lavender-500">{partnerName}: </span>
                                   {entry.theirs.text}
                                 </p>
                               )}

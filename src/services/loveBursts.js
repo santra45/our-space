@@ -241,24 +241,30 @@ export async function collectUnseenBursts(cryptoKey, options = {}) {
 }
 
 /**
- * The sentence she reads. Kept here beside the counting so the two cannot drift.
+ * The sentence they read. Kept here beside the counting so the two cannot drift.
+ *
+ * `name` is the whole difference between a notification and a moment. "Noor
+ * sent you a love burst" is the person; "your partner sent you a love burst" is
+ * a product. The fallback is still there and still correct, because a vault
+ * where nobody has entered their names yet has no name to use - see
+ * services/people.js.
  *
  * @param {number} total
  * @param {boolean} wasConnected - Whether the partner was reachable at the time,
  *   which is the difference between "just now" and "while you were away".
+ * @param {string} [name] - What to call them. Falls back to "Your partner".
  * @returns {string}
  */
-export function describeBursts(total, wasConnected) {
+export function describeBursts(total, wasConnected, name) {
   if (total <= 0) return '';
-  if (total === 1) {
-    return wasConnected
-      ? 'Your partner sent you a love burst! 💕'
-      : 'Your partner sent you a love burst while you were away 💕';
-  }
+
+  const who = typeof name === 'string' && name.trim() ? name.trim() : 'Your partner';
   const many = total > MANY_BURSTS ? `${MANY_BURSTS}+` : String(total);
+  const what = total === 1 ? 'a love burst' : `${many} love bursts`;
+
   return wasConnected
-    ? `Your partner sent you ${many} love bursts! 💕`
-    : `Your partner sent you ${many} love bursts while you were away 💕`;
+    ? `${who} sent you ${what}! 💕`
+    : `${who} sent you ${what} while you were away 💕`;
 }
 
 export default {

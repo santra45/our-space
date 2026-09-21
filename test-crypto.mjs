@@ -3191,6 +3191,31 @@ async function run() {
     bursts.describeBursts(1, true) === 'Your partner sent you a love burst! 💕'
   );
 
+  /* -- and say WHO, once the vault knows their name ----------------------- */
+  //
+  // "Noor sent you a love burst" is a person. "Your partner sent you a love
+  // burst" is a product. The fallback has to keep working though, because a
+  // vault where nobody has entered names has no name to use.
+
+  check(
+    'a burst says who it came from',
+    bursts.describeBursts(1, true, 'Noor') === 'Noor sent you a love burst! 💕'
+  );
+  check(
+    'including one that arrived while they were away',
+    bursts.describeBursts(3, false, 'Noor') ===
+      'Noor sent you 3 love bursts while you were away 💕'
+  );
+  check(
+    'a blank name falls back rather than leaving a gap',
+    bursts.describeBursts(1, true, '   ') === 'Your partner sent you a love burst! 💕'
+  );
+  check(
+    'and so does a name that is not a string',
+    bursts.describeBursts(1, true, { evil: true }) === 'Your partner sent you a love burst! 💕'
+  );
+  check('no bursts is still no sentence', bursts.describeBursts(0, true, 'Noor') === '');
+
   /* -- and are not replayed on the next launch ---------------------------- */
 
   bursts.markBurstsSeen(burstAway.records);

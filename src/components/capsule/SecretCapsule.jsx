@@ -40,6 +40,7 @@ import {
 import { useLiveQuery } from 'dexie-react-hooks';
 import db from '../../db';
 import { useVault } from '../../context/VaultContext';
+import { usePeople } from '../../context/PeopleContext';
 import {
   decryptRecord,
   generateUrlSafeNonce,
@@ -134,6 +135,7 @@ function nextTimestamp() {
 
 export function SecretCapsule() {
   const { cryptoKey } = useVault();
+  const { partnerName, partnerPossessive } = usePeople();
   const [isWriteModalOpen, setIsWriteModalOpen] = useState(false);
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
@@ -556,7 +558,7 @@ export function SecretCapsule() {
     if (e) e.stopPropagation();
     if (
       !window.confirm(
-        'Delete this love letter? It goes from your phone and your partner’s, for good.'
+        `Delete this love letter? It goes from your phone and ${partnerPossessive}, for good.`
       )
     ) {
       return;
@@ -650,7 +652,7 @@ export function SecretCapsule() {
           </div>
           <h3 className="text-base font-bold text-slate-700">No Letters Yet</h3>
           <p className="text-xs text-slate-500 max-w-xs mx-auto mt-1 mb-5">
-            Leave a surprise letter for your partner, or seal a time capsule to open on your next
+            Leave a surprise letter for {partnerName}, or seal a time capsule to open on your next
             anniversary!
           </p>
           <BouncyButton

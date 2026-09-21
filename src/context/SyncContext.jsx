@@ -15,6 +15,7 @@ import React, { createContext, useContext, useState, useEffect, useRef } from 'r
 import { useLiveQuery } from 'dexie-react-hooks';
 import peerSync from '../services/peerSync';
 import { useVault } from './VaultContext';
+import { usePeople } from './PeopleContext';
 import { parseInvite, PEER_ID_REGEX } from '../utils/invite';
 import { fireCelebrationBurst } from '../components/common/ConfettiBurst';
 import { useHaptics } from '../hooks/useHaptics';
@@ -71,6 +72,7 @@ function removeStored(key) {
 
 export function SyncProvider({ children }) {
   const { cryptoKey, isUnlocked, vaultConfig } = useVault();
+  const { partnerName } = usePeople();
   const { celebration } = useHaptics();
   const [myPeerId, setMyPeerId] = useState(null);
   const [partnerId, setPartnerId] = useState(() => readStored(PAIRED_PARTNER_KEY));
@@ -86,6 +88,18 @@ export function SyncProvider({ children }) {
   useEffect(() => {
     vaultConfigRef.current = vaultConfig;
   }, [vaultConfig]);
+
+  /*
+    The sync handlers are registered once per unlock, so a name read at render
+    time would be frozen at whatever it was then - which for the phone that has
+    not claimed a person yet is "your partner", permanently, until a reload.
+    The name arrives over sync like any other record, so it has to be read at
+    the moment a notice is written.
+  */
+  const partnerNameRef = useRef(partnerName);
+  useEffect(() => {
+    partnerNameRef.current = partnerName;
+  }, [partnerName]);
 
   const dialTimerRef = useRef(null);
 
@@ -203,7 +217,7 @@ export function SyncProvider({ children }) {
 
     const handleDataUpdated = (data) => {
       if (!isMounted) return;
-      setLastSyncNotice(`Synced ${data?.count || 1} new item(s) from partner 💕`);
+      setLastSyncNotice(`Synced ${data?.count || 1} new item(s) from ${partnerNameRef.current} 💕`);
     };
 
     peerSync.on('status', handleStatus);
@@ -484,7 +498,7 @@ export function SyncProvider({ children }) {
         console.error('Could not play the love burst:', err);
       }
 
-      setLastSyncNotice(describeBursts(unseen.total, isAuthorizedRef.current));
+      setLastSyncNotice(describeBursts(unseen.total, isAuthorizedRef.current, partnerNameRef.current));
     })();
 
     return () => {
@@ -523,9 +537,9 @@ export function SyncProvider({ children }) {
 
     if (isAuthorized) {
       peerSync.broadcastLiveRecord(LOVE_BURST_TABLE, row);
-      setLastSyncNotice('Love burst sent to partner! 💕');
+      setLastSyncNotice(`Love burst sent to ${partnerName}! 💕`);
     } else {
-      setLastSyncNotice('Saved 💕 Your partner will see it the moment you two connect.');
+      setLastSyncNotice(`Saved 💕 ${partnerName} will see it the moment you two connect.`);
     }
     return true;
   };
