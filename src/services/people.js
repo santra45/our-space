@@ -46,11 +46,19 @@
  */
 
 import db from '../db/index.js';
-import { generateUrlSafeNonce } from './crypto.js';
 import { getDeviceId } from './deviceId.js';
 
 /** The synced table these live in. */
 export const PEOPLE_TABLE = 'people';
+
+/**
+ * Domain separation for the slot derivation below. One label per slot, so the
+ * two ids in a vault are unrelated to each other and to every other use of the
+ * key.
+ */
+const SLOT_CONTEXTS = ['our-space/people/slot/a/v1', 'our-space/people/slot/b/v1'];
+
+const webCrypto = () => (typeof window !== 'undefined' ? window.crypto : globalThis.crypto);
 
 /** Which of the two people is holding THIS device. A hint, not an identity. */
 const STORAGE_KEY = 'sweetheart_person_id_v1';
@@ -97,9 +105,60 @@ export const PRONOUNS = Object.freeze(Object.keys(PRONOUN_SETS));
 /** The default, and the fallback for anything unrecognised. */
 export const DEFAULT_PRONOUN = 'they';
 
+/* ------------------------------------------------------------------ slots */
+
+/**
+ * The two person ids for this vault, derived from the vault key.
+ *
+ * WHY DERIVED AND NOT RANDOM
+ * Because both phones can reach the setup screen before they have ever synced,
+ * and random ids would mean each one minting its own pair. The vault would end
+ * up holding FOUR people, two of them phantoms, and nothing in the app could
+ * work out which two were real.
+ *
+ * Deriving them means both devices independently arrive at the same two ids
+ * without having spoken. If both do set up, the two writes collide on the same
+ * two records and last-write-wins settles the names - which is a wrong name
+ * that takes one edit to fix, rather than a structurally broken vault. This is
+ * the same trick the daily question uses to agree on an order with no server:
+ * the key is the only thing both sides already share.
+ *
+ * The vault key is non-extractable, so it cannot be hashed directly. It can
+ * still encrypt, and AES-GCM over a fixed plaintext with a fixed IV is
+ * deterministic. The fixed IV is safe here for the same reason it is there:
+ * one use, one constant plaintext, and the output is a name rather than a
+ * secret.
+ *
+ * @param {CryptoKey} cryptoKey
+ * @returns {Promise<[string, string]>}
+ */
+export async function derivePersonSlots(cryptoKey) {
+  if (!cryptoKey) throw new Error('derivePersonSlots: vault is locked');
+  const encoder = new TextEncoder();
+  const out = [];
+
+  for (const context of SLOT_CONTEXTS) {
+    const sealed = await webCrypto().subtle.encrypt(
+      { name: 'AES-GCM', iv: new Uint8Array(12) },
+      cryptoKey,
+      encoder.encode(context)
+    );
+    const digest = new Uint8Array(await webCrypto().subtle.digest('SHA-256', sealed));
+    // 12 bytes of the digest, hex-encoded, gives 24 characters - comfortably
+    // inside TAG_PATTERN and readable in a debugger without being a secret.
+    out.push(
+      Array.from(digest.slice(0, 12))
+        .map((b) => b.toString(16).padStart(2, '0'))
+        .join('')
+    );
+  }
+
+  return out;
+}
+
 /* ------------------------------------------------------------ record shape */
 
-/** `person-<id>`. The id is minted once and never reused. */
+/** `person-<id>`. The id is derived from the vault key, and never reused. */
 export function personRecordId(personId) {
   return `person-${personId}`;
 }
@@ -416,8 +475,10 @@ export async function createCouple(args) {
   const store = args.store || db;
   const deviceId = args.deviceId || getDeviceId();
 
-  const minePersonId = generateUrlSafeNonce(12);
-  const theirsPersonId = generateUrlSafeNonce(12);
+  // Derived, not minted: see derivePersonSlots. Whichever device sets up first
+  // takes slot A, and a second device that set up before syncing lands on the
+  // same two records rather than inventing a second pair.
+  const [minePersonId, theirsPersonId] = await derivePersonSlots(cryptoKey);
 
   const mineRow = await savePerson({
     cryptoKey,
@@ -562,6 +623,7 @@ export default {
   PRONOUNS,
   DEFAULT_PRONOUN,
   MAX_NAME_LENGTH,
+  derivePersonSlots,
   personRecordId,
   sanitizeName,
   sanitizePronoun,

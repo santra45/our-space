@@ -4129,6 +4129,27 @@ async function run() {
   const HIS_LAPTOP = 'his-laptop-tag-1';
   const HER_PHONE = 'her-phone-tag-01';
 
+  /* -- the two slots, agreed without speaking ------------------------------ */
+  //
+  // Both phones can reach the setup screen before they have ever synced. If the
+  // ids were random, each would mint its own pair and the vault would hold four
+  // people, two of them phantoms.
+
+  const slotsHis = await ppl.derivePersonSlots(key);
+  const slotsHers = await ppl.derivePersonSlots(await fastKey(passphrase, salt));
+  check('the two slots are agreed with no sync at all', eq(slotsHis, slotsHers));
+  check('and they are two different people', slotsHis[0] !== slotsHis[1]);
+  const slotsStranger = await ppl.derivePersonSlots(
+    await deriveKeyFromPassphrase('an entirely different couple', generateSalt(), {
+      iterations: 2000,
+    })
+  );
+  check('another vault gets its own pair', slotsStranger[0] !== slotsHis[0]);
+  check(
+    'a slot id is a usable record id',
+    ppl.personRecordId(slotsHis[0]) === `person-${slotsHis[0]}`
+  );
+
   /* -- nothing set up yet ------------------------------------------------- */
 
   const pplEmpty = await ppl.resolveIdentity({

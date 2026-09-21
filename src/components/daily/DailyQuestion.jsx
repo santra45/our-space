@@ -16,6 +16,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { MessageCircleHeart, X, Lock, Check, History } from 'lucide-react';
 import { useVault } from '../../context/VaultContext';
+import { usePeople } from '../../context/PeopleContext';
 import { useHaptics } from '../../hooks/useHaptics';
 import { getDeviceId } from '../../services/deviceId';
 import peerSync from '../../services/peerSync';
@@ -46,6 +47,7 @@ function prettyDay(day) {
 
 export function DailyQuestion() {
   const { cryptoKey } = useVault();
+  const { myOwnerId, myOwnerIds, partnerName, partnerPossessive, partnerGrammar } = usePeople();
   const { tap, celebration } = useHaptics();
 
   const [today, setToday] = useState(null);
@@ -57,13 +59,21 @@ export function DailyQuestion() {
   const [showArchive, setShowArchive] = useState(false);
   const [archive, setArchive] = useState([]);
 
-  const ownerId = getDeviceId();
+  /*
+    The id answers are written under is the PERSON, not the device - a device
+    tag is lost the first time a browser clears its storage, and it took a
+    year of answers with it. The device tag is still the fallback for a vault
+    where nobody has entered their names yet, so this screen keeps working
+    exactly as it did before people existed.
+  */
+  const ownerId = myOwnerId || getDeviceId();
+  const ownerIds = myOwnerIds;
 
   const refresh = useCallback(async () => {
     if (!cryptoKey) return;
     try {
       const question = await getQuestionForDay(cryptoKey);
-      const day = await readDay({ cryptoKey, ownerId });
+      const day = await readDay({ cryptoKey, ownerId, ownerIds });
       setToday(question);
       setState(day);
     } catch {
@@ -71,7 +81,7 @@ export function DailyQuestion() {
       // nothing to show, and the rest of the app carries on around it.
       setToday(null);
     }
-  }, [cryptoKey, ownerId]);
+  }, [cryptoKey, ownerId, ownerIds]);
 
   useEffect(() => {
     refresh();
@@ -95,6 +105,7 @@ export function DailyQuestion() {
       const row = await saveAnswer({
         cryptoKey,
         ownerId,
+        ownerIds,
         questionId: today.question.id,
         text: draft,
         timestamp: () => peerSync.getSyncSafeTimestamp(),
@@ -115,7 +126,7 @@ export function DailyQuestion() {
     tap();
     setShowArchive(true);
     try {
-      setArchive(await listAnswered({ cryptoKey, ownerId, limit: 120 }));
+      setArchive(await listAnswered({ cryptoKey, ownerId, ownerIds, limit: 120 }));
     } catch {
       setArchive([]);
     }

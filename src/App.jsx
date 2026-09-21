@@ -6,6 +6,7 @@ import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { VaultProvider, useVault } from './context/VaultContext';
 import { SyncProvider } from './context/SyncContext';
+import { PeopleProvider } from './context/PeopleContext';
 import Header from './components/layout/Header';
 import BottomNav from './components/layout/BottomNav';
 import LockScreen from './components/layout/LockScreen';
@@ -18,6 +19,7 @@ import SecretCapsule from './components/capsule/SecretCapsule';
 import BucketList from './components/bucketlist/BucketList';
 import SyncHubModal from './components/sync/SyncHubModal';
 import DailyQuestion from './components/daily/DailyQuestion';
+import PeopleSetup from './components/people/PeopleSetup';
 
 function AppContent() {
   const { isUnlocked } = useVault();
@@ -87,6 +89,13 @@ function AppContent() {
         isOpen={isSyncModalOpen}
         onClose={() => setIsSyncModalOpen(false)}
       />
+
+      {/*
+        Renders nothing at all once the app knows who is holding this phone,
+        which is the overwhelmingly common case. It is mounted last so that when
+        it DOES appear it sits above everything, including the sync modal.
+      */}
+      <PeopleSetup />
     </div>
   );
 }
@@ -98,9 +107,16 @@ export function App() {
     // there is no smaller subtree left to fall back to.
     <ErrorBoundary>
       <VaultProvider>
-        <SyncProvider>
-          <AppContent />
-        </SyncProvider>
+        {/*
+          People sits INSIDE the vault (it needs the key to read the records)
+          and OUTSIDE sync, because SyncContext's own copy needs a name to put
+          in it.
+        */}
+        <PeopleProvider>
+          <SyncProvider>
+            <AppContent />
+          </SyncProvider>
+        </PeopleProvider>
       </VaultProvider>
     </ErrorBoundary>
   );
