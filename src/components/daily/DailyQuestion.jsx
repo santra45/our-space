@@ -25,10 +25,11 @@ import { fireHeartConfetti } from '../common/ConfettiBurst';
 import {
   ANSWER_TABLE,
   MAX_ANSWER_LENGTH,
+  dateFromDayKey,
   getQuestionForDay,
   saveAnswer,
   readDay,
-  listAnswered,
+  listArchive,
 } from '../../services/dailyQuestion';
 
 /** `2026-09-10` -> `10 September`. */
@@ -45,6 +46,47 @@ function prettyDay(day) {
   }
 }
 
+/**
+ * The write-an-answer form.
+ *
+ * Extracted because it is now reached from two places - today, and a day from
+ * the archive being answered late - and two copies of a form that writes to the
+ * same records is how the two quietly stop agreeing about what they write.
+ */
+function AnswerForm({ draft, onDraft, onSubmit, saving, error, hint, footer }) {
+  return (
+    <form onSubmit={onSubmit} className="space-y-3">
+      {hint}
+
+      <textarea
+        value={draft}
+        onChange={(e) => onDraft(e.target.value)}
+        maxLength={MAX_ANSWER_LENGTH}
+        rows={5}
+        autoFocus
+        placeholder="However much or little you want…"
+        className="w-full px-4 py-3 bg-white border border-lavender-200 rounded-2xl text-slate-800 text-sm leading-relaxed focus:outline-none focus:ring-2 focus:ring-lavender-300 placeholder:text-slate-400 resize-none"
+      />
+
+      {error && (
+        <p role="alert" className="text-[11px] text-rose-600 font-semibold">
+          {error}
+        </p>
+      )}
+
+      <BouncyButton
+        type="submit"
+        disabled={saving || !draft.trim()}
+        className="w-full py-3 text-sm font-bold disabled:opacity-50"
+      >
+        {saving ? 'Saving…' : 'Answer 💕'}
+      </BouncyButton>
+
+      {footer}
+    </form>
+  );
+}
+
 export function DailyQuestion() {
   const { cryptoKey } = useVault();
   const { myOwnerId, myOwnerIds, partnerName, partnerPossessive, partnerGrammar } = usePeople();
@@ -58,6 +100,13 @@ export function DailyQuestion() {
   const [error, setError] = useState('');
   const [showArchive, setShowArchive] = useState(false);
   const [archive, setArchive] = useState([]);
+  /*
+    A day from the archive that is being answered late, or null for today.
+    Whoever started using the app second has a backlog of these, and before
+    they existed that backlog was permanent: their partner's answers from
+    before they joined could never be opened by anything.
+  */
+  const [catchUp, setCatchUp] = useState(null);
 
   /*
     The id answers are written under is the PERSON, not the device - a device
@@ -95,9 +144,18 @@ export function DailyQuestion() {
     return () => peerSync.off('data-updated', onUpdate);
   }, [refresh]);
 
+  const loadArchive = useCallback(async () => {
+    try {
+      setArchive(await listArchive({ cryptoKey, ownerId, ownerIds, limit: 120 }));
+    } catch {
+      setArchive([]);
+    }
+  }, [cryptoKey, ownerId, ownerIds]);
+
   const handleSave = async (e) => {
     e.preventDefault();
-    if (saving || !draft.trim() || !today) return;
+    const target = catchUp || (today && { day: today.day, question: today.question });
+    if (saving || !draft.trim() || !target) return;
 
     setSaving(true);
     setError('');
@@ -106,14 +164,24 @@ export function DailyQuestion() {
         cryptoKey,
         ownerId,
         ownerIds,
-        questionId: today.question.id,
+        questionId: target.question.id,
         text: draft,
+        // Absent for today, and the day being caught up on otherwise. A month
+        // bucket is keyed by day, so writing into a past one was never a
+        // different operation - this screen simply never offered it.
+        when: catchUp ? dateFromDayKey(catchUp.day) : undefined,
         timestamp: () => peerSync.getSyncSafeTimestamp(),
       });
       peerSync.broadcastLiveRecord(ANSWER_TABLE, row);
       setDraft('');
       celebration();
       fireHeartConfetti();
+      if (catchUp) {
+        // Straight back to the archive, where the answer that was locked behind
+        // this one is now sitting open.
+        setCatchUp(null);
+        await loadArchive();
+      }
       await refresh();
     } catch {
       setError('That did not save. Try again in a moment.');
@@ -125,11 +193,7 @@ export function DailyQuestion() {
   const openArchive = async () => {
     tap();
     setShowArchive(true);
-    try {
-      setArchive(await listAnswered({ cryptoKey, ownerId, ownerIds, limit: 120 }));
-    } catch {
-      setArchive([]);
-    }
+    await loadArchive();
   };
 
   if (!cryptoKey || !today) return null;
@@ -187,13 +251,55 @@ export function DailyQuestion() {
                 onClick={() => {
                   setIsOpen(false);
                   setShowArchive(false);
+                  setCatchUp(null);
                 }}
                 className="absolute top-4 right-4 w-8 h-8 rounded-full bg-slate-100 text-slate-500 flex items-center justify-center hover:bg-slate-200"
               >
                 <X className="w-4 h-4" />
               </button>
 
-              {!showArchive ? (
+              {catchUp ? (
+                /* ------------------------------------- a day being caught up */
+                <>
+                  <p className="text-[11px] font-bold text-lavender-500 uppercase tracking-wide mb-1">
+                    {prettyDay(catchUp.day)}
+                  </p>
+                  <p className="font-handwriting text-2xl text-slate-800 leading-snug mb-4 pr-8">
+                    {catchUp.question.text}
+                  </p>
+
+                  <AnswerForm
+                    draft={draft}
+                    onDraft={setDraft}
+                    onSubmit={handleSave}
+                    saving={saving}
+                    error={error}
+                    hint={
+                      <div className="flex items-start gap-2 p-2.5 rounded-2xl bg-lavender-50 border border-lavender-100">
+                        <Lock className="w-4 h-4 text-lavender-400 shrink-0 mt-0.5" />
+                        <p className="text-[11px] leading-relaxed text-lavender-700">
+                          You did not answer this one at the time. Write it now and what they
+                          wrote that day opens.
+                        </p>
+                      </div>
+                    }
+                    footer={
+                      <button
+                        type="button"
+                        onClick={() => {
+                          tap();
+                          setCatchUp(null);
+                          setDraft('');
+                          setError('');
+                        }}
+                        className="w-full text-[11px] font-bold text-slate-400 hover:text-slate-600"
+                      >
+                        Back to the archive
+                      </button>
+                    }
+                  />
+                </>
+              ) : !showArchive ? (
                 <>
                   <p className="text-[11px] font-bold text-lavender-500 uppercase tracking-wide mb-1">
                     {prettyDay(today.day)}
@@ -203,45 +309,29 @@ export function DailyQuestion() {
                   </p>
 
                   {!answered ? (
-                    <form onSubmit={handleSave} className="space-y-3">
-                      {partnerWaiting && (
-                        <div className="flex items-start gap-2 p-2.5 rounded-2xl bg-lavender-50 border border-lavender-100">
-                          <Lock className="w-4 h-4 text-lavender-400 shrink-0 mt-0.5" />
-                          <p className="text-[11px] leading-relaxed text-lavender-700">
-                            Your partner has answered already. Write yours and you will both be able to
-                            read them.
-                          </p>
-                        </div>
-                      )}
-
-                      <textarea
-                        value={draft}
-                        onChange={(e) => setDraft(e.target.value)}
-                        maxLength={MAX_ANSWER_LENGTH}
-                        rows={5}
-                        autoFocus
-                        placeholder="However much or little you want…"
-                        className="w-full px-4 py-3 bg-white border border-lavender-200 rounded-2xl text-slate-800 text-sm leading-relaxed focus:outline-none focus:ring-2 focus:ring-lavender-300 placeholder:text-slate-400 resize-none"
-                      />
-
-                      {error && (
-                        <p role="alert" className="text-[11px] text-rose-600 font-semibold">
-                          {error}
+                    <AnswerForm
+                      draft={draft}
+                      onDraft={setDraft}
+                      onSubmit={handleSave}
+                      saving={saving}
+                      error={error}
+                      hint={
+                        partnerWaiting ? (
+                          <div className="flex items-start gap-2 p-2.5 rounded-2xl bg-lavender-50 border border-lavender-100">
+                            <Lock className="w-4 h-4 text-lavender-400 shrink-0 mt-0.5" />
+                            <p className="text-[11px] leading-relaxed text-lavender-700">
+                              Your partner has answered already. Write yours and you will both be
+                              able to read them.
+                            </p>
+                          </div>
+                        ) : null
+                      }
+                      footer={
+                        <p className="text-[10px] text-slate-400 text-center leading-relaxed">
+                          You will not see your partner&apos;s until you have written yours.
                         </p>
-                      )}
-
-                      <BouncyButton
-                        type="submit"
-                        disabled={saving || !draft.trim()}
-                        className="w-full py-3 text-sm font-bold disabled:opacity-50"
-                      >
-                        {saving ? 'Saving…' : 'Answer 💕'}
-                      </BouncyButton>
-
-                      <p className="text-[10px] text-slate-400 text-center leading-relaxed">
-                        You will not see your partner&apos;s until you have written yours.
-                      </p>
-                    </form>
+                      }
+                    />
                   ) : (
                     <div className="space-y-3">
                       <div className="p-3 rounded-2xl bg-blush-50/70 border border-blush-100">
@@ -278,13 +368,13 @@ export function DailyQuestion() {
                     className="w-full mt-4 pt-3 border-t border-slate-100 inline-flex items-center justify-center gap-1.5 text-xs font-bold text-slate-500 hover:text-lavender-600"
                   >
                     <History className="w-3.5 h-3.5" />
-                    <span>Everything you have answered</span>
+                    <span>Everything you have both written</span>
                   </button>
                 </>
               ) : (
                 <>
                   <p className="text-[11px] font-bold text-lavender-500 uppercase tracking-wide mb-3">
-                    Your answers so far
+                    Every day so far
                   </p>
 
                   {archive.length === 0 ? (
@@ -301,15 +391,48 @@ export function DailyQuestion() {
                           <p className="font-handwriting text-lg text-slate-800 leading-snug mb-1.5">
                             {entry.question ? entry.question.text : 'A question from back then'}
                           </p>
-                          <p className="text-[11px] text-slate-600 leading-relaxed whitespace-pre-wrap">
-                            <span className="font-bold text-blush-500">You: </span>
-                            {entry.mine.text}
-                          </p>
-                          {entry.theirs && (
-                            <p className="text-[11px] text-slate-600 leading-relaxed whitespace-pre-wrap mt-1">
-                              <span className="font-bold text-lavender-500">Them: </span>
-                              {entry.theirs.text}
-                            </p>
+
+                          {/*
+                            A day their partner answered and this person did not.
+                            It used to be simply absent from the archive, which
+                            made whoever started later see almost nothing
+                            forever, with no way to ever close the gap.
+                          */}
+                          {entry.missed ? (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                tap();
+                                setDraft('');
+                                setError('');
+                                setCatchUp({
+                                  day: entry.day,
+                                  question: entry.question || { id: null, text: '' },
+                                });
+                              }}
+                              disabled={!entry.question}
+                              className="w-full mt-1 p-2.5 rounded-2xl bg-lavender-50 border border-lavender-100 text-left flex items-start gap-2 hover:bg-lavender-100 transition-colors disabled:opacity-60 disabled:hover:bg-lavender-50"
+                            >
+                              <Lock className="w-3.5 h-3.5 text-lavender-400 shrink-0 mt-0.5" />
+                              <span className="text-[11px] leading-relaxed text-lavender-700">
+                                {entry.question
+                                  ? 'You missed this one, and something of theirs is waiting behind it. Tap to answer it now 💕'
+                                  : 'You missed this one. The question it was asking is no longer in the app.'}
+                              </span>
+                            </button>
+                          ) : (
+                            <>
+                              <p className="text-[11px] text-slate-600 leading-relaxed whitespace-pre-wrap">
+                                <span className="font-bold text-blush-500">You: </span>
+                                {entry.mine.text}
+                              </p>
+                              {entry.theirs && (
+                                <p className="text-[11px] text-slate-600 leading-relaxed whitespace-pre-wrap mt-1">
+                                  <span className="font-bold text-lavender-500">Them: </span>
+                                  {entry.theirs.text}
+                                </p>
+                              )}
+                            </>
                           )}
                         </div>
                       ))}

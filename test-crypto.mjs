@@ -4026,6 +4026,118 @@ async function run() {
     dqUnbridged.partnerHasAnswered === true
   );
 
+  /* -- a day you missed is not a permanent hole ---------------------------- */
+  //
+  // Whoever starts using the app second has a backlog of days their partner
+  // answered and they did not. listAnswered drops those entirely, so that
+  // person saw almost nothing and could never close the gap - nothing let you
+  // answer a day that had already gone.
+
+  const dqLate = new FakeVaultStore();
+  const EARLY = 'him-early-starter';
+  const LATE = 'her-late-starter';
+  let dqLateClock = 1700000000000;
+  const dqLateStamp = () => (dqLateClock += 1000);
+  const dqMissedDay = new Date('2026-07-02T09:00:00Z');
+
+  await dq.saveAnswer({
+    cryptoKey: key,
+    ownerId: EARLY,
+    questionId: bank.ALL_QUESTIONS[0].id,
+    text: 'what he wrote weeks before she ever opened the app',
+    when: dqMissedDay,
+    store: dqLate,
+    timestamp: dqLateStamp,
+  });
+
+  const herArchiveBefore = await dq.listAnswered({
+    cryptoKey: key,
+    ownerId: LATE,
+    store: dqLate,
+  });
+  check('the old archive showed her nothing at all', herArchiveBefore.length === 0);
+
+  const herFullBefore = await dq.listArchive({ cryptoKey: key, ownerId: LATE, store: dqLate });
+  check('the new one shows her the day exists', herFullBefore.length === 1);
+  check('and marks it as one she missed', herFullBefore[0].missed === true);
+  check('and tells her something is waiting', herFullBefore[0].partnerHasAnswered === true);
+  check('but does NOT leak what he wrote', herFullBefore[0].theirs === null);
+  check('and carries the question so she can answer it', herFullBefore[0].question !== null);
+  check(
+    'which is the one he was actually answering',
+    herFullBefore[0].question.id === bank.ALL_QUESTIONS[0].id
+  );
+
+  /* -- she answers it late, and it opens ----------------------------------- */
+
+  check(
+    'a day key converts back to a date on the same day',
+    dq.dayKey(dq.dateFromDayKey('2026-07-02')) === '2026-07-02'
+  );
+  check('a malformed day key converts to nothing', dq.dateFromDayKey('not-a-day') === null);
+
+  await dq.saveAnswer({
+    cryptoKey: key,
+    ownerId: LATE,
+    questionId: bank.ALL_QUESTIONS[0].id,
+    text: 'answering it now, weeks late',
+    when: dq.dateFromDayKey('2026-07-02'),
+    store: dqLate,
+    timestamp: dqLateStamp,
+  });
+
+  const herFullAfter = await dq.listArchive({ cryptoKey: key, ownerId: LATE, store: dqLate });
+  check('answering late clears the missed flag', herFullAfter[0].missed === false);
+  check(
+    'and opens what he wrote that day',
+    herFullAfter[0].theirs && herFullAfter[0].theirs.text.startsWith('what he wrote')
+  );
+  check('her own late answer is there too', herFullAfter[0].mine.text.startsWith('answering it now'));
+
+  const hisFullAfter = await dq.listArchive({ cryptoKey: key, ownerId: EARLY, store: dqLate });
+  check('and it reaches him as well, on the same day', hisFullAfter[0].theirs !== null);
+  check('with nothing marked missed on his side', hisFullAfter[0].missed === false);
+
+  /* -- the gate is still the gate ------------------------------------------ */
+  //
+  // listArchive must not become a way to read around a day you have not
+  // answered. A second untouched day proves the withholding is per-day rather
+  // than a one-off.
+
+  await dq.saveAnswer({
+    cryptoKey: key,
+    ownerId: EARLY,
+    questionId: bank.ALL_QUESTIONS[1].id,
+    text: 'a second day she has still not answered',
+    when: new Date('2026-07-03T09:00:00Z'),
+    store: dqLate,
+    timestamp: dqLateStamp,
+  });
+  const herTwoDays = await dq.listArchive({ cryptoKey: key, ownerId: LATE, store: dqLate });
+  const stillLocked = herTwoDays.find((e) => e.day === '2026-07-03');
+  check('a day answered by one of you only is still withheld', stillLocked.theirs === null);
+  check('and still reads as missed', stillLocked.missed === true);
+  check('while the opened day stays open', herTwoDays.find((e) => e.day === '2026-07-02').theirs !== null);
+  check('newest first, as before', herTwoDays[0].day === '2026-07-03');
+
+  // A question can leave the bank - an id that no longer resolves must not
+  // become an un-answerable row with a blank prompt above it. The screen
+  // disables the catch-up button in exactly this case.
+  await dq.saveAnswer({
+    cryptoKey: key,
+    ownerId: EARLY,
+    questionId: 'a-question-that-was-removed',
+    text: 'answered back when this question still shipped',
+    when: new Date('2026-07-04T09:00:00Z'),
+    store: dqLate,
+    timestamp: dqLateStamp,
+  });
+  const dqRetired = (await dq.listArchive({ cryptoKey: key, ownerId: LATE, store: dqLate })).find(
+    (e) => e.day === '2026-07-04'
+  );
+  check('a question that left the bank leaves the day listed', dqRetired !== undefined);
+  check('with no question attached, rather than a blank one', dqRetired.question === null);
+
   /* -- readDay and listAnswered cannot disagree ---------------------------- */
   //
   // They used to decide "mine" two different ways: one compared the record id,

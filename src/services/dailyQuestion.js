@@ -406,10 +406,96 @@ export async function listAnswered(args) {
   return typeof args.limit === 'number' ? out.slice(0, args.limit) : out;
 }
 
+/**
+ * A Date at noon UTC on a `YYYY-MM-DD` day.
+ *
+ * Noon rather than midnight so that nothing - a stray local-time conversion, a
+ * daylight-saving edge - can push the value onto the day before or after. The
+ * only thing this is ever used for is turning an archive row back into a `when`
+ * for saveAnswer, and landing on the wrong day there would write the answer
+ * against someone else's question.
+ *
+ * @param {string} day
+ * @returns {Date|null}
+ */
+export function dateFromDayKey(day) {
+  if (typeof day !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(day)) return null;
+  const [y, m, d] = day.split('-').map(Number);
+  const date = new Date(Date.UTC(y, m - 1, d, 12, 0, 0, 0));
+  return Number.isFinite(date.getTime()) ? date : null;
+}
+
+/**
+ * The archive, including the days you did not answer.
+ *
+ * WHY THIS EXISTS SEPARATELY FROM listAnswered
+ * Because the gate and the archive want different things, and conflating them
+ * was a real hole. listAnswered shows only days YOU answered, which is correct
+ * for "what have we written" - but it meant that whoever started using the app
+ * later saw almost nothing, forever. One person had weeks of answers and the
+ * other had one, with no way to ever close the gap, because nothing let you
+ * answer a day that had already passed.
+ *
+ * So a day the other person answered and you did not is listed here as
+ * `missed`, with their words still withheld. It is not a hole in the archive
+ * any more; it is something with a reward behind it, and answering it opens
+ * exactly the same door that answering on the day would have.
+ *
+ * THE GATE IS STILL ENFORCED HERE, not in the screen. `theirs` is null on any
+ * day you have not answered, exactly as in readDay, for exactly the same
+ * reason: a gate implemented in a component is one refactor from being
+ * rendered by accident.
+ *
+ * Days where NEITHER of you answered are not included. There is nothing to
+ * show and nothing waiting, and listing a hundred and eighty untouched
+ * questions would bury the handful that actually have something behind them.
+ *
+ * @param {{ cryptoKey: CryptoKey, ownerId: string, ownerIds?: Set<string>|Array<string>,
+ *   store?: Object, limit?: number }} args
+ * @returns {Promise<Array<{ day: string, question: Object|null, mine: Object|null,
+ *   theirs: Object|null, partnerHasAnswered: boolean, missed: boolean }>>}
+ */
+export async function listArchive(args) {
+  const { cryptoKey, ownerId } = args;
+  if (!cryptoKey || !ownerId) return [];
+
+  const store = args.store || db;
+  const ids = mineIds(ownerId, args.ownerIds);
+  const rows = await readAllRows(store, cryptoKey);
+
+  const mineByDay = foldAnswers(rows, (owner) => ids.has(owner));
+  const theirsByDay = foldAnswers(rows, (owner) => !ids.has(owner));
+
+  const days = new Set([...Object.keys(mineByDay), ...Object.keys(theirsByDay)]);
+  const out = [];
+
+  for (const day of days) {
+    const mine = mineByDay[day] || null;
+    const theirs = theirsByDay[day] || null;
+    const questionId = (mine && mine.questionId) || (theirs && theirs.questionId);
+
+    out.push({
+      day,
+      question: findQuestion(questionId),
+      mine,
+      // The same gate as readDay, and deliberately the same line of code shape:
+      // their words only exist in the result once yours do.
+      theirs: mine ? theirs : null,
+      partnerHasAnswered: theirs !== null,
+      missed: !mine && theirs !== null,
+    });
+  }
+
+  out.sort((a, b) => (a.day < b.day ? 1 : a.day > b.day ? -1 : 0));
+  return typeof args.limit === 'number' ? out.slice(0, args.limit) : out;
+}
+
 export default {
   ANSWER_TABLE,
   MAX_ANSWER_LENGTH,
   dayKey,
+  dateFromDayKey,
+  listArchive,
   monthKey,
   dayIndex,
   buildQuestionOrder,
