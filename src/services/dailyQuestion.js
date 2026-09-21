@@ -30,11 +30,19 @@
  * which is a better moment than midnight anyway - you wake up to a new one.
  *
  * ONE HONEST LIMIT ON THE BLIND REVEAL
- * Both phones share one key, so her answer arrives on your device readable. The
- * app will not show it to you until you have written yours, and that gate is
- * the whole feature - but it is a promise, not a lock, exactly like the
+ * Both phones share one key, so their answer arrives on your device readable.
+ * The app will not show it to you until you have written yours, and that gate
+ * is the whole feature - but it is a promise, not a lock, exactly like the
  * time-locked letters. Someone determined and technical could read around it.
  * That is not the failure mode this is built for.
+ *
+ * WHOSE ANSWER IS WHOSE
+ * Decided in exactly one place, by ownerOf() below, and a person is matched
+ * against a SET of ids rather than one - see services/people.js. A person is
+ * not a device: they have a phone and a laptop, and before people existed they
+ * had only a device tag that localStorage could lose. Every row any of those
+ * wrote is theirs, and folding rather than picking is what stops a month
+ * splitting in half the day an id changes.
  */
 
 import db from '../db/index.js';
@@ -184,27 +192,114 @@ function sanitizeAnswerText(text) {
   return trimmed.slice(0, MAX_ANSWER_LENGTH);
 }
 
-/** Reads a month bucket, tolerating one that is absent or unreadable. */
-async function readMonth(store, monthKeyString, ownerId, cryptoKey) {
+/**
+ * Who wrote this row, or null if the row cannot say so consistently.
+ *
+ * ONE ANSWER TO "WHOSE IS THIS", AND ONLY ONE. This used to be decided in two
+ * places by two different tests: readDay compared the record ID against the one
+ * it expected, while listAnswered read `ownerId` out of the sealed body. Both
+ * are inside the envelope so neither was forgeable, but they were two sources
+ * of truth for the same question, agreeing only because one function happened
+ * to write both fields consistently. Today's card and the archive could
+ * disagree about whose answer an answer was, and nothing would have caught it.
+ *
+ * So the id and the body must now AGREE, and disagreement is not attributed at
+ * all. A row like that is not an attack - it is a bug or a hand-edited backup -
+ * and either way guessing which half to believe is worse than declining to.
+ *
+ * @param {Object} row - A decrypted answer row.
+ * @returns {string|null}
+ */
+function ownerOf(row) {
+  if (!row || typeof row !== 'object') return null;
+  if (row._headerTampered === true || row._tableTampered === true) return null;
+  if (typeof row.ownerId !== 'string' || !row.ownerId) return null;
+  if (typeof row.month !== 'string' || !row.month) return null;
+  if (row.id !== answerRecordId(row.month, row.ownerId)) return null;
+  return row.ownerId;
+}
+
+/**
+ * Every id that counts as "written by me".
+ *
+ * More than one, because a person is not a device. It is their person id plus
+ * every device tag they have written under - their old phone, their laptop, and
+ * whatever they were using before people existed at all. See
+ * services/people.js#ownerIdsFor, which is where this set comes from.
+ *
+ * @param {string} ownerId - The id to WRITE under. Always counts as mine.
+ * @param {Set<string>|Array<string>} [ownerIds] - Everything else that is mine.
+ * @returns {Set<string>}
+ */
+function mineIds(ownerId, ownerIds) {
+  const ids = new Set();
+  if (ownerIds && typeof ownerIds[Symbol.iterator] === 'function') {
+    for (const id of ownerIds) if (typeof id === 'string' && id) ids.add(id);
+  }
+  if (typeof ownerId === 'string' && ownerId) ids.add(ownerId);
+  return ids;
+}
+
+/** @returns {boolean} True for an answer entry with actual words in it. */
+function isAnswer(entry) {
+  return !!(entry && typeof entry.text === 'string' && entry.text);
+}
+
+/**
+ * Folds every row belonging to one side into a single day -> answer map.
+ *
+ * Folding rather than picking, because one person legitimately has more than
+ * one row per month: a phone and a laptop each wrote their own before their
+ * tags were joined up under one person, and a month answered before this
+ * version shipped sits under a device tag while this month sits under a person
+ * id. Picking one row would hide the others; folding shows the month the person
+ * actually lived.
+ *
+ * Ties go to the most recently written entry, which is the only ordering the
+ * records themselves carry.
+ */
+function foldAnswers(rows, predicate) {
+  const out = {};
+  for (const row of rows || []) {
+    const owner = ownerOf(row);
+    if (!owner || !predicate(owner)) continue;
+    if (!row.answers || typeof row.answers !== 'object') continue;
+
+    for (const [day, entry] of Object.entries(row.answers)) {
+      if (!isAnswer(entry)) continue;
+      const prev = out[day];
+      if (!prev || (entry.answeredAt || 0) >= (prev.answeredAt || 0)) out[day] = entry;
+    }
+  }
+  return out;
+}
+
+/** Reads every answer row, tolerating storage that is unavailable. */
+async function readAllRows(store, cryptoKey) {
   try {
-    const row = await store.getDecrypted(
-      ANSWER_TABLE,
-      answerRecordId(monthKeyString, ownerId),
-      cryptoKey
-    );
-    if (!row) return null;
-    if (row._headerTampered === true || row._tableTampered === true) return null;
-    return row;
+    return (await store.listDecrypted(ANSWER_TABLE, cryptoKey)) || [];
   } catch {
-    return null;
+    return [];
   }
 }
 
 /**
- * Writes today's answer into this month's bucket.
+ * Writes an answer into a month's bucket.
  *
- * @param {{ cryptoKey: CryptoKey, ownerId: string, questionId: string, text: string,
- *   when?: Date|number, store?: Object, timestamp?: () => number|Promise<number> }} args
+ * `when` is not always today. The archive lets either person answer a day they
+ * missed, and this already supported it - a month bucket is keyed by day, so
+ * writing into a past one was never a different operation.
+ *
+ * WHY THIS READS EVERY ROW OF MINE AND NOT JUST ONE
+ * The row it writes is the canonical one for this month under the id this
+ * person writes under NOW. Anything the same person wrote under an older id
+ * (their laptop's tag, or the device tag they used before people existed) is
+ * folded in first, so the canonical row converges on the whole month instead of
+ * the month splitting permanently the day the id changed.
+ *
+ * @param {{ cryptoKey: CryptoKey, ownerId: string, ownerIds?: Set<string>|Array<string>,
+ *   questionId: string, text: string, when?: Date|number, store?: Object,
+ *   timestamp?: () => number|Promise<number> }} args
  * @returns {Promise<Object>} The sealed row, ready to broadcast.
  */
 export async function saveAnswer(args) {
@@ -219,11 +314,13 @@ export async function saveAnswer(args) {
   const stamp = args.timestamp || (async () => Date.now());
   const day = dayKey(when);
   const month = monthKey(day);
+  const ids = mineIds(ownerId, args.ownerIds);
 
-  const existing = await readMonth(store, month, ownerId, cryptoKey);
-  const answers = existing && existing.answers && typeof existing.answers === 'object'
-    ? { ...existing.answers }
-    : {};
+  const rows = await readAllRows(store, cryptoKey);
+  const answers = foldAnswers(
+    rows.filter((row) => row && row.month === month),
+    (owner) => ids.has(owner)
+  );
 
   answers[day] = { questionId, text: body, answeredAt: Date.now() };
 
@@ -259,34 +356,18 @@ export async function readDay(args) {
 
   const store = args.store || db;
   const month = monthKey(day);
+  const ids = mineIds(ownerId, args.ownerIds);
 
-  let rows;
-  try {
-    rows = await store.listDecrypted(ANSWER_TABLE, cryptoKey);
-  } catch {
-    return empty;
-  }
+  const rows = (await readAllRows(store, cryptoKey)).filter((row) => row && row.month === month);
 
-  const mineId = answerRecordId(month, ownerId);
-  let mine = null;
-  let theirs = null;
-
-  for (const row of rows || []) {
-    if (!row || row.month !== month) continue;
-    if (row._headerTampered === true || row._tableTampered === true) continue;
-    if (!row.answers || typeof row.answers !== 'object') continue;
-    const entry = row.answers[day];
-    if (!entry || typeof entry.text !== 'string' || !entry.text) continue;
-
-    if (row.id === mineId) mine = entry;
-    else theirs = entry;
-  }
+  const mine = foldAnswers(rows, (owner) => ids.has(owner))[day] || null;
+  const theirs = foldAnswers(rows, (owner) => !ids.has(owner))[day] || null;
 
   return {
     day,
     mine,
-    // Whether she has answered is safe to show - it is what makes the gate feel
-    // like a locked box rather than an empty room. The words are not.
+    // Whether they have answered is safe to show - it is what makes the gate
+    // feel like a locked box rather than an empty room. The words are not.
     partnerHasAnswered: theirs !== null,
     partnerAnswer: mine ? theirs : null,
   };
@@ -305,37 +386,20 @@ export async function listAnswered(args) {
   if (!cryptoKey || !ownerId) return [];
 
   const store = args.store || db;
-  let rows;
-  try {
-    rows = await store.listDecrypted(ANSWER_TABLE, cryptoKey);
-  } catch {
-    return [];
-  }
+  const ids = mineIds(ownerId, args.ownerIds);
+  const rows = await readAllRows(store, cryptoKey);
 
-  /** @type {Map<string, { mine: Object|null, theirs: Object|null }>} */
-  const byDay = new Map();
-
-  for (const row of rows || []) {
-    if (!row || !row.answers || typeof row.answers !== 'object') continue;
-    if (row._headerTampered === true || row._tableTampered === true) continue;
-    const isMine = row.ownerId === ownerId;
-
-    for (const [day, entry] of Object.entries(row.answers)) {
-      if (!entry || typeof entry.text !== 'string' || !entry.text) continue;
-      if (!byDay.has(day)) byDay.set(day, { mine: null, theirs: null });
-      const slot = byDay.get(day);
-      if (isMine) slot.mine = entry;
-      else slot.theirs = entry;
-    }
-  }
+  // The same fold, and therefore the same idea of "mine", that readDay uses.
+  const mineByDay = foldAnswers(rows, (owner) => ids.has(owner));
+  const theirsByDay = foldAnswers(rows, (owner) => !ids.has(owner));
 
   const out = [];
-  for (const [day, slot] of byDay) {
+  for (const [day, mine] of Object.entries(mineByDay)) {
     // Only days where YOURS exists. An archive is not a place to read around
     // the gate you have not passed yet.
-    if (!slot.mine) continue;
-    const questionId = slot.mine.questionId || (slot.theirs && slot.theirs.questionId);
-    out.push({ day, question: findQuestion(questionId), mine: slot.mine, theirs: slot.theirs });
+    const theirs = theirsByDay[day] || null;
+    const questionId = mine.questionId || (theirs && theirs.questionId);
+    out.push({ day, question: findQuestion(questionId), mine, theirs });
   }
 
   out.sort((a, b) => (a.day < b.day ? 1 : a.day > b.day ? -1 : 0));

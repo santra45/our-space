@@ -3939,6 +3939,130 @@ async function run() {
     dqTampered.partnerAnswer === null && dqTampered.partnerHasAnswered === false
   );
 
+  /* -- one person, several ids --------------------------------------------- */
+  //
+  // A person is not a device. They answered on a laptop last month, on a phone
+  // this month, and under a bare device tag before people existed at all. Every
+  // one of those rows is theirs, and the month must not split.
+
+  const dqMulti = new FakeVaultStore();
+  const dqOldTag = 'his-old-device-tag';
+  const dqPersonId = 'his-person-id-01';
+  let dqMultiClock = 1700000000000;
+  const dqMultiStamp = () => (dqMultiClock += 1000);
+  const dqMineIds = new Set([dqPersonId, dqOldTag]);
+
+  // Last month, written under the device tag, before people existed.
+  await dq.saveAnswer({
+    cryptoKey: key,
+    ownerId: dqOldTag,
+    questionId: 'q1',
+    text: 'written back when this app only knew devices',
+    when: new Date('2026-08-04T09:00:00Z'),
+    store: dqMulti,
+    timestamp: dqMultiStamp,
+  });
+  // The same month, on the laptop, still under the old tag.
+  await dq.saveAnswer({
+    cryptoKey: key,
+    ownerId: dqOldTag,
+    questionId: 'q2',
+    text: 'and this one from the laptop',
+    when: new Date('2026-08-05T09:00:00Z'),
+    store: dqMulti,
+    timestamp: dqMultiStamp,
+  });
+  // Now, under the person id.
+  await dq.saveAnswer({
+    cryptoKey: key,
+    ownerId: dqPersonId,
+    ownerIds: dqMineIds,
+    questionId: 'q3',
+    text: 'and this one now that the vault knows who I am',
+    when: new Date('2026-08-06T09:00:00Z'),
+    store: dqMulti,
+    timestamp: dqMultiStamp,
+  });
+
+  const dqFolded = await dq.listAnswered({
+    cryptoKey: key,
+    ownerId: dqPersonId,
+    ownerIds: dqMineIds,
+    store: dqMulti,
+  });
+  check('a month written under two ids does not split in half', dqFolded.length === 3);
+  check(
+    'and the oldest of them is still readable',
+    dqFolded.some((e) => e.mine.text.startsWith('written back'))
+  );
+  check(
+    'writing under the new id folds the old one in',
+    Object.keys(
+      (await dqMulti.getDecrypted(dq.ANSWER_TABLE, dq.answerRecordId('2026-08', dqPersonId), key))
+        .answers
+    ).length === 3
+  );
+
+  const dqFoldedDay = await dq.readDay({
+    cryptoKey: key,
+    ownerId: dqPersonId,
+    ownerIds: dqMineIds,
+    when: new Date('2026-08-04T09:00:00Z'),
+    store: dqMulti,
+  });
+  check('and a day from the old id reads back as MINE', dqFoldedDay.mine !== null);
+  check('not as my partner\'s', dqFoldedDay.partnerHasAnswered === false);
+
+  // Without the id set, the old rows are somebody else's - which is precisely
+  // the bug people records exist to end.
+  const dqUnbridged = await dq.readDay({
+    cryptoKey: key,
+    ownerId: dqPersonId,
+    when: new Date('2026-08-04T09:00:00Z'),
+    store: dqMulti,
+  });
+  check(
+    'and with no bridge, an old row WOULD read as the partner (the bug)',
+    dqUnbridged.partnerHasAnswered === true
+  );
+
+  /* -- readDay and listAnswered cannot disagree ---------------------------- */
+  //
+  // They used to decide "mine" two different ways: one compared the record id,
+  // the other read `ownerId` out of the sealed body. Both are inside the
+  // envelope, so neither was forgeable - but they were two sources of truth for
+  // one question, and a row where they disagree had no defined owner.
+
+  const dqSplitId = dq.answerRecordId('2026-08', dqOldTag);
+  const dqSplitRow = await dqMulti.getDecrypted(dq.ANSWER_TABLE, dqSplitId, key);
+  await dqMulti.putEncrypted(
+    dq.ANSWER_TABLE,
+    { ...dqSplitRow, ownerId: 'a-completely-different-tag', updatedAt: dqMultiStamp() },
+    key
+  );
+
+  const dqSplitDay = await dq.readDay({
+    cryptoKey: key,
+    ownerId: dqPersonId,
+    ownerIds: dqMineIds,
+    when: new Date('2026-08-05T09:00:00Z'),
+    store: dqMulti,
+  });
+  const dqSplitList = await dq.listAnswered({
+    cryptoKey: key,
+    ownerId: dqPersonId,
+    ownerIds: dqMineIds,
+    store: dqMulti,
+  });
+  check(
+    'a row whose id and sealed owner disagree is attributed to nobody',
+    dqSplitDay.partnerHasAnswered === false
+  );
+  check(
+    'and today and the archive agree about that, because they share one rule',
+    dqSplitList.some((e) => e.day === '2026-08-05' && e.theirs === null)
+  );
+
 
   /* =============================================================== 19
    * ANNIVERSARIES
