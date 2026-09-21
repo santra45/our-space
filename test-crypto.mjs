@@ -3977,6 +3977,338 @@ async function run() {
   check('a start date set in the future never reports year 0', annFuture.anniversary.year >= 1);
 
 
+  /* ------------------------------------------- 20. the two of you, as people */
+  //
+  // Before people existed, identity WAS the device tag in localStorage. Safari
+  // discards localStorage after about seven idle days, so the most important
+  // thing proved here is not that people can be created - it is that losing
+  // that storage costs at most one tap, and never costs an archive.
+  section('20. People: the vault knows which of you is holding the phone');
+
+  const peopleStore = new FakeVaultStore();
+  const peopleLocal = new Map();
+  Object.defineProperty(globalThis, 'localStorage', {
+    value: {
+      getItem: (k) => (peopleLocal.has(k) ? peopleLocal.get(k) : null),
+      setItem: (k, v) => peopleLocal.set(k, String(v)),
+      removeItem: (k) => peopleLocal.delete(k),
+    },
+    configurable: true,
+    writable: true,
+  });
+
+  const ppl = await import('./src/services/people.js');
+  let pplClock = 1700000000000;
+  const pplStamp = () => (pplClock += 1000);
+
+  const HIS_PHONE = 'his-phone-tag-01';
+  const HIS_LAPTOP = 'his-laptop-tag-1';
+  const HER_PHONE = 'her-phone-tag-01';
+
+  /* -- nothing set up yet ------------------------------------------------- */
+
+  const pplEmpty = await ppl.resolveIdentity({
+    cryptoKey: key,
+    store: peopleStore,
+    deviceId: HIS_PHONE,
+  });
+  check('an empty vault reports `empty` rather than guessing', pplEmpty.status === 'empty');
+
+  /* -- he sets both of you up on his phone -------------------------------- */
+
+  const couple = await ppl.createCouple({
+    cryptoKey: key,
+    store: peopleStore,
+    deviceId: HIS_PHONE,
+    timestamp: pplStamp,
+    mine: { name: 'Harshit', pronoun: 'he' },
+    theirs: { name: 'Noor', pronoun: 'she' },
+  });
+
+  check('setting up creates both halves of the couple', couple.me && couple.partner ? true : false);
+  check('the device that set it up is the person who set it up', couple.me.name === 'Harshit');
+  check('and the other one is the partner', couple.partner.name === 'Noor');
+  check('his phone is recorded on his person', couple.me.deviceIds.includes(HIS_PHONE));
+  check('her person carries no device yet', couple.partner.deviceIds.length === 0);
+
+  const hisId = couple.me.personId;
+  const herId = couple.partner.personId;
+  check('the two people are not the same person', hisId !== herId);
+
+  /* -- the eviction case, which is the whole reason this file exists ------ */
+  //
+  // Safari wipes localStorage; the hint is gone. The device tag is still on the
+  // person record, so this must resolve WITHOUT asking the user anything.
+
+  peopleLocal.clear();
+  ppl.clearLocalPersonId();
+
+  const afterWipe = await ppl.resolveIdentity({
+    cryptoKey: key,
+    store: peopleStore,
+    deviceId: HIS_PHONE,
+  });
+  check('losing localStorage does not lose who you are', afterWipe.status === 'ready');
+  check('it recovers the right person, silently', afterWipe.me.personId === hisId);
+  check('and the partner still resolves', afterWipe.partner.personId === herId);
+  check('the recovered hint is written back', ppl.getLocalPersonId() === hisId);
+
+  /* -- a device nobody has claimed: ask, do not guess ---------------------- */
+
+  peopleLocal.clear();
+  ppl.clearLocalPersonId();
+
+  const unclaimed = await ppl.resolveIdentity({
+    cryptoKey: key,
+    store: peopleStore,
+    deviceId: HER_PHONE,
+  });
+  check('an unknown device asks instead of guessing', unclaimed.status === 'unclaimed');
+  check('and it offers both of you to choose from', unclaimed.people.length === 2);
+  check('it does not pick a "me" on a hunch', unclaimed.me === null);
+
+  /* -- she taps her own name once ----------------------------------------- */
+
+  await ppl.claimPerson({
+    cryptoKey: key,
+    store: peopleStore,
+    personId: herId,
+    deviceId: HER_PHONE,
+    timestamp: pplStamp,
+  });
+
+  const hers = await ppl.resolveIdentity({
+    cryptoKey: key,
+    store: peopleStore,
+    deviceId: HER_PHONE,
+  });
+  check('one tap is all it takes to claim a device', hers.status === 'ready');
+  check('her phone is her', hers.me.personId === herId);
+  check('and from her phone, HE is the partner', hers.partner.personId === hisId);
+  check('her device tag is now on her record', hers.me.deviceIds.includes(HER_PHONE));
+
+  /* -- claiming did not damage his side ------------------------------------ */
+  //
+  // One real device has one localStorage, but this harness has one for ALL the
+  // simulated devices - so switching device here means dropping the hint too,
+  // which is also exactly the state his phone would be in after an eviction.
+
+  peopleLocal.clear();
+  ppl.clearLocalPersonId();
+
+  const stillHis = await ppl.resolveIdentity({
+    cryptoKey: key,
+    store: peopleStore,
+    deviceId: HIS_PHONE,
+  });
+  check('claiming one person leaves the other one alone', stillHis.me.personId === hisId);
+
+  /* -- tapping the wrong name is a mistake you can take back --------------- */
+  //
+  // A device belongs to exactly ONE person. If the tag could sit on both
+  // records, both people would answer to it - and because a device tag is how
+  // pre-people rows are attributed, the same answers would read as written by
+  // each of them.
+
+  await ppl.claimPerson({
+    cryptoKey: key,
+    store: peopleStore,
+    personId: herId,
+    deviceId: HIS_PHONE,
+    timestamp: pplStamp,
+  });
+  const misclaimed = await ppl.listPeople({ cryptoKey: key, store: peopleStore });
+  check(
+    'a mis-tap moves the device onto the person tapped',
+    misclaimed.find((p) => p.personId === herId).deviceIds.includes(HIS_PHONE)
+  );
+  check(
+    'and takes it off the one it was on',
+    misclaimed.find((p) => p.personId === hisId).deviceIds.includes(HIS_PHONE) === false
+  );
+
+  await ppl.claimPerson({
+    cryptoKey: key,
+    store: peopleStore,
+    personId: hisId,
+    deviceId: HIS_PHONE,
+    timestamp: pplStamp,
+  });
+  const corrected = await ppl.listPeople({ cryptoKey: key, store: peopleStore });
+  check(
+    'correcting it puts the device back',
+    corrected.find((p) => p.personId === hisId).deviceIds.includes(HIS_PHONE)
+  );
+  check(
+    'and never leaves one device answering to two people',
+    corrected.find((p) => p.personId === herId).deviceIds.includes(HIS_PHONE) === false
+  );
+  check(
+    'her own device is untouched throughout',
+    corrected.find((p) => p.personId === herId).deviceIds.includes(HER_PHONE)
+  );
+
+  /* -- one human, two devices --------------------------------------------- */
+  //
+  // This is the bug that made a laptop show its owner's own answers as their
+  // partner's: two tags, one person, and nothing joining them up.
+
+  await ppl.claimPerson({
+    cryptoKey: key,
+    store: peopleStore,
+    personId: hisId,
+    deviceId: HIS_LAPTOP,
+    timestamp: pplStamp,
+  });
+
+  const twoDevices = await ppl.resolveIdentity({
+    cryptoKey: key,
+    store: peopleStore,
+    deviceId: HIS_LAPTOP,
+  });
+  check('a second device can belong to the same person', twoDevices.me.personId === hisId);
+  check('his phone is still on the record too', twoDevices.me.deviceIds.includes(HIS_PHONE));
+  check('and so is his laptop', twoDevices.me.deviceIds.includes(HIS_LAPTOP));
+
+  /* -- the migration bridge ------------------------------------------------ */
+  //
+  // Rows written before people existed carry a DEVICE tag in `ownerId`. They
+  // have to keep belonging to the right human without being rewritten.
+
+  const hisOwnerIds = ppl.ownerIdsFor(twoDevices.me);
+  check('a person answers to their person id', hisOwnerIds.has(hisId));
+  check('and to every device tag they have ever used', hisOwnerIds.has(HIS_PHONE));
+  check('including the second one', hisOwnerIds.has(HIS_LAPTOP));
+  check('but not to the other person\'s device', hisOwnerIds.has(HER_PHONE) === false);
+  check('an absent person owns nothing', ppl.ownerIdsFor(null).size === 0);
+
+  /* -- renaming must not cost the device tags ------------------------------ */
+
+  await ppl.savePerson({
+    cryptoKey: key,
+    store: peopleStore,
+    personId: hisId,
+    name: 'H',
+    timestamp: pplStamp,
+  });
+  const renamed = await ppl.resolveIdentity({
+    cryptoKey: key,
+    store: peopleStore,
+    deviceId: HIS_PHONE,
+  });
+  check('a rename takes effect', renamed.me.name === 'H');
+  check('and does NOT drop the device tags', renamed.me.deviceIds.length === 2);
+  check('nor the pronoun that was not edited', renamed.me.pronoun === 'he');
+
+  /* -- a sync that drops our tag heals itself ------------------------------ */
+  //
+  // Person records merge last-write-wins on the whole record, so two devices
+  // that both claim while apart can knock each other's tag off. Re-adding on
+  // open is the difference between self-healing and a support conversation.
+
+  await ppl.savePerson({
+    cryptoKey: key,
+    store: peopleStore,
+    personId: hisId,
+    addDeviceId: HIS_LAPTOP,
+    timestamp: pplStamp,
+  });
+  // Simulate the losing write landing: a record for him with only the laptop.
+  await peopleStore.putEncrypted(
+    'people',
+    {
+      id: ppl.personRecordId(hisId),
+      personId: hisId,
+      name: 'H',
+      pronoun: 'he',
+      deviceIds: [HIS_LAPTOP],
+      createdAt: 1,
+      updatedAt: pplStamp(),
+    },
+    key
+  );
+  ppl.setLocalPersonId(hisId);
+
+  const healed = await ppl.ensureDeviceClaimed({
+    cryptoKey: key,
+    store: peopleStore,
+    deviceId: HIS_PHONE,
+    timestamp: pplStamp,
+  });
+  check('a dropped device tag is noticed', healed !== null);
+  const afterHeal = await ppl.resolveIdentity({
+    cryptoKey: key,
+    store: peopleStore,
+    deviceId: HIS_PHONE,
+  });
+  check('and put back without asking', afterHeal.me.deviceIds.includes(HIS_PHONE));
+  check('leaving the other device where it was', afterHeal.me.deviceIds.includes(HIS_LAPTOP));
+  check(
+    'and doing nothing at all when there is nothing to fix',
+    (await ppl.ensureDeviceClaimed({
+      cryptoKey: key,
+      store: peopleStore,
+      deviceId: HIS_PHONE,
+      timestamp: pplStamp,
+    })) === null
+  );
+
+  /* -- names and pronouns arrive over sync, so they are not trusted -------- */
+
+  check('a name is trimmed', ppl.sanitizeName('  Noor  ') === 'Noor');
+  check('a pasted newline cannot break a line of copy', ppl.sanitizeName('No\nor') === 'No or');
+  check(
+    'a name is bounded',
+    ppl.sanitizeName('n'.repeat(500)).length === ppl.MAX_NAME_LENGTH
+  );
+  check('a non-string name is simply absent', ppl.sanitizeName({ evil: true }) === '');
+  check('an unknown pronoun falls back to they', ppl.sanitizePronoun('xyzzy') === 'they');
+  check('a known one is kept', ppl.sanitizePronoun('she') === 'she');
+
+  /* -- the verb-agreement trap -------------------------------------------- */
+  //
+  // "they has answered" is the bug every neutral-copy app ships. The grammar
+  // lives beside the pronoun so a sentence cannot be right for one person and
+  // wrong for the other.
+
+  check('they take a plural verb', ppl.grammarOf({ pronoun: 'they' }).has === 'have');
+  check('she takes a singular one', ppl.grammarOf({ pronoun: 'she' }).has === 'has');
+  check('and so does he', ppl.grammarOf({ pronoun: 'he' }).is === 'is');
+  check('a missing person still yields usable grammar', ppl.grammarOf(null).subject === 'they');
+
+  check('a possessive reads naturally', ppl.possessiveOf({ name: 'Noor' }) === "Noor's");
+  check('a name ending in s is not mangled', ppl.possessiveOf({ name: 'Iris' }) === "Iris'");
+  check('a nameless partner still has a possessive', ppl.possessiveOf(null) === "your partner's");
+  check('and a usable name', ppl.nameOf(null) === 'your partner');
+
+  /* -- a forged person record --------------------------------------------- */
+  //
+  // These rows arrive over sync like any other. An id that does not match the
+  // personId inside it is the shape a replay would take, so it is refused.
+
+  check(
+    'a person whose id does not match its own personId is refused',
+    ppl.toPerson({ id: 'person-somebody-else', personId: 'aaaaaaaaaaaa', name: 'X' }) === null
+  );
+  check(
+    'a tampered header is refused',
+    ppl.toPerson({
+      id: ppl.personRecordId('aaaaaaaaaaaa'),
+      personId: 'aaaaaaaaaaaa',
+      _headerTampered: true,
+    }) === null
+  );
+  check(
+    'a row sealed for another table is refused',
+    ppl.toPerson({
+      id: ppl.personRecordId('aaaaaaaaaaaa'),
+      personId: 'aaaaaaaaaaaa',
+      _tableTampered: true,
+    }) === null
+  );
+  check('and so is a person with no id at all', ppl.toPerson({ name: 'X' }) === null);
+
+
   /* ------------------------------------------------------- verdict */
   console.log('\n' + '='.repeat(64));
   if (failures.length > 0) {

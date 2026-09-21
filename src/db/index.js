@@ -56,6 +56,7 @@ export const SYNCED_TABLES = Object.freeze([
   'bucketList',
   'loveBursts',
   'dailyAnswers',
+  'people',
 ]);
 
 /**
@@ -161,6 +162,29 @@ export class SweetheartDatabase extends Dexie {
       bucketList: 'id, updatedAt, _del',
       loveBursts: 'id, updatedAt, _del',
       dailyAnswers: 'id, updatedAt, _del',
+    });
+
+    /**
+     * Version 5 adds `people`. Same reasoning as 3 and 4: no migration needed.
+     *
+     * Deliberately NOT accompanied by a data migration that invents people out
+     * of the device tags already sitting in `dailyAnswers` and `loveBursts`.
+     * A tag says which DEVICE wrote a row; it cannot say which of the two
+     * humans was holding it, and a migration that guesses would confidently
+     * attribute a year of answers to the wrong person. The tags are adopted
+     * onto a person record when that person identifies themselves instead -
+     * see `deviceIds` in services/people.js.
+     */
+    this.version(5).stores({
+      vaultMeta: 'id',
+      memories: 'id, updatedAt, _del',
+      milestones: 'id, updatedAt, _del',
+      dateIdeas: 'id, updatedAt, _del',
+      letters: 'id, updatedAt, _del',
+      bucketList: 'id, updatedAt, _del',
+      loveBursts: 'id, updatedAt, _del',
+      dailyAnswers: 'id, updatedAt, _del',
+      people: 'id, updatedAt, _del',
     });
 
     this._installTombstoneHooks();
