@@ -18,6 +18,11 @@
  * 'unclaimed' would leave the app unable to tell whose answers are whose,
  * which is the one thing it must not get wrong - and the cost of answering is a
  * single tap on your own name.
+ *
+ * The one-tap screen also promises you can switch later. components/people/
+ * WhoIsWho.jsx is what makes that true, and the two have to stay honest about
+ * each other: a promise made at the moment someone thinks they have broken
+ * something is not a promise to leave dangling.
  */
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
@@ -130,7 +135,7 @@ export function PeopleSetup() {
         )}
 
         <p className="text-[10px] text-slate-400 text-center leading-relaxed mt-4">
-          Pick the wrong one? Tap the other name any time in Settings.
+          Picked the wrong one? You can switch any time from the Pair &amp; Sync Hub.
         </p>
       </Shell>
     );

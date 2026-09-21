@@ -1,0 +1,175 @@
+/**
+ * src/components/people/WhoIsWho.jsx
+ * Change a name, a pronoun, or which of you is holding this phone.
+ *
+ * WHY THIS HAS TO EXIST
+ * Because PeopleSetup tells people it does. Its one-tap screen ends with "pick
+ * the wrong one? Tap the other name any time in Settings", and a promise like
+ * that either is true or it is the app lying to someone at the exact moment
+ * they are worried they broke something.
+ *
+ * SWITCHING IS THE IMPORTANT ONE, not renaming. A mis-tap on the claim screen
+ * means this device is writing answers as the wrong person, and the longer it
+ * goes unnoticed the more there is to untangle. claimPerson is exclusive - the
+ * device tag comes off whoever held it - so switching here genuinely moves this
+ * phone rather than leaving it claimed by both.
+ */
+import React, { useState } from 'react';
+import { UserRound, Check, Pencil } from 'lucide-react';
+import { usePeople } from '../../context/PeopleContext';
+import { MAX_NAME_LENGTH, PRONOUNS } from '../../services/people';
+import { useHaptics } from '../../hooks/useHaptics';
+
+const PRONOUN_LABELS = {
+  she: 'she / her',
+  he: 'he / him',
+  they: 'they / them',
+};
+
+export function WhoIsWho() {
+  const { status, people, me, partner, busy, savePerson, claimPerson } = usePeople();
+  const { tap } = useHaptics();
+
+  const [editing, setEditing] = useState(null);
+  const [name, setName] = useState('');
+  const [pronoun, setPronoun] = useState('they');
+
+  // Nothing to show until there are people. The setup card is what appears
+  // instead, and it is already on screen when this would be empty.
+  if (status !== 'ready' || !me) return null;
+
+  const startEdit = (person) => {
+    tap();
+    setEditing(person.personId);
+    setName(person.name || '');
+    setPronoun(person.pronoun || 'they');
+  };
+
+  const commit = async () => {
+    await savePerson(editing, { name, pronoun });
+    setEditing(null);
+  };
+
+  const row = (person, isMe) => {
+    if (editing === person.personId) {
+      return (
+        <div key={person.personId} className="p-2.5 rounded-2xl bg-white border border-lavender-200">
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            maxLength={MAX_NAME_LENGTH}
+            autoFocus
+            placeholder={isMe ? 'Your name' : 'Their name'}
+            className="w-full px-3 py-2 bg-white border border-lavender-200 rounded-xl text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-lavender-300 placeholder:text-slate-400"
+          />
+          <div className="flex gap-1.5 mt-2">
+            {PRONOUNS.map((p) => (
+              <button
+                key={p}
+                type="button"
+                onClick={() => setPronoun(p)}
+                className={`flex-1 py-1 rounded-lg text-[10px] font-bold transition-colors ${
+                  pronoun === p
+                    ? 'bg-lavender-500 text-white'
+                    : 'bg-lavender-50 text-lavender-600 hover:bg-lavender-100'
+                }`}
+              >
+                {PRONOUN_LABELS[p]}
+              </button>
+            ))}
+          </div>
+          <div className="flex items-center gap-3 mt-2.5">
+            <button
+              type="button"
+              disabled={busy || !name.trim()}
+              onClick={commit}
+              className="text-[11px] font-bold text-emerald-700 inline-flex items-center gap-1 disabled:opacity-40"
+            >
+              <Check className="w-3 h-3" />
+              <span>Save</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                tap();
+                setEditing(null);
+              }}
+              className="text-[11px] font-bold text-slate-400"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div
+        key={person.personId}
+        className="flex items-center justify-between gap-2 p-2.5 rounded-2xl bg-white border border-slate-200/70"
+      >
+        <div className="flex items-center gap-2 min-w-0">
+          <UserRound
+            className={`w-3.5 h-3.5 shrink-0 ${isMe ? 'text-blush-400' : 'text-lavender-400'}`}
+          />
+          <span className="text-xs font-bold text-slate-700 truncate">
+            {person.name || 'No name yet'}
+          </span>
+          {isMe && (
+            <span className="text-[9px] font-bold text-blush-600 bg-blush-50 px-1.5 py-0.5 rounded-full border border-blush-100 shrink-0">
+              this phone
+            </span>
+          )}
+          <span className="text-[10px] text-slate-400 shrink-0">
+            {PRONOUN_LABELS[person.pronoun] || PRONOUN_LABELS.they}
+          </span>
+        </div>
+
+        <div className="flex items-center gap-2 shrink-0">
+          {!isMe && (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={async () => {
+                tap();
+                await claimPerson(person.personId);
+              }}
+              className="text-[10px] font-bold text-lavender-600 underline disabled:opacity-40"
+            >
+              I&apos;m this one
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => startEdit(person)}
+            className="w-6 h-6 rounded-full bg-slate-100 text-slate-500 flex items-center justify-center hover:bg-slate-200"
+            aria-label={`Edit ${person.name || 'this person'}`}
+          >
+            <Pencil className="w-3 h-3" />
+          </button>
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div className="mb-4 p-3.5 rounded-2xl bg-slate-50 border border-slate-200/70">
+      <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-2">
+        Who is who
+      </p>
+
+      <div className="space-y-2">
+        {row(me, true)}
+        {partner && row(partner, false)}
+      </div>
+
+      <p className="text-[10px] text-slate-400 leading-relaxed mt-2">
+        {people.length > 2
+          ? 'More than two people are in here, which should not happen. Pick yourself and tell the other phone to do the same.'
+          : 'Names are sealed in your vault like everything else, and only ever appear on your two phones.'}
+      </p>
+    </div>
+  );
+}
+
+export default WhoIsWho;

@@ -39,6 +39,7 @@ import { useSync } from '../../context/SyncContext';
 import { useVault } from '../../context/VaultContext';
 import { buildInviteUrl, parseInvite } from '../../utils/invite';
 import BouncyButton from '../common/BouncyButton';
+import WhoIsWho from '../people/WhoIsWho';
 import QRScannerModal from './QRScannerModal';
 import { useHaptics } from '../../hooks/useHaptics';
 import db, {
@@ -1089,6 +1090,9 @@ export function SyncHubModal({ isOpen, onClose }) {
             <p className="text-[10px] text-slate-500 font-medium">Syncing with your partner...</p>
           )}
         </div>
+
+        {/* Who is who - names, pronouns, and which of you this phone is. */}
+        <WhoIsWho />
 
         {/* My QR Code Card */}
         <div className="text-center bg-slate-50 p-4 rounded-2xl border border-slate-200/70 mb-4">
