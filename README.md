@@ -227,10 +227,16 @@ It is optional. With none configured the app behaves exactly as it always did.
 
 ```bash
 cd worker
-npx wrangler r2 bucket create our-space-mailbox
+npx wrangler login
+npx wrangler kv namespace create MAILBOX
+# paste the printed id into wrangler.toml, then:
 npx wrangler secret put MAILBOX_TOKEN
 npx wrangler deploy
 ```
+
+It stores things in **Workers KV**, which is on the Workers free plan and needs
+no payment method. (R2 has a bigger free tier and works here too, but Cloudflare
+wants a card to activate it even for free.)
 
 Then set `VITE_MAILBOX_URL` and `VITE_MAILBOX_TOKEN` on the app and redeploy. Full
 instructions are in [`worker/README.md`](worker/README.md).
@@ -255,7 +261,11 @@ Nothing here is given any trust. Records arriving from the mailbox go through th
 checks as a restored backup and a live partner — sealed headers, table binding, photo
 digests, last-write-wins — so the worst a broken or hostile relay manages is going quiet.
 
-Free at two people's scale: 10GB of storage, no egress charge, 100,000 requests a day.
+Free at two people's scale, with no card: 100,000 Worker requests a day, 1GB of storage,
+1,000 writes a day. A publish only uploads what actually changed, so ordinary use is a
+handful of writes. Storage is the one to watch — a photo record can be 12MB, so about a
+hundred photos fills it, after which photos stop publishing and everything else carries on.
+Photos still sync phone-to-phone regardless.
 
 ---
 

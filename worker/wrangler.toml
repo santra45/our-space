@@ -2,13 +2,31 @@ name = "our-space-mailbox"
 main = "src/index.js"
 compatibility_date = "2026-09-01"
 
-# The only place anything is stored. R2 rather than KV because a record can be a
-# photo: KV caps a value at 25MB but is priced and shaped for small hot reads,
-# while R2 has no egress charge at all and 10GB free, which is far more than two
-# people's vault will ever be.
-[[r2_buckets]]
+# Workers KV, because it is part of the Workers free plan and needs NO payment
+# method on file. R2 has a much larger free tier - 10GB against KV's 1GB - but
+# Cloudflare makes you link a card to activate it even so, which is an absurd
+# thing to ask of someone setting this up for two people who will never get
+# near any limit.
+#
+# Create it, then paste the id it prints here:
+#   npx wrangler kv namespace create MAILBOX
+#
+# What the free tier gives you: 1GB of storage, 100,000 reads a day and 1,000
+# writes a day. A publish writes only the records that actually changed plus one
+# manifest, so ordinary use is a handful of writes. The one to keep an eye on is
+# storage: a photo record can be 12MB, so roughly a hundred photos fills it. If
+# that ever happens the photos simply stop publishing - letters, answers,
+# milestones and the rest carry on, and photos still sync phone-to-phone.
+[[kv_namespaces]]
 binding = "MAILBOX"
-bucket_name = "our-space-mailbox"
+id = "PASTE_YOUR_NAMESPACE_ID_HERE"
+
+# If you would rather use R2 and do not mind linking a card, delete the block
+# above and use this instead. The Worker handles either one.
+#
+# [[r2_buckets]]
+# binding = "MAILBOX"
+# bucket_name = "our-space-mailbox"
 
 [vars]
 # Comma-separated. The Worker refuses any browser origin not on this list rather

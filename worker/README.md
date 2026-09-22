@@ -27,14 +27,28 @@ should not be one you use anywhere else.
 
 ```bash
 cd worker
-npx wrangler r2 bucket create our-space-mailbox
+npx wrangler login
+npx wrangler kv namespace create MAILBOX
+```
+
+That last command prints a namespace id. Paste it into `wrangler.toml` where it
+says `PASTE_YOUR_NAMESPACE_ID_HERE`, then:
+
+```bash
 npx wrangler secret put MAILBOX_TOKEN   # any long random string
 npx wrangler deploy
 ```
 
-Then edit `ALLOWED_ORIGIN` in `wrangler.toml` to your own domain and deploy
-again. The Worker refuses browser origins that are not on that list rather than
-reflecting whatever asked, so this step is not optional.
+**No payment method needed.** Workers KV is part of the Workers free plan.
+Cloudflare R2 has a far bigger free tier and this Worker supports it too, but it
+makes you link a card to activate even the free tier, which is a silly thing to
+ask for two people's letters. If you already have R2 and would rather use it,
+swap the binding in `wrangler.toml`; nothing else changes.
+
+`ALLOWED_ORIGIN` in `wrangler.toml` already lists `sameskytonight.vercel.app`
+and localhost. If you are deploying this for a different app, change it and
+deploy again — the Worker refuses browser origins that are not on that list
+rather than reflecting whatever asked, so it will not work until you do.
 
 Finally, set these on the app (Vercel → Project Settings → Environment
 Variables) and redeploy:
@@ -46,11 +60,24 @@ VITE_MAILBOX_TOKEN=<the same token>
 
 ## What it costs
 
-Nothing, at two people's scale. Cloudflare's free tier is 10GB of R2 storage,
-1M writes and 10M reads a month, no egress charge, and 100,000 Worker requests
-a day. A mailbox holds one copy of each phone's vault — records are overwritten
-in place rather than accumulating — so it stays the size of your app, not the
-size of its history.
+Nothing, and no card. The Workers free plan gives you 100,000 Worker requests a
+day, and KV gives 1GB of storage with 100,000 reads and 1,000 writes a day.
+
+A publish only uploads the records that actually changed plus one manifest, so
+ordinary use is a handful of writes a day — nowhere near the limit. The one to
+watch is storage: a photo record can be 12MB, so roughly a hundred photos fills
+the gigabyte. If that happens the photos simply stop publishing. Letters,
+answers, milestones and everything else carry on, and photos still sync
+phone-to-phone as they always did.
+
+A mailbox holds one copy of each phone's vault — records are overwritten in
+place rather than accumulating — so it stays the size of your app, not the size
+of its history.
+
+**KV is eventually consistent.** A write can take up to a minute to be visible
+everywhere. The entire point of this is that the two of you are *not* online
+together, so a minute is nothing — but if you publish on one phone and
+immediately check the other, that is why it can look like nothing happened.
 
 ## Why nothing is ever deleted
 

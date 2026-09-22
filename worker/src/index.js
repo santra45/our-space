@@ -45,14 +45,30 @@
  * the request quota, not to keep a secret. The path is the credential. Do not
  * mistake the token for security, and do not reuse a real password for it.
  *
+ * WHERE IT STORES THINGS
+ * Workers KV, because it is included in the Workers free plan with no payment
+ * method on file. R2 has a far larger free tier but requires a card to activate
+ * even so, which is a silly thing to ask of someone setting this up for two
+ * people. Both bindings work here - see readObject - so switching later is a
+ * one-line change in wrangler.toml.
+ *
+ * KV IS EVENTUALLY CONSISTENT, and that is fine here but worth knowing. A write
+ * can take up to a minute to be visible everywhere, and a miss can stay cached
+ * about as long. The entire point of this thing is that the two of you are NOT
+ * online together, so a minute is nothing - but if you publish on one phone and
+ * immediately check the other, that is why it looks like nothing happened.
+ *
  * DEPLOY
  *   cd worker
- *   npx wrangler r2 bucket create our-space-mailbox
- *   npx wrangler secret put MAILBOX_TOKEN     # any long random string
+ *   npx wrangler kv namespace create MAILBOX   # paste the id into wrangler.toml
+ *   npx wrangler secret put MAILBOX_TOKEN      # any long random string
  *   npx wrangler deploy
  */
 
-/** Ceiling on one stored object. A photo record is the large case, ~12MB after base64. */
+/**
+ * Ceiling on one stored object. A photo record is the large case, ~12MB after
+ * base64, and KV's own per-value limit is 25MB.
+ */
 const MAX_OBJECT_BYTES = 16 * 1024 * 1024;
 
 /** `/m/<mailboxId>/<owner>/manifest` or `/m/<mailboxId>/<owner>/rec/<table>/<key>`. */
@@ -92,6 +108,28 @@ function corsHeaders(request, env) {
   const list = allowed.split(',').map((s) => s.trim()).filter(Boolean);
   if (origin && list.includes(origin)) headers['Access-Control-Allow-Origin'] = origin;
   return headers;
+}
+
+/**
+ * Reads one object from whichever store is bound, or null when it is not there.
+ *
+ * WHY THIS WORKS FOR BOTH KV AND R2
+ * KV is the default because it is on the Workers free plan and needs no payment
+ * method on file, which R2 does even for its free tier - a real barrier for
+ * someone setting this up for two people who will never approach any limit.
+ * But R2 remains a perfectly good binding here for anyone who already has it,
+ * and the two APIs differ by one call, so supporting both costs almost nothing
+ * and means nobody has to migrate.
+ *
+ * R2's get() returns an object with a body; KV's returns the value directly and
+ * has to be told what type to decode it as. `head` exists only on R2.
+ */
+async function readObject(store, key) {
+  if (typeof store.head === 'function') {
+    const object = await store.get(key);
+    return object ? object.body : null;
+  }
+  return await store.get(key, { type: 'arrayBuffer' });
 }
 
 function reply(status, body, extra) {
@@ -142,14 +180,11 @@ export default {
     const key = `${mailboxId}/${owner}/${tail}`;
 
     if (request.method === 'GET') {
-      const object = await env.MAILBOX.get(key);
+      const body = await readObject(env.MAILBOX, key);
       // A missing object is the ordinary case, not an error: it is what the
       // other phone sees before you have ever published.
-      if (!object) return reply(404, null, cors);
-      return reply(200, object.body, {
-        ...cors,
-        ETag: object.httpEtag,
-      });
+      if (body === null) return reply(404, null, cors);
+      return reply(200, body, cors);
     }
 
     if (request.method === 'PUT') {

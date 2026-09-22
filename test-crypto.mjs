@@ -4946,6 +4946,146 @@ async function run() {
   }
 
 
+  /* ------------------------------------------ 22. the Worker itself refuses */
+  //
+  // Section 21 drove the client against a fake HTTP server. This drives the
+  // REAL Worker source, so the rules it enforces are tested rather than assumed
+  // - including the ones that only matter when someone is poking at it.
+  section('22. The mailbox Worker: what it will not do');
+
+  const worker = (await import('./worker/src/index.js')).default;
+
+  const WK_ORIGIN = 'https://sameskytonight.vercel.app';
+  const WK_ID = 'a'.repeat(64);
+  const WK_KEY = `/m/${WK_ID}/person-slot-aaaa/manifest`;
+
+  // The two bindings the Worker supports. KV is the default because it is on
+  // the Workers free plan with no payment method; R2 needs a card even for its
+  // free tier. Both are exercised so switching one for the other stays safe.
+  const wkKv = new Map();
+  const kvBinding = {
+    async get(k) {
+      return wkKv.has(k) ? wkKv.get(k) : null;
+    },
+    async put(k, v) {
+      wkKv.set(k, v);
+    },
+  };
+  const wkR2 = new Map();
+  const r2Binding = {
+    async head() {
+      return null;
+    },
+    async get(k) {
+      return wkR2.has(k) ? { body: wkR2.get(k) } : null;
+    },
+    async put(k, v) {
+      wkR2.set(k, v);
+    },
+  };
+
+  const wkReq = (method, path, opts = {}) =>
+    new Request(`https://w.dev${path}`, {
+      method,
+      headers: {
+        Authorization: `Bearer ${opts.token === undefined ? 'tok' : opts.token}`,
+        Origin: opts.origin === undefined ? WK_ORIGIN : opts.origin,
+      },
+      body: opts.body,
+    });
+
+  for (const [label, binding] of [
+    ['KV', kvBinding],
+    ['R2', r2Binding],
+  ]) {
+    const env = { MAILBOX: binding, MAILBOX_TOKEN: 'tok', ALLOWED_ORIGIN: WK_ORIGIN };
+    const before = await worker.fetch(wkReq('GET', WK_KEY), env);
+    check(`${label}: an object nobody has written is a plain 404`, before.status === 404);
+
+    const stored = await worker.fetch(wkReq('PUT', WK_KEY, { body: 'sealed-bytes' }), env);
+    check(`${label}: storing one succeeds`, stored.status === 204);
+
+    const after = await worker.fetch(wkReq('GET', WK_KEY), env);
+    check(`${label}: and it comes back byte for byte`, (await after.text()) === 'sealed-bytes');
+  }
+
+  const wkEnv = { MAILBOX: kvBinding, MAILBOX_TOKEN: 'tok', ALLOWED_ORIGIN: WK_ORIGIN };
+
+  check(
+    'a wrong token is refused',
+    (await worker.fetch(wkReq('GET', WK_KEY, { token: 'nope' }), wkEnv)).status === 401
+  );
+  check(
+    'an origin that is not on the allowlist is refused',
+    (await worker.fetch(wkReq('GET', WK_KEY, { origin: 'https://evil.example' }), wkEnv)).status === 403
+  );
+  check(
+    'and the allowlist is not just reflected back',
+    (
+      await worker.fetch(wkReq('GET', WK_KEY, { origin: 'https://evil.example' }), wkEnv)
+    ).headers.get('Access-Control-Allow-Origin') === null
+  );
+  check(
+    'a preflight from the real origin passes',
+    (
+      await worker.fetch(
+        new Request(`https://w.dev${WK_KEY}`, { method: 'OPTIONS', headers: { Origin: WK_ORIGIN } }),
+        wkEnv
+      )
+    ).status === 204
+  );
+
+  // DELETE is absent on purpose: a deletion in this app travels as a tombstone
+  // that is WRITTEN. If the object could disappear, the other phone would never
+  // learn the record died and the deleted letter would come back on the next
+  // sync. This is the assertion that stops someone "tidying up" by adding it.
+  check(
+    'DELETE is refused - a deletion is a write, never a disappearance',
+    (await worker.fetch(wkReq('DELETE', WK_KEY), wkEnv)).status === 405
+  );
+
+  check(
+    'a path that is not a mailbox object is a 404',
+    (await worker.fetch(wkReq('GET', `/m/${WK_ID}`), wkEnv)).status === 404
+  );
+  check(
+    'there is no route that lists anything',
+    (await worker.fetch(wkReq('GET', `/m/${WK_ID}/person-slot-aaaa/`), wkEnv)).status === 404
+  );
+  check(
+    'traversal in a record key does not resolve to a key',
+    (await worker.fetch(wkReq('GET', `/m/${WK_ID}/person-slot-aaaa/rec/letters/../../x`), wkEnv))
+      .status === 404
+  );
+  check(
+    'a mailbox id that is not hex is not a mailbox',
+    (await worker.fetch(wkReq('GET', `/m/${'z'.repeat(64)}/person-slot-aaaa/manifest`), wkEnv))
+      .status === 404
+  );
+
+  // Measured after reading the body, not from Content-Length, because a chunked
+  // upload arrives with no declared length at all.
+  check(
+    'an object over the size ceiling is refused',
+    (await worker.fetch(wkReq('PUT', WK_KEY, { body: 'x'.repeat(17 * 1024 * 1024) }), wkEnv))
+      .status === 413
+  );
+  // The STORAGE key is the URL path without its `/m/` route prefix, and the
+  // value is an ArrayBuffer: the Worker reads the body as bytes rather than
+  // text, so a photo record never goes through a string decode.
+  const wkStored = wkKv.get(WK_KEY.replace(/^\/m\//, ''));
+  check(
+    'and the oversized body did not overwrite what was there',
+    wkStored !== undefined && new TextDecoder().decode(wkStored) === 'sealed-bytes'
+  );
+
+  check(
+    'a Worker with no store bound says so rather than half-working',
+    (await worker.fetch(wkReq('GET', WK_KEY), { MAILBOX_TOKEN: 'tok', ALLOWED_ORIGIN: WK_ORIGIN }))
+      .status === 500
+  );
+
+
   /* ------------------------------------------------------- verdict */
   console.log('\n' + '='.repeat(64));
   if (failures.length > 0) {
