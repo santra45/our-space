@@ -19,7 +19,7 @@ compatibility_date = "2026-09-01"
 # milestones and the rest carry on, and photos still sync phone-to-phone.
 [[kv_namespaces]]
 binding = "MAILBOX"
-id = "PASTE_YOUR_NAMESPACE_ID_HERE"
+id = "ad9ef91476734bf9bdf31fedb4deb496"
 
 # If you would rather use R2 and do not mind linking a card, delete the block
 # above and use this instead. The Worker handles either one.

@@ -37,3 +37,6 @@ dist-ssr
 
 # Local dev tooling
 .claude/
+
+# Wrangler build/state cache, created on deploy.
+worker/.wrangler/
