@@ -1,0 +1,24 @@
+name = "our-space-mailbox"
+main = "src/index.js"
+compatibility_date = "2026-09-01"
+
+# The only place anything is stored. R2 rather than KV because a record can be a
+# photo: KV caps a value at 25MB but is priced and shaped for small hot reads,
+# while R2 has no egress charge at all and 10GB free, which is far more than two
+# people's vault will ever be.
+[[r2_buckets]]
+binding = "MAILBOX"
+bucket_name = "our-space-mailbox"
+
+[vars]
+# Comma-separated. The Worker refuses any browser origin not on this list rather
+# than reflecting whatever Origin the request arrived with, so add your preview
+# domain here explicitly if you want one to work.
+ALLOWED_ORIGIN = "https://sameskytonight.vercel.app,http://localhost:5173"
+
+# MAILBOX_TOKEN is NOT set here. It is a secret:
+#   npx wrangler secret put MAILBOX_TOKEN
+#
+# Though read the note in src/index.js before treating it as one - the same
+# value has to be compiled into the browser bundle, so it is a quota guard
+# rather than a password. The unguessable mailbox path is the real control.
