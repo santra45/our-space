@@ -162,13 +162,34 @@ async function request(config, method, path, body) {
 
 /* ---------------------------------------------------------------- publish */
 
-/** Row -> the shape planBackupMerge accepts, matching exportRawDataForBackup. */
+/**
+ * The only fields that may leave this device.
+ *
+ * An ALLOWLIST, not a list of things to strip, for the same reason peerSync
+ * uses one: a field added to a row later is then absent from the mailbox by
+ * default rather than published by default. Getting that backwards is how
+ * something ends up on a relay because nobody remembered to exclude it.
+ */
+const WIRE_FIELDS = ['id', 'updatedAt', 'deleted', 'v', 'ciphertext', 'iv'];
+
+/**
+ * Row -> the shape planBackupMerge accepts.
+ *
+ * `_del` is deliberately NOT here. It is the 0/1 mirror of `deleted` that
+ * exists only because IndexedDB refuses boolean index keys - local bookkeeping,
+ * which peerSync strips for the same reason, and which the receiving side
+ * recomputes from `deleted` regardless. Publishing it put a redundant field on
+ * a relay on every single record.
+ */
 function toWire(tableName, row) {
-  if (tableName !== 'memories' || !row.imageBlob) return row;
-  const clone = { ...row };
-  clone.imageBlobBase64 = bufferToBase64(clone.imageBlob);
-  delete clone.imageBlob;
-  return clone;
+  const wire = {};
+  for (const field of WIRE_FIELDS) {
+    if (row[field] !== undefined) wire[field] = row[field];
+  }
+  if (tableName === 'memories' && row.imageBlob) {
+    wire.imageBlobBase64 = bufferToBase64(row.imageBlob);
+  }
+  return wire;
 }
 
 /**

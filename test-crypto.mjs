@@ -4732,6 +4732,23 @@ async function run() {
     check('nor its title', !storedLetter.includes('While you were asleep'));
     check('it is the sealed envelope, unchanged', JSON.parse(storedLetter).ciphertext !== undefined);
 
+    // Only what her phone needs to decide "do I want this one" without opening
+    // it. `_del` is the local 0/1 mirror of `deleted` that exists because
+    // IndexedDB refuses boolean index keys - peerSync strips it, the receiver
+    // recomputes it, and it has no business on a relay.
+    check(
+      'and carries nothing beyond what addressing and last-write-wins need',
+      eq(Object.keys(JSON.parse(storedLetter)).sort(), [
+        'ciphertext',
+        'deleted',
+        'id',
+        'iv',
+        'updatedAt',
+        'v',
+      ])
+    );
+    check('specifically, local index bookkeeping stays local', !storedLetter.includes('_del'));
+
     /* -- her phone collects, having never connected to his ----------------- */
 
     const herPhone = new FakeVaultStore();
