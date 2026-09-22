@@ -19,10 +19,16 @@ uploaded anywhere.
 | **Capsule** | Love letters, optionally sealed until a future date |
 | **Bucket List** | Shared checklist with progress, ticked from either phone |
 | **Daily question** | One question a day for both of you — neither answer shows until both are written |
-| **Love Burst** | A tap that sets off confetti on the other phone, saved until she opens it |
+| **Love Burst** | A tap that sets off confetti on the other phone, saved until they open it |
 
 Plus a **Sync Hub** for pairing the two phones, fingerprint unlock on each device, and an
 encrypted `.vault` backup you can save anywhere.
+
+The app learns both your names the first time you open it, so it says *"Noor answered
+already"* rather than *"your partner"*. That also fixes something less visible: whose
+answer is whose used to be decided by a tag in browser storage, which Safari discards after
+about a week idle - taking the daily-question archive with it. It is a record in the vault
+now, so losing that storage costs one tap on your own name.
 
 ---
 
@@ -67,6 +73,10 @@ Sync is last-write-wins on a per-record timestamp, and it converges from both di
 each phone sends the other a manifest of what it has, and asks only for what it is missing
 or has an older copy of. Deletions travel as tombstones, so removing a photo on one phone
 removes it on the other.
+
+The optional **mailbox** reuses that same manifest diff rather than inventing a second one,
+so a record syncs identically whether it travelled over a live connection or sat on a relay
+waiting. See *Sync while you are apart*.
 
 ---
 
@@ -131,8 +141,10 @@ Both phones need the same passphrase, then one of:
 The app asks before connecting to a link someone sent you, because connecting reveals your
 IP address to whoever is on the other end. Only accept links from your partner.
 
-Both phones have to be open at the same time to sync — there is no server holding messages
-for later. The app reconnects on its own when you unlock your phone or come back onto Wi-Fi.
+The app reconnects on its own when you unlock your phone or come back onto Wi-Fi.
+
+Phone-to-phone needs both of you there at once. If that does not suit you - different time
+zones, different hours - set up a **mailbox** and it stops mattering. See below.
 
 ---
 
@@ -202,6 +214,51 @@ crypto and the camera will both fail. Either use a tunnel that terminates TLS (`
 
 ---
 
+## Sync while you are apart
+
+Phone-to-phone sync is direct and needs no server, which is lovely right up until you are
+two people in different time zones trying to have both apps open at the same second.
+
+The **mailbox** removes that. It is a Cloudflare Worker that stores sealed envelopes and
+hands them back, and it cannot read one. Whatever either of you writes is waiting for the
+other next time they open the app.
+
+It is optional. With none configured the app behaves exactly as it always did.
+
+```bash
+cd worker
+npx wrangler r2 bucket create our-space-mailbox
+npx wrangler secret put MAILBOX_TOKEN
+npx wrangler deploy
+```
+
+Then set `VITE_MAILBOX_URL` and `VITE_MAILBOX_TOKEN` on the app and redeploy. Full
+instructions are in [`worker/README.md`](worker/README.md).
+
+**What it can see: nothing.** Everything stored is an AES-GCM envelope sealed on a phone,
+and the manifest that lists them is encrypted too, so the relay cannot even count your
+records or tell when one changed. The mailbox address is a 256-bit id derived from your
+passphrase, and the Worker has no route that lists anything.
+
+The token is compiled into the browser bundle, so treat it as public. It guards your
+request quota, not your letters. The address is what keeps them private.
+
+**It is a mirror, not a queue.** Each phone publishes its current state and overwrites in
+place, so reading twice is free and nothing has to be deleted on delivery. That matters
+more than it sounds: a queue would need an acknowledgement, and a missing acknowledgement
+either erases something that was never applied or delivers it twice. Deleting a letter
+travels as a tombstone that gets *written*, which is why the Worker implements no `DELETE`
+at all — removing the object would mean the other phone never learned the letter died, and
+it would come back on the next sync.
+
+Nothing here is given any trust. Records arriving from the mailbox go through the same
+checks as a restored backup and a live partner — sealed headers, table binding, photo
+digests, last-write-wins — so the worst a broken or hostile relay manages is going quiet.
+
+Free at two people's scale: 10GB of storage, no egress charge, 100,000 requests a day.
+
+---
+
 ## Known limits
 
 - **A relayed connection goes through a third party.** When the two phones cannot reach
@@ -211,7 +268,10 @@ crypto and the camera will both fail. Either use a tunnel that terminates TLS (`
   20GB monthly pool with everyone else using it.
 - **A reload asks for the passphrase again** unless that phone has fingerprint unlock
   turned on. The key is memory-only by design.
-- **Both phones must be online together** to sync. Nothing queues server-side.
+- **Both phones must be online together** to sync, unless you set up a mailbox. Even with
+  one, nothing buzzes: the other person finds out when they next open the app. Real push
+  notifications need a signing key and a subscription, and they hand a push service the
+  timing of every message you send.
 - **App icons are SVG only.** iOS ignores SVG icons, so a home-screen install there falls
   back to a screenshot. Generating a PNG set (192/512, plus a maskable variant with ~20%
   padding) would fix it.
@@ -232,12 +292,15 @@ src/
     biometricUnlock.js  Fingerprint unlock — seals the key behind the phone sensor
     loveBursts.js       Love burst tallies, so one sent to a closed app still lands
     dailyQuestion.js    Picks the day’s question and gates the answers
+    mailbox.js          Optional relay sync, for when you are never online together
+    people.js           The two of you - names, pronouns, and whose record is whose
     deviceId.js         Which of the two devices wrote a record
     limits.js           Size ceilings shared by storage and the wire
   db/index.js         Dexie schema, backup import/export, record integrity gates
   context/            VaultContext (lock/unlock), SyncContext (pairing lifecycle)
   components/         One folder per screen, plus layout/ common/ sync/
   utils/              Dates, image compression, invite links
+worker/               The optional mailbox - a Cloudflare Worker that cannot read a word
 test-crypto.mjs       Test suite — runs in plain node, no browser needed
 ```
 
