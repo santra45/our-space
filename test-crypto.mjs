@@ -220,6 +220,30 @@ class FakeVaultStore {
           },
         };
       },
+      // The two index reads getManifest() walks. Storage only - no ordering
+      // guarantees are implied, because getManifest does not depend on any.
+      orderBy(field) {
+        return {
+          async eachKey(callback) {
+            if (store.failReads) throw new Error('simulated IndexedDB failure');
+            for (const row of rows.values()) callback(row[field], { primaryKey: row.id });
+          },
+        };
+      },
+      where(field) {
+        return {
+          equals(value) {
+            return {
+              async primaryKeys() {
+                if (store.failReads) throw new Error('simulated IndexedDB failure');
+                return Array.from(rows.values())
+                  .filter((row) => row[field] === value)
+                  .map((row) => row.id);
+              },
+            };
+          },
+        };
+      },
     };
   }
 
@@ -251,6 +275,8 @@ for (const method of [
   // Read paths, so the sealed-table check on reads is driven for real.
   'getDecrypted',
   'listDecrypted',
+  // What the mailbox publishes and diffs against, including its tombstone pass.
+  'getManifest',
 ]) {
   if (typeof SweetheartDatabase.prototype[method] !== 'function') {
     throw new Error(`test harness is stale: SweetheartDatabase has no ${method}()`);
@@ -4589,6 +4615,335 @@ async function run() {
     }) === null
   );
   check('and so is a person with no id at all', ppl.toPerson({ name: 'X' }) === null);
+
+
+  /* --------------------------------------- 21. the mailbox: sync while apart */
+  //
+  // The point of this section is that a record written on one phone reaches the
+  // other WITHOUT the two ever being connected, and that the relay carrying it
+  // is given no trust it could abuse.
+  section('21. The mailbox: neither of you has to be awake');
+
+  const mbx = await import('./src/services/mailbox.js');
+
+  /* -- the address is the access control ----------------------------------- */
+
+  const mbxId = await mbx.deriveMailboxId(key);
+  const mbxIdAgain = await mbx.deriveMailboxId(await fastKey(passphrase, salt));
+  check('both phones derive the same mailbox with no sync', mbxId === mbxIdAgain);
+  check('and it is a full 256 bits of address', /^[0-9a-f]{64}$/.test(mbxId));
+  const mbxStranger = await mbx.deriveMailboxId(
+    await deriveKeyFromPassphrase('someone else entirely', generateSalt(), { iterations: 2000 })
+  );
+  check('another couple cannot land on the same mailbox', mbxStranger !== mbxId);
+
+  // The record id charset is not constrained anywhere in the app, so the path
+  // segment has to survive whatever an id turns out to be.
+  check(
+    'a record key is URL-safe whatever the id contains',
+    /^[A-Za-z0-9_-]+$/.test(mbx.recordKey('ans-2026-09-a/b+c=d'))
+  );
+  check('and two different ids never collide', mbx.recordKey('a') !== mbx.recordKey('b'));
+
+  /* -- a Worker, in memory ------------------------------------------------- */
+  //
+  // Stands in for storage and for the HTTP shape only. It deliberately does NOT
+  // re-implement any validation, so nothing below can pass because the fake was
+  // helpful.
+
+  const mbxBucket = new Map();
+  const mbxCalls = [];
+  const realFetch = globalThis.fetch;
+
+  globalThis.fetch = async (url, options = {}) => {
+    const { pathname } = new URL(url);
+    const method = options.method || 'GET';
+    mbxCalls.push(`${method} ${pathname}`);
+
+    if (options.headers?.Authorization !== 'Bearer test-token') {
+      return { ok: false, status: 401, async text() { return ''; } };
+    }
+    if (method === 'PUT') {
+      mbxBucket.set(pathname, options.body);
+      return { ok: true, status: 204, async text() { return ''; } };
+    }
+    if (mbxBucket.has(pathname)) {
+      const body = mbxBucket.get(pathname);
+      return { ok: true, status: 200, async text() { return body; } };
+    }
+    return { ok: false, status: 404, async text() { return ''; } };
+  };
+
+  const mbxCfg = { url: 'https://mailbox.example.workers.dev', token: 'test-token' };
+  const HIS_BOX = 'his-person-mailbox';
+  const HER_BOX = 'her-person-mailbox';
+
+  try {
+    /* -- nothing configured is not an error, it is "off" ------------------- */
+
+    check('with no mailbox configured the feature reports disabled', mbx.isMailboxEnabled() === false);
+    const mbxOff = await mbx.publish({ cryptoKey: key, ownerId: HIS_BOX });
+    check('and publishing is a no-op rather than a crash', mbxOff.reason === 'disabled');
+    const mbxOffCollect = await mbx.collect({ cryptoKey: key, partnerId: HIS_BOX });
+    check('as is collecting', mbxOffCollect.reason === 'disabled');
+    check(
+      'half a config counts as none of it',
+      mbx.isMailboxEnabled({ url: 'https://x.dev' }) === false
+    );
+
+    /* -- his phone writes a letter and publishes --------------------------- */
+
+    const hisPhone = new FakeVaultStore();
+    let mbxClock = 1700000000000;
+    const mbxStamp = () => (mbxClock += 1000);
+
+    await hisPhone.putEncrypted(
+      'letters',
+      { id: 'letter-apart-1', title: 'While you were asleep', body: 'I wrote this at 3am.', updatedAt: mbxStamp() },
+      key
+    );
+    await hisPhone.putEncrypted(
+      'bucketList',
+      { id: 'bucket-apart-1', text: 'Actually be in the same country', updatedAt: mbxStamp() },
+      key
+    );
+
+    const pub = await mbx.publish({
+      cryptoKey: key,
+      ownerId: HIS_BOX,
+      overrides: mbxCfg,
+      store: hisPhone,
+    });
+    check('publishing succeeds', pub.ok === true);
+    check('and it uploaded both records', pub.uploaded === 2);
+    check(
+      'the manifest is written LAST, after the records it promises',
+      mbxCalls[mbxCalls.length - 1] === `PUT /m/${mbxId}/${HIS_BOX}/manifest`
+    );
+
+    /* -- the relay cannot read a word of it -------------------------------- */
+
+    const storedManifest = mbxBucket.get(`/m/${mbxId}/${HIS_BOX}/manifest`);
+    check('the manifest itself is encrypted, not plaintext ids', !storedManifest.includes('letter-apart-1'));
+    const storedLetter = mbxBucket.get(
+      `/m/${mbxId}/${HIS_BOX}/rec/letters/${mbx.recordKey('letter-apart-1')}`
+    );
+    check('a stored record does not leak its contents', !storedLetter.includes('3am'));
+    check('nor its title', !storedLetter.includes('While you were asleep'));
+    check('it is the sealed envelope, unchanged', JSON.parse(storedLetter).ciphertext !== undefined);
+
+    /* -- her phone collects, having never connected to his ----------------- */
+
+    const herPhone = new FakeVaultStore();
+    const realDbManifest = db.getManifest;
+    const realPlan = db.planBackupMerge;
+    const realApply = db.applyBackupMerge;
+    // peerSync.diffAgainstLocal reads the REAL db singleton, so point that one
+    // read at her phone for the duration. Everything else still runs for real.
+    db.getManifest = () => FakeVaultStore.prototype.getManifest.call(herPhone);
+
+    const got = await mbx.collect({
+      cryptoKey: key,
+      partnerId: HIS_BOX,
+      overrides: mbxCfg,
+      store: herPhone,
+    });
+
+    check('she collects what he published', got.ok === true);
+    check('fetching only what she was missing', got.fetched === 2);
+    check('and it is applied to her vault', got.applied === 2);
+
+    const herLetter = await herPhone.getDecrypted('letters', 'letter-apart-1', key);
+    check('his letter is readable on her phone', herLetter && herLetter.body === 'I wrote this at 3am.');
+    check('with the title intact', herLetter.title === 'While you were asleep');
+    check('and the other table came too', (await herPhone.getDecrypted('bucketList', 'bucket-apart-1', key)) !== null);
+
+    /* -- collecting twice downloads nothing -------------------------------- */
+    //
+    // This is what makes deletion-on-delivery unnecessary. If re-reading were
+    // not free, the mailbox would need acknowledgements.
+
+    mbxCalls.length = 0;
+    const again = await mbx.collect({
+      cryptoKey: key,
+      partnerId: HIS_BOX,
+      overrides: mbxCfg,
+      store: herPhone,
+    });
+    check('a second collect applies nothing', again.applied === 0);
+    check('and downloads no records at all', again.fetched === 0);
+    check(
+      'it costs exactly one manifest read',
+      mbxCalls.length === 1 && mbxCalls[0].endsWith('/manifest')
+    );
+
+    /* -- publishing again only uploads what changed ------------------------ */
+
+    mbxCalls.length = 0;
+    const republish = await mbx.publish({
+      cryptoKey: key,
+      ownerId: HIS_BOX,
+      overrides: mbxCfg,
+      store: hisPhone,
+    });
+    check('re-publishing an unchanged vault uploads nothing', republish.uploaded === 0);
+
+    await hisPhone.putEncrypted(
+      'letters',
+      { id: 'letter-apart-1', title: 'While you were asleep', body: 'Edited it in the morning.', updatedAt: mbxStamp() },
+      key
+    );
+    const edited = await mbx.publish({
+      cryptoKey: key,
+      ownerId: HIS_BOX,
+      overrides: mbxCfg,
+      store: hisPhone,
+    });
+    check('editing one record uploads exactly one record', edited.uploaded === 1);
+
+    const gotEdit = await mbx.collect({
+      cryptoKey: key,
+      partnerId: HIS_BOX,
+      overrides: mbxCfg,
+      store: herPhone,
+    });
+    check('and the edit reaches her', gotEdit.applied === 1);
+    check(
+      'with the newer words',
+      (await herPhone.getDecrypted('letters', 'letter-apart-1', key)).body === 'Edited it in the morning.'
+    );
+
+    /* -- A DELETION IS A WRITE, NOT A DISAPPEARANCE ------------------------ */
+    //
+    // The single most important behaviour here. If a delete removed the object
+    // instead of publishing a tombstone, her phone would never learn the letter
+    // died and it would come back from the dead on the next collect.
+
+    await hisPhone.softDelete('letters', 'letter-apart-1', key);
+    const deletePub = await mbx.publish({
+      cryptoKey: key,
+      ownerId: HIS_BOX,
+      overrides: mbxCfg,
+      store: hisPhone,
+    });
+    check('deleting a letter publishes something', deletePub.uploaded === 1);
+    check(
+      'and the object is still THERE, holding a tombstone',
+      mbxBucket.has(`/m/${mbxId}/${HIS_BOX}/rec/letters/${mbx.recordKey('letter-apart-1')}`)
+    );
+    check(
+      'which is marked deleted on the wire',
+      JSON.parse(
+        mbxBucket.get(`/m/${mbxId}/${HIS_BOX}/rec/letters/${mbx.recordKey('letter-apart-1')}`)
+      ).deleted === true
+    );
+
+    const gotDelete = await mbx.collect({
+      cryptoKey: key,
+      partnerId: HIS_BOX,
+      overrides: mbxCfg,
+      store: herPhone,
+    });
+    check('the deletion reaches her', gotDelete.applied === 1);
+    const herDeleted = await herPhone.table('letters').get('letter-apart-1');
+    check('her copy is a tombstone now', herDeleted.deleted === true);
+    // A tombstone is still a sealed record - that is what lets it travel and be
+    // trusted - but what it seals is only the header. The words are gone from
+    // inside the envelope, not merely hidden by the flag on the outside.
+    const herDeletedPlain = await herPhone.getDecrypted('letters', 'letter-apart-1', key);
+    check('and the words are actually gone from inside it', herDeletedPlain.body === undefined);
+    check('title too', herDeletedPlain.title === undefined);
+    check('leaving only the fact that it died', herDeletedPlain.deleted === true);
+
+    const afterDelete = await mbx.collect({
+      cryptoKey: key,
+      partnerId: HIS_BOX,
+      overrides: mbxCfg,
+      store: herPhone,
+    });
+    check('and it does not rise from the dead on the next sync', afterDelete.applied === 0);
+
+    /* -- a hostile relay gets nothing for its trouble ---------------------- */
+    //
+    // The mailbox applies through planBackupMerge, so every rule that protects
+    // the vault from a live peer protects it from the relay too. These prove it
+    // rather than assuming it.
+
+    const evilKey = await deriveKeyFromPassphrase('not our passphrase at all', generateSalt(), {
+      iterations: 2000,
+    });
+    const evilRow = await encryptRecord(
+      { id: 'letter-forged', title: 'Forged', body: 'Written by the relay.', updatedAt: Date.now() },
+      evilKey,
+      { table: 'letters' }
+    );
+    mbxBucket.set(
+      `/m/${mbxId}/${HIS_BOX}/rec/letters/${mbx.recordKey('letter-forged')}`,
+      JSON.stringify(evilRow)
+    );
+    // Announce it in his manifest, exactly as a compromised relay would.
+    const hisManifestNow = await hisPhone.getManifest();
+    hisManifestNow.letters.push({ id: 'letter-forged', updatedAt: Date.now(), deleted: false });
+    const forgedManifest = await encryptJSON(hisManifestNow, key);
+    mbxBucket.set(`/m/${mbxId}/${HIS_BOX}/manifest`, JSON.stringify(forgedManifest));
+
+    const forged = await mbx.collect({
+      cryptoKey: key,
+      partnerId: HIS_BOX,
+      overrides: mbxCfg,
+      store: herPhone,
+    });
+    check('a record the relay forged is fetched but not applied', forged.applied === 0);
+    check(
+      'and never reaches her vault',
+      (await herPhone.table('letters').get('letter-forged')) === undefined
+    );
+
+    // A manifest promising a record that is not in the bucket - the shape a
+    // half-finished publish would leave if the order were wrong.
+    const brokenManifest = await hisPhone.getManifest();
+    brokenManifest.letters.push({ id: 'letter-missing', updatedAt: Date.now(), deleted: false });
+    mbxBucket.set(
+      `/m/${mbxId}/${HIS_BOX}/manifest`,
+      JSON.stringify(await encryptJSON(brokenManifest, key))
+    );
+    const dangling = await mbx.collect({
+      cryptoKey: key,
+      partnerId: HIS_BOX,
+      overrides: mbxCfg,
+      store: herPhone,
+    });
+    check('a manifest promising a missing record does not throw', dangling.ok === true);
+    check('it simply applies nothing', dangling.applied === 0);
+
+    /* -- a mailbox nobody has published to --------------------------------- */
+
+    const empty = await mbx.collect({
+      cryptoKey: key,
+      partnerId: HER_BOX,
+      overrides: mbxCfg,
+      store: hisPhone,
+    });
+    check('an empty mailbox is not an error', empty.ok === true);
+    check('there is simply nothing published', empty.reason === 'nothing-published');
+
+    /* -- the wrong token is refused ---------------------------------------- */
+
+    const badToken = await mbx.publish({
+      cryptoKey: key,
+      ownerId: HIS_BOX,
+      overrides: { url: mbxCfg.url, token: 'wrong' },
+      store: hisPhone,
+    });
+    check('a bad token fails the publish rather than half-doing it', badToken.ok === false);
+
+    db.getManifest = realDbManifest;
+    db.planBackupMerge = realPlan;
+    db.applyBackupMerge = realApply;
+  } finally {
+    if (realFetch) globalThis.fetch = realFetch;
+    else delete globalThis.fetch;
+  }
 
 
   /* ------------------------------------------------------- verdict */

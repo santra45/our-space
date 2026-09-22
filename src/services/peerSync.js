@@ -1730,6 +1730,29 @@ export class PeerSyncManager {
    * library forever. The deterministic tie-break lives on the apply path, where it
    * actually matters, because that is where two competing versions meet.
    */
+  /**
+   * The manifest diff, for a caller that is not a live connection.
+   *
+   * Exists so services/mailbox.js can ask "what of this does this device not
+   * have?" without owning a second copy of the answer. The rule below is
+   * subtle - the same-millisecond tie-break that lets a deletion beat an edit
+   * took a bug to find - and two implementations of it would eventually
+   * disagree, which would surface as records that sync over a cable but never
+   * through the mailbox.
+   *
+   * Requires no connection and no authorization, because it decides nothing: it
+   * returns a list of ids this device would like to see. What may actually be
+   * written is settled by the apply path, which verifies every record against
+   * the vault key no matter where it came from.
+   *
+   * @param {Object} remoteManifest
+   * @returns {Promise<Array<{ table: string, id: string }>>}
+   */
+  async diffAgainstLocal(remoteManifest) {
+    if (!remoteManifest || typeof remoteManifest !== 'object') return [];
+    return await this._diffManifest(remoteManifest);
+  }
+
   async _diffManifest(remoteManifest) {
     const localManifest = await db.getManifest();
     const requests = [];
