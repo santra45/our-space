@@ -11,7 +11,7 @@
  *     runs ICE, which hands the far side our local and public IP addresses, so
  *     an unrecognised peer waits behind an explicit confirmation.
  */
-import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import peerSync from '../services/peerSync';
 import { useVault } from './VaultContext';
@@ -20,6 +20,7 @@ import { parseInvite, PEER_ID_REGEX } from '../utils/invite';
 import { fireCelebrationBurst } from '../components/common/ConfettiBurst';
 import { useHaptics } from '../hooks/useHaptics';
 import db from '../db';
+import { getVaultKey } from '../services/vaultKey';
 import {
   LOVE_BURST_TABLE,
   sendLoveBurst as writeLoveBurst,
@@ -27,6 +28,8 @@ import {
   markBurstsSeen,
   describeBursts,
 } from '../services/loveBursts';
+import { isMailboxEnabled, syncMailbox } from '../services/mailbox';
+import { derivePersonSlots } from '../services/people';
 
 const SyncContext = createContext(null);
 
@@ -72,7 +75,7 @@ function removeStored(key) {
 
 export function SyncProvider({ children }) {
   const { cryptoKey, isUnlocked, vaultConfig } = useVault();
-  const { partnerName } = usePeople();
+  const { partnerName, myOwnerId } = usePeople();
   const { celebration } = useHaptics();
   const [myPeerId, setMyPeerId] = useState(null);
   const [partnerId, setPartnerId] = useState(() => readStored(PAIRED_PARTNER_KEY));
@@ -100,6 +103,128 @@ export function SyncProvider({ children }) {
   useEffect(() => {
     partnerNameRef.current = partnerName;
   }, [partnerName]);
+
+  // Which slot this device publishes into. Null until it knows which of the two
+  // people is holding it, which is a state the mailbox handles by reading and
+  // not writing - see syncMailbox.
+  const myPersonIdRef = useRef(myOwnerId);
+  useEffect(() => {
+    myPersonIdRef.current = myOwnerId;
+  }, [myOwnerId]);
+
+  /* ------------------------------------------------------------ the mailbox */
+  //
+  // Optional, and off unless VITE_MAILBOX_URL and VITE_MAILBOX_TOKEN are both
+  // set. It is an accelerator bolted beside the live connection, never a
+  // dependency of it - with no mailbox configured every path below turns into a
+  // no-op and the app syncs exactly as it did before.
+
+  const [mailboxState, setMailboxState] = useState({ state: 'idle', at: 0 });
+  const mailboxBusyRef = useRef(false);
+  const mailboxTimerRef = useRef(null);
+
+  const runMailbox = useCallback(
+    async (reason) => {
+      const key = cryptoKey || getVaultKey();
+      if (!key || !isMailboxEnabled()) return;
+      // One at a time. Two overlapping runs would both read the same "already
+      // published" manifest and both upload the same records.
+      if (mailboxBusyRef.current) return;
+
+      mailboxBusyRef.current = true;
+      setMailboxState((prev) => ({ ...prev, state: 'syncing' }));
+
+      try {
+        const slots = await derivePersonSlots(key);
+        const result = await syncMailbox({
+          cryptoKey: key,
+          ownerId: myPersonIdRef.current,
+          slots,
+        });
+
+        setMailboxState({
+          state: 'ok',
+          at: Date.now(),
+          applied: result.applied,
+          uploaded: result.uploaded,
+          reason,
+        });
+
+        if (result.applied > 0) {
+          setLastSyncNotice(
+            `${result.applied} new thing${result.applied === 1 ? '' : 's'} from ${partnerNameRef.current} 💕`
+          );
+        }
+      } catch {
+        // Offline, or the relay is down. Neither is an error worth showing: the
+        // live connection and the next run both still work, and this is the one
+        // part of sync that is allowed to simply not happen.
+        setMailboxState({ state: 'failed', at: Date.now(), reason });
+      } finally {
+        mailboxBusyRef.current = false;
+      }
+    },
+    [cryptoKey]
+  );
+
+  /** Coalesces a burst of local writes into one publish. */
+  const scheduleMailbox = useCallback(
+    (reason, delay = 4000) => {
+      if (!isMailboxEnabled()) return;
+      if (mailboxTimerRef.current) clearTimeout(mailboxTimerRef.current);
+      mailboxTimerRef.current = setTimeout(() => {
+        mailboxTimerRef.current = null;
+        runMailbox(reason);
+      }, delay);
+    },
+    [runMailbox]
+  );
+
+  /*
+    THREE TRIGGERS, and between them they cover how two people actually use
+    this.
+
+    On unlock, because the most valuable moment is the one where you open the
+    app having been away - that is when there is something waiting.
+
+    On any local write, debounced, because writing a letter and closing the app
+    must not mean the letter sits on your phone until you next happen to open
+    it. peerSync emits `local-record` from broadcastLiveRecord, which every
+    local write already funnels through.
+
+    On coming back to the tab, because a phone left open in a pocket all night
+    has a stale screen, and this is what makes looking at it worth doing.
+  */
+  useEffect(() => {
+    if (!isUnlocked || !isMailboxEnabled()) return undefined;
+
+    // Short, not instant. An unlock is immediately followed by several screens
+    // mounting and reading, and racing them just makes the first paint slower.
+    scheduleMailbox('unlock', 1500);
+
+    const onLocal = () => scheduleMailbox('local-write');
+    const onVisible = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        scheduleMailbox('foreground', 500);
+      }
+    };
+
+    peerSync.on('local-record', onLocal);
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', onVisible);
+    }
+
+    return () => {
+      peerSync.off('local-record', onLocal);
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', onVisible);
+      }
+      if (mailboxTimerRef.current) {
+        clearTimeout(mailboxTimerRef.current);
+        mailboxTimerRef.current = null;
+      }
+    };
+  }, [isUnlocked, scheduleMailbox]);
 
   const dialTimerRef = useRef(null);
 
@@ -575,6 +700,11 @@ export function SyncProvider({ children }) {
         isDirectP2P: connectionType === 'direct',
         isRelayed: connectionType === 'relayed',
         isRouteUnknown: isAuthorized && connectionType !== 'direct' && connectionType !== 'relayed',
+
+        // The mailbox, for the hub to report on and offer a manual run of.
+        mailboxEnabled: isMailboxEnabled(),
+        mailboxState,
+        syncMailboxNow: () => runMailbox('manual'),
       }}
     >
       {children}

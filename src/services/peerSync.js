@@ -2478,8 +2478,23 @@ export class PeerSyncManager {
    * @returns {Promise<boolean>} True when the record was handed to the channel.
    */
   async broadcastLiveRecord(table, record) {
-    if (!this.isConnected || !this.isAuthorized || !ALLOWED_TABLES.has(table)) return false;
     if (!record || typeof record !== 'object' || typeof record.id !== 'string') return false;
+    if (!ALLOWED_TABLES.has(table)) return false;
+
+    // EVERY local write passes through here, which makes this the one honest
+    // place to say "something of ours changed". It fires BEFORE the connection
+    // check below, because the whole reason the mailbox exists is the case
+    // where there is no connection - announcing a change only when a partner
+    // happens to be listening would leave the mailbox updated exclusively at
+    // the moments it is not needed.
+    try {
+      this.emit('local-record', { table, id: record.id });
+    } catch {
+      // A listener threw. Not this method's problem, and certainly not a reason
+      // to skip the broadcast below.
+    }
+
+    if (!this.isConnected || !this.isAuthorized) return false;
 
     try {
       const wire = this._toWireRecord(table, record);

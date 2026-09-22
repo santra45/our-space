@@ -383,15 +383,48 @@ export async function collect(args) {
 /**
  * One round trip: take what is waiting, then leave what is ours.
  *
- * Collect first, on purpose. If publishing came first, a device that has been
+ * COLLECT FIRST, on purpose. If publishing came first, a device that has been
  * offline would push its older state before learning what changed while it was
- * away - harmless, because last-write-wins settles it, but it means the other
- * phone briefly sees a manifest that has gone backwards.
+ * away. Last-write-wins settles it either way, but the other phone would
+ * briefly see a manifest that had gone backwards.
+ *
+ * IT READS BOTH SLOTS, INCLUDING ITS OWN, and that is not a waste.
+ *
+ * The two slot ids are derived from the vault key (services/people.js), so both
+ * phones know both addresses without ever having spoken. Reading the partner's
+ * is the point. Reading our own costs one manifest request and buys two things:
+ * a device that has not worked out which person it is yet can still pull the
+ * people records that would tell it, which is how the whole thing bootstraps;
+ * and a phone whose storage was wiped restores itself from what it published
+ * before, instead of starting empty and publishing that emptiness.
+ *
+ * There is no ping-pong risk in reading our own slot. Collect only applies
+ * records that are newer than what is here, and publish only uploads records
+ * that changed, so a device already in step does both and writes nothing.
+ *
+ * @param {{ cryptoKey: CryptoKey, ownerId: string|null, slots: Array<string>,
+ *   overrides?: Object, includePhotos?: boolean, store?: Object }} args
  */
 export async function syncMailbox(args) {
-  const collected = await collect(args);
-  const published = await publish(args);
-  return { collected, published };
+  const slots = Array.isArray(args && args.slots) ? args.slots : [];
+  const collected = [];
+
+  for (const slot of slots) {
+    if (!slot) continue;
+    collected.push(await collect({ ...args, partnerId: slot }));
+  }
+
+  // Nothing to publish until this device knows which of the two people it is.
+  // Publishing under a device tag instead would put records at an address the
+  // other phone has no reason to ever look at.
+  const published = args && args.ownerId ? await publish(args) : { ok: false, reason: 'no-owner' };
+
+  return {
+    collected,
+    published,
+    applied: collected.reduce((sum, r) => sum + (r.applied || 0), 0),
+    uploaded: published.uploaded || 0,
+  };
 }
 
 export default {

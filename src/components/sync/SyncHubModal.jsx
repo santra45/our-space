@@ -33,6 +33,7 @@ import {
   EyeOff,
   Loader2,
   Trash2,
+  Inbox,
 } from 'lucide-react';
 import QRCode from 'qrcode';
 import { useSync } from '../../context/SyncContext';
@@ -492,6 +493,9 @@ export function SyncHubModal({ isOpen, onClose }) {
     unpairPartner,
     syncNow,
     connectionType,
+    mailboxEnabled,
+    mailboxState,
+    syncMailboxNow,
   } = useSync();
   const {
     vaultSalt,
@@ -1090,6 +1094,47 @@ export function SyncHubModal({ isOpen, onClose }) {
             <p className="text-[10px] text-slate-500 font-medium">Syncing with your partner...</p>
           )}
         </div>
+
+        {/*
+          The mailbox. Reported separately from the live connection on purpose:
+          they answer different questions. "Are we connected right now" and
+          "will what I just wrote reach them at all" used to be the same
+          question, and the honest answer to the second one is now yes even
+          when the first is no.
+        */}
+        {mailboxEnabled && (
+          <div className="mb-4 p-3.5 rounded-2xl bg-indigo-50/60 border border-indigo-100">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 min-w-0">
+                <Inbox className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
+                <span className="text-xs font-bold text-slate-700">
+                  {mailboxState.state === 'syncing'
+                    ? 'Checking for things…'
+                    : mailboxState.state === 'failed'
+                      ? 'Could not check just now'
+                      : 'Works even when you are apart'}
+                </span>
+              </div>
+              <button
+                type="button"
+                disabled={mailboxState.state === 'syncing'}
+                onClick={() => {
+                  tap();
+                  syncMailboxNow();
+                }}
+                className="text-xs font-semibold text-indigo-600 inline-flex items-center gap-1 hover:underline disabled:opacity-40 shrink-0"
+              >
+                <RefreshCw className="w-3 h-3" />
+                <span>Check now</span>
+              </button>
+            </div>
+            <p className="text-[10px] text-slate-500 leading-relaxed mt-1.5">
+              {mailboxState.state === 'failed'
+                ? 'No connection right now. It will try again on its own.'
+                : 'Anything either of you writes is waiting for the other next time they open this, even if you are never here at the same time.'}
+            </p>
+          </div>
+        )}
 
         {/* Who is who - names, pronouns, and which of you this phone is. */}
         <WhoIsWho />
