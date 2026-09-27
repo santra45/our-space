@@ -4616,6 +4616,66 @@ async function run() {
   );
   check('and so is a person with no id at all', ppl.toPerson({ name: 'X' }) === null);
 
+  /* -- last active tracking: when each of you opened the app last ----------- */
+  //
+  // Stored in the encrypted person record so neither relay nor server ever
+  // learns it in the clear. Throttled so opening the app repeatedly does not
+  // thrash writes or mailbox quota.
+
+  const personWithActive = ppl.toPerson({
+    id: ppl.personRecordId('bbbbbbbbbbbb'),
+    personId: 'bbbbbbbbbbbb',
+    name: 'B',
+    lastActiveAt: 1700000050000,
+  });
+  check('lastActiveAt is parsed when present', personWithActive?.lastActiveAt === 1700000050000);
+
+  const personWithoutActive = ppl.toPerson({
+    id: ppl.personRecordId('cccccccccccc'),
+    personId: 'cccccccccccc',
+    name: 'C',
+    lastActiveAt: 'not-a-number',
+  });
+  check('lastActiveAt falls back to null when not a finite number', personWithoutActive?.lastActiveAt === null);
+
+  // Touching activity updates the person record
+  const touched1 = await ppl.touchPersonActive({
+    cryptoKey: key,
+    store: peopleStore,
+    personId: hisId,
+    minIntervalMs: 5000,
+  });
+  check('touchPersonActive updates lastActiveAt', touched1 !== null);
+  const hisRecordTouched = ppl.toPerson(
+    await peopleStore.getDecrypted('people', ppl.personRecordId(hisId), key)
+  );
+  check('and it is stored encrypted in the person record', typeof hisRecordTouched?.lastActiveAt === 'number');
+
+  // Immediately touching again should be throttled (returns null)
+  const touchedThrottled = await ppl.touchPersonActive({
+    cryptoKey: key,
+    store: peopleStore,
+    personId: hisId,
+    minIntervalMs: 5000,
+  });
+  check('touchPersonActive throttles when called again within minIntervalMs', touchedThrottled === null);
+
+  /* -- relative date formatting for presence and connection ---------------- */
+
+  const { formatLastSeen, formatLastConnected } = await import('./src/utils/dateHelpers.js');
+  const now = 1700000100000;
+
+  check('formatLastSeen returns null for missing or invalid timestamp', formatLastSeen(null, now) === null && formatLastSeen('abc', now) === null);
+  check('formatLastSeen reports "Just now" for recent timestamps (< 60s)', formatLastSeen(now - 30 * 1000, now) === 'Just now');
+  check('formatLastSeen reports minutes ago for < 1h', formatLastSeen(now - 15 * 60 * 1000, now) === '15m ago');
+  check('formatLastSeen reports hours ago for < 24h', formatLastSeen(now - 3 * 3600 * 1000, now) === '3h ago');
+  check('formatLastSeen reports "Yesterday" for 24-48h', formatLastSeen(now - 25 * 3600 * 1000, now) === 'Yesterday');
+  check('formatLastSeen reports days ago for 2-6 days', formatLastSeen(now - 3 * 86400 * 1000, now) === '3d ago');
+
+  check('formatLastConnected returns null for missing timestamp', formatLastConnected(null, now) === null);
+  check('formatLastConnected reports relative minutes', formatLastConnected(now - 10 * 60 * 1000, now) === '10m ago');
+  check('formatLastConnected reports "Just now" for fresh connection', formatLastConnected(now - 10 * 1000, now) === 'Just now');
+
 
   /* --------------------------------------- 21. the mailbox: sync while apart */
   //

@@ -29,6 +29,7 @@ import {
   possessiveOf,
   resolveIdentity,
   savePerson as savePersonRecord,
+  touchPersonActive,
 } from '../services/people';
 
 const PeopleContext = createContext(null);
@@ -149,6 +150,43 @@ export function PeopleProvider({ children }) {
     [cryptoKey, busy, refresh, stamp]
   );
 
+  const touchLastActive = useCallback(async () => {
+    if (!cryptoKey || !state.me) return;
+    try {
+      const row = await touchPersonActive({
+        cryptoKey,
+        personId: state.me.personId,
+        timestamp: stamp,
+      });
+      if (row) {
+        broadcast(row);
+        await refresh();
+      }
+    } catch {
+      // Non-fatal
+    }
+  }, [cryptoKey, state.me, stamp, refresh]);
+
+  // Touch active on unlock and whenever returning to foreground
+  useEffect(() => {
+    if (state.status !== 'ready' || !state.me) return undefined;
+    touchLastActive();
+
+    const onVisible = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        touchLastActive();
+      }
+    };
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', onVisible);
+    }
+    return () => {
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', onVisible);
+      }
+    };
+  }, [state.status, state.me?.personId, touchLastActive]);
+
   const value = useMemo(() => {
     const { status, people, me, partner } = state;
     return {
@@ -168,13 +206,15 @@ export function PeopleProvider({ children }) {
       partnerName: nameOf(partner),
       partnerPossessive: possessiveOf(partner),
       partnerGrammar: grammarOf(partner),
+      partnerLastActive: partner?.lastActiveAt || null,
 
       refresh,
       createCouple,
       claimPerson,
       savePerson,
+      touchLastActive,
     };
-  }, [state, busy, refresh, createCouple, claimPerson, savePerson]);
+  }, [state, busy, refresh, createCouple, claimPerson, savePerson, touchLastActive]);
 
   return <PeopleContext.Provider value={value}>{children}</PeopleContext.Provider>;
 }

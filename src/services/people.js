@@ -214,6 +214,7 @@ export function toPerson(row) {
     name: sanitizeName(row.name),
     pronoun: sanitizePronoun(row.pronoun),
     deviceIds: sanitizeDeviceIds(row.deviceIds),
+    lastActiveAt: Number.isFinite(row.lastActiveAt) ? row.lastActiveAt : null,
     createdAt: Number.isFinite(row.createdAt) ? row.createdAt : 0,
     updatedAt: Number.isFinite(row.updatedAt) ? row.updatedAt : 0,
   };
@@ -446,6 +447,13 @@ export async function savePerson(args) {
         ? existing.pronoun
         : DEFAULT_PRONOUN;
 
+  const lastActiveAt =
+    args.lastActiveAt !== undefined
+      ? (Number.isFinite(args.lastActiveAt) ? args.lastActiveAt : null)
+      : existing && Number.isFinite(existing.lastActiveAt)
+        ? existing.lastActiveAt
+        : null;
+
   return await store.putEncrypted(
     PEOPLE_TABLE,
     {
@@ -454,11 +462,49 @@ export async function savePerson(args) {
       name,
       pronoun,
       deviceIds,
+      lastActiveAt,
       createdAt: existing && existing.createdAt ? existing.createdAt : Date.now(),
       updatedAt: await stampFrom(args),
     },
     cryptoKey
   );
+}
+
+/**
+ * Updates `lastActiveAt` for a person, throttled so repeated unlocks or tab focus
+ * events don't churn writes or mailbox sync.
+ *
+ * @param {{ cryptoKey: CryptoKey, personId: string, store?: Object,
+ *   timestamp?: () => number|Promise<number>, minIntervalMs?: number }} args
+ * @returns {Promise<Object|null>} The sealed row if updated, or null if skipped by throttle.
+ */
+export async function touchPersonActive(args) {
+  const { cryptoKey, personId } = args || {};
+  if (!cryptoKey || !personId) return null;
+  const store = (args && args.store) || db;
+  const minIntervalMs = (args && args.minIntervalMs) !== undefined ? args.minIntervalMs : 5 * 60 * 1000;
+
+  const id = personRecordId(personId);
+  let existing = null;
+  try {
+    existing = toPerson(await store.getDecrypted(PEOPLE_TABLE, id, cryptoKey));
+  } catch {
+    return null;
+  }
+  if (!existing) return null;
+
+  const now = Date.now();
+  if (existing.lastActiveAt && now - existing.lastActiveAt < minIntervalMs) {
+    return null; // Throttled: recently touched
+  }
+
+  return await savePerson({
+    cryptoKey,
+    store,
+    personId,
+    lastActiveAt: now,
+    timestamp: args.timestamp,
+  });
 }
 
 /**

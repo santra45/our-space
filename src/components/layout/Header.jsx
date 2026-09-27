@@ -7,7 +7,7 @@
  * proved it holds the vault key, and any stranger who knows our peer id can
  * reach that state. Only a peer that survived the challenge gets a green pill.
  */
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import {
   Heart,
@@ -23,7 +23,9 @@ import {
 } from 'lucide-react';
 import { useVault } from '../../context/VaultContext';
 import { useSync } from '../../context/SyncContext';
+import { usePeople } from '../../context/PeopleContext';
 import { useHaptics } from '../../hooks/useHaptics';
+import { formatLastSeen } from '../../utils/dateHelpers';
 
 export function Header({ onOpenSync }) {
   const { vaultConfig, lockVault } = useVault();
@@ -41,7 +43,14 @@ export function Header({ onOpenSync }) {
     confirmPendingInvite,
     declinePendingInvite,
   } = useSync();
+  const { partnerName, partnerLastActive } = usePeople();
   const { tick, tap } = useHaptics();
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 30000);
+    return () => clearInterval(timer);
+  }, []);
 
   const getStatusDisplay = () => {
     // A fatal problem outranks everything: it is the only place the user learns
@@ -115,26 +124,48 @@ export function Header({ onOpenSync }) {
     <header className="sticky top-0 z-30 pt-safe px-4 py-3 backdrop-blur-md bg-blush-50/70 border-b border-blush-100/50">
       <div className="max-w-md mx-auto flex items-center justify-between">
         {/* Left: Couple Title */}
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-blush-400 to-blush-300 flex items-center justify-center text-white shadow-sm shadow-blush-300/50">
+        <div className="flex items-center gap-2 min-w-0">
+          <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-blush-400 to-blush-300 flex items-center justify-center text-white shadow-sm shadow-blush-300/50 shrink-0">
             <Heart className="w-4 h-4 fill-white" />
           </div>
-          <div>
-            <h2 className="text-sm font-bold text-slate-800 leading-tight">
+          <div className="min-w-0">
+            <h2 className="text-sm font-bold text-slate-800 leading-tight truncate">
               {vaultConfig?.coupleNames || 'Our Space'}
             </h2>
-            <p className="text-[10px] text-slate-500 font-medium">Just for us 💕</p>
+            {isAuthorized ? (
+              <p className="text-[10px] text-emerald-600 font-medium flex items-center gap-1 leading-tight truncate">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+                <span>{partnerName ? `${partnerName} active now 💕` : 'Active together 💕'}</span>
+              </p>
+            ) : partnerLastActive ? (
+              <p className="text-[10px] text-slate-500 font-medium flex items-center gap-1 leading-tight truncate">
+                <span className="w-1.5 h-1.5 rounded-full bg-slate-400 shrink-0" />
+                <span>
+                  {partnerName
+                    ? `${partnerName} • ${formatLastSeen(partnerLastActive, now)}`
+                    : `Active ${formatLastSeen(partnerLastActive, now)}`}
+                </span>
+              </p>
+            ) : (
+              <p className="text-[10px] text-slate-500 font-medium leading-tight">Just for us 💕</p>
+            )}
           </div>
         </div>
 
         {/* Right: Sync Status Pill & Lock Button */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0">
           <button
             onClick={() => {
               tick();
               onOpenSync();
             }}
-            title={syncError ? syncError.text : status.label}
+            title={
+              syncError
+                ? syncError.text
+                : partnerLastActive
+                  ? `${status.label} • ${partnerName || 'Partner'} active ${formatLastSeen(partnerLastActive, now)}`
+                  : status.label
+            }
             className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold border transition shadow-sm ${status.color}`}
           >
             <span className={`w-2 h-2 rounded-full ${status.dot}`} />

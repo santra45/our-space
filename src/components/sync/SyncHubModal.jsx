@@ -38,7 +38,9 @@ import {
 import QRCode from 'qrcode';
 import { useSync } from '../../context/SyncContext';
 import { useVault } from '../../context/VaultContext';
+import { usePeople } from '../../context/PeopleContext';
 import { buildInviteUrl, parseInvite } from '../../utils/invite';
+import { formatLastSeen, formatLastConnected } from '../../utils/dateHelpers';
 import BouncyButton from '../common/BouncyButton';
 import WhoIsWho from '../people/WhoIsWho';
 import QRScannerModal from './QRScannerModal';
@@ -496,7 +498,17 @@ export function SyncHubModal({ isOpen, onClose }) {
     mailboxEnabled,
     mailboxState,
     syncMailboxNow,
+    lastConnectedAt,
   } = useSync();
+  const { partnerName, partnerLastActive } = usePeople();
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const timer = setInterval(() => setNow(Date.now()), 30000);
+    return () => clearInterval(timer);
+  }, [isOpen]);
+
   const {
     vaultSalt,
     vaultConfig,
@@ -1036,6 +1048,55 @@ export function SyncHubModal({ isOpen, onClose }) {
               </div>
             </div>
           )}
+
+          {/* Partner Activity & Last Connection status tiles */}
+          <div className="pt-2 border-t border-blush-100/70 grid grid-cols-2 gap-2">
+            <div className="bg-white/80 rounded-xl p-2.5 border border-blush-100/60 shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-[10px] text-slate-500 font-medium truncate">
+                  {partnerName ? `${partnerName}'s App` : 'Partner App'}
+                </span>
+                <span
+                  className={`w-2 h-2 rounded-full shrink-0 ${
+                    isAuthorized
+                      ? 'bg-emerald-500 animate-pulse'
+                      : partnerLastActive
+                        ? 'bg-slate-400'
+                        : 'bg-slate-300'
+                  }`}
+                />
+              </div>
+              <p className="text-[11px] font-bold text-slate-700 truncate">
+                {isAuthorized
+                  ? 'Active now'
+                  : partnerLastActive
+                    ? `Active ${formatLastSeen(partnerLastActive, now)}`
+                    : 'Waiting for sync'}
+              </p>
+            </div>
+
+            <div className="bg-white/80 rounded-xl p-2.5 border border-blush-100/60 shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-[10px] text-slate-500 font-medium truncate">Last Connected</span>
+                <span
+                  className={`w-2 h-2 rounded-full shrink-0 ${
+                    isAuthorized
+                      ? 'bg-emerald-500 animate-pulse'
+                      : lastConnectedAt
+                        ? 'bg-indigo-400'
+                        : 'bg-slate-300'
+                  }`}
+                />
+              </div>
+              <p className="text-[11px] font-bold text-slate-700 truncate">
+                {isAuthorized
+                  ? 'Connected now'
+                  : lastConnectedAt
+                    ? formatLastConnected(lastConnectedAt, now)
+                    : 'Not yet paired'}
+              </p>
+            </div>
+          </div>
 
           {/* X4: fatal sync problems. peerSync emits these as auth_failed /
               ice_failed / error, none of which the old gate ever matched. */}

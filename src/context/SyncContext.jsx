@@ -39,6 +39,8 @@ const TRUSTED_PARTNER_KEY = 'sweetheart_trusted_partner_id';
 const PAIRED_PARTNER_KEY = 'sweetheart_paired_partner_id';
 /** Handoff slot written by LockScreen when the user unlocked through an invite. */
 const PENDING_CONNECT_KEY = 'pending_partner_connect';
+/** Last timestamp when the two devices were connected live. */
+const LAST_CONNECTED_KEY = 'sweetheart_last_connected_at';
 
 /** Lifecycle states in which the peer has proved it holds the vault key. */
 const AUTHORIZED_STATES = new Set(['authorized', 'syncing', 'synced']);
@@ -85,6 +87,10 @@ export function SyncProvider({ children }) {
   const [syncError, setSyncError] = useState(null);
   const [connectionType, setConnectionType] = useState(null); // 'direct' | 'relayed' | 'unknown' | null
   const [pendingInvite, setPendingInvite] = useState(null);
+  const [lastConnectedAt, setLastConnectedAt] = useState(() => {
+    const stored = readStored(LAST_CONNECTED_KEY);
+    return stored ? Number(stored) : null;
+  });
 
   // Keep latest vaultConfig accessible to sync handlers without triggering effect re-runs
   const vaultConfigRef = useRef(vaultConfig);
@@ -314,6 +320,9 @@ export function SyncProvider({ children }) {
       }
 
       if (AUTHORIZED_STATES.has(status.state)) {
+        const now = Date.now();
+        setLastConnectedAt(now);
+        writeStored(LAST_CONNECTED_KEY, String(now));
         setSyncError(null);
         if (status.state === 'authorized' && vaultConfigRef.current) {
           peerSync.syncVaultConfig(vaultConfigRef.current);
@@ -572,6 +581,17 @@ export function SyncProvider({ children }) {
 
   const isAuthorized = AUTHORIZED_STATES.has(syncStatus.state);
 
+  // Keep lastConnectedAt fresh while connected
+  useEffect(() => {
+    if (!isAuthorized) return undefined;
+    const interval = setInterval(() => {
+      const now = Date.now();
+      setLastConnectedAt(now);
+      writeStored(LAST_CONNECTED_KEY, String(now));
+    }, 30000);
+    return () => clearInterval(interval);
+  }, [isAuthorized]);
+
   // Read by the burst watcher to pick its wording. A ref rather than a
   // dependency: connecting must not re-run the watcher and replay a burst.
   const isAuthorizedRef = useRef(isAuthorized);
@@ -705,6 +725,9 @@ export function SyncProvider({ children }) {
         mailboxEnabled: isMailboxEnabled(),
         mailboxState,
         syncMailboxNow: () => runMailbox('manual'),
+
+        // Connection presence
+        lastConnectedAt,
       }}
     >
       {children}
