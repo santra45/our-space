@@ -167,7 +167,7 @@ export function PeopleProvider({ children }) {
     }
   }, [cryptoKey, state.me, stamp, refresh]);
 
-  // Touch active on unlock and whenever returning to foreground
+  // Touch active on unlock, whenever returning to foreground, and on local data writes
   useEffect(() => {
     if (state.status !== 'ready' || !state.me) return undefined;
     touchLastActive();
@@ -177,10 +177,19 @@ export function PeopleProvider({ children }) {
         touchLastActive();
       }
     };
+
+    const onLocalRecord = (e) => {
+      if (e && e.table !== PEOPLE_TABLE) {
+        touchLastActive();
+      }
+    };
+
+    peerSync.on('local-record', onLocalRecord);
     if (typeof document !== 'undefined') {
       document.addEventListener('visibilitychange', onVisible);
     }
     return () => {
+      peerSync.off('local-record', onLocalRecord);
       if (typeof document !== 'undefined') {
         document.removeEventListener('visibilitychange', onVisible);
       }

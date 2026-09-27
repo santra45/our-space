@@ -4337,6 +4337,7 @@ async function run() {
   check('the device that set it up is the person who set it up', couple.me.name === 'Harshit');
   check('and the other one is the partner', couple.partner.name === 'Noor');
   check('his phone is recorded on his person', couple.me.deviceIds.includes(HIS_PHONE));
+  check('couple creator has lastActiveAt initialized', Number.isFinite(couple.me.lastActiveAt));
   check('her person carries no device yet', couple.partner.deviceIds.length === 0);
 
   const hisId = couple.me.personId;
@@ -4394,6 +4395,7 @@ async function run() {
   check('her phone is her', hers.me.personId === herId);
   check('and from her phone, HE is the partner', hers.partner.personId === hisId);
   check('her device tag is now on her record', hers.me.deviceIds.includes(HER_PHONE));
+  check('claiming a person initializes lastActiveAt', Number.isFinite(hers.me.lastActiveAt));
 
   /* -- claiming did not damage his side ------------------------------------ */
   //

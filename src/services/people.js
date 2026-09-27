@@ -540,6 +540,7 @@ export async function createCouple(args) {
     name: (mine && mine.name) || '',
     pronoun: mine && mine.pronoun,
     addDeviceId: deviceId,
+    lastActiveAt: Date.now(),
     timestamp: args.timestamp,
   });
 
@@ -631,6 +632,7 @@ export async function claimPerson(args) {
     store,
     personId,
     addDeviceId: deviceId,
+    lastActiveAt: Date.now(),
     timestamp,
   });
 
