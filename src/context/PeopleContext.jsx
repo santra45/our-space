@@ -15,7 +15,15 @@
  * partner's records land. Listening to `data-updated` is what makes that feel
  * like the app noticing rather than something the user has to go and find.
  */
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import React, {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { useVault } from './VaultContext';
 import peerSync from '../services/peerSync';
 import {
@@ -150,14 +158,22 @@ export function PeopleProvider({ children }) {
     [cryptoKey, busy, refresh, stamp]
   );
 
+  // Read at call time rather than depended on. `me` is a new object after every
+  // refresh, including the ones incoming sync triggers, so depending on it
+  // re-ran the effect below, and its immediate touch, whenever the other
+  // phone's data landed.
+  const myPersonIdRef = useRef(null);
+  myPersonIdRef.current = state.me ? state.me.personId : null;
+
   const touchLastActive = useCallback(async () => {
-    if (!cryptoKey || !state.me) return;
+    const personId = myPersonIdRef.current;
+    if (!cryptoKey || !personId) return;
+    // Active means someone is looking at this screen. A background tab that
+    // stays connected still receives the other phone's data, and that must not
+    // report its owner as active.
+    if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
     try {
-      const row = await touchPersonActive({
-        cryptoKey,
-        personId: state.me.personId,
-        timestamp: stamp,
-      });
+      const row = await touchPersonActive({ cryptoKey, personId, timestamp: stamp });
       if (row) {
         broadcast(row);
         await refresh();
@@ -165,7 +181,7 @@ export function PeopleProvider({ children }) {
     } catch {
       // Non-fatal
     }
-  }, [cryptoKey, state.me, stamp, refresh]);
+  }, [cryptoKey, stamp, refresh]);
 
   // Touch active on unlock, whenever returning to foreground, and on local data writes
   useEffect(() => {
