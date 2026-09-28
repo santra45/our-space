@@ -4620,9 +4620,11 @@ async function run() {
 
   /* -- last active tracking: when each of you opened the app last ----------- */
   //
-  // Stored in the encrypted person record so neither relay nor server ever
-  // learns it in the clear. Throttled so opening the app repeatedly does not
-  // thrash writes or mailbox quota.
+  // Sealed like every other record, so neither relay nor server ever learns it
+  // in the clear. Throttled so opening the app repeatedly does not thrash writes
+  // or mailbox quota. And kept in a presence record of its OWN: person records
+  // merge last-write-wins on the whole record, so a heartbeat written into one
+  // would carry that phone's stale copy of the name and device tags with it.
 
   const personWithActive = ppl.toPerson({
     id: ppl.personRecordId('bbbbbbbbbbbb'),
@@ -4640,27 +4642,77 @@ async function run() {
   });
   check('lastActiveAt falls back to null when not a finite number', personWithoutActive?.lastActiveAt === null);
 
-  // Touching activity updates the person record
+  check(
+    'a presence record is not a person',
+    ppl.toPerson({ id: ppl.presenceRecordId(hisId), personId: hisId, lastActiveAt: 1 }) === null
+  );
+  check(
+    'and a person record is not presence',
+    ppl.toPresence({ id: ppl.personRecordId(hisId), personId: hisId, lastActiveAt: 1 }) === null
+  );
+  check(
+    'presence without a usable time is no presence at all',
+    ppl.toPresence({ id: ppl.presenceRecordId(hisId), personId: hisId, lastActiveAt: 'soon' }) === null
+  );
+
+  // Touching activity writes presence
+  const hisRowBeforeTouch = await peopleStore.getDecrypted('people', ppl.personRecordId(hisId), key);
   const touched1 = await ppl.touchPersonActive({
     cryptoKey: key,
     store: peopleStore,
     personId: hisId,
-    minIntervalMs: 5000,
+    minIntervalMs: 0,
+    timestamp: pplStamp,
   });
   check('touchPersonActive updates lastActiveAt', touched1 !== null);
-  const hisRecordTouched = ppl.toPerson(
-    await peopleStore.getDecrypted('people', ppl.personRecordId(hisId), key)
+  check('in a presence record of its own', touched1?.id === ppl.presenceRecordId(hisId));
+  const hisPresence = ppl.toPresence(
+    await peopleStore.getDecrypted('people', ppl.presenceRecordId(hisId), key)
   );
-  check('and it is stored encrypted in the person record', typeof hisRecordTouched?.lastActiveAt === 'number');
+  check('and it is stored encrypted, readable only with the key', typeof hisPresence?.lastActiveAt === 'number');
+  const hisRowAfterTouch = await peopleStore.getDecrypted('people', ppl.personRecordId(hisId), key);
+  check(
+    'a heartbeat never rewrites the person record, so it cannot undo a rename from the other phone',
+    hisRowAfterTouch.updatedAt === hisRowBeforeTouch.updatedAt &&
+      hisRowAfterTouch.name === hisRowBeforeTouch.name &&
+      eq(hisRowAfterTouch.deviceIds, hisRowBeforeTouch.deviceIds)
+  );
+
+  const peopleWithPresence = await ppl.listPeople({ cryptoKey: key, store: peopleStore });
+  check('presence is never mistaken for a third person', peopleWithPresence.length === 2);
+  check(
+    'and its time is read back onto the right person',
+    peopleWithPresence.find((p) => p.personId === hisId).lastActiveAt === hisPresence.lastActiveAt
+  );
 
   // Immediately touching again should be throttled (returns null)
   const touchedThrottled = await ppl.touchPersonActive({
     cryptoKey: key,
     store: peopleStore,
     personId: hisId,
-    minIntervalMs: 5000,
+    minIntervalMs: 60000,
+    timestamp: pplStamp,
   });
   check('touchPersonActive throttles when called again within minIntervalMs', touchedThrottled === null);
+
+  // A phone still running the build that kept the time inside the person
+  // record keeps counting until it updates: the newer of the two wins.
+  const legacyStore = new FakeVaultStore();
+  await legacyStore.putEncrypted(
+    'people',
+    { id: ppl.personRecordId(hisId), personId: hisId, name: 'Harshit', lastActiveAt: 1700000900000, createdAt: 1, updatedAt: 2 },
+    key
+  );
+  await legacyStore.putEncrypted(
+    'people',
+    { id: ppl.presenceRecordId(hisId), personId: hisId, lastActiveAt: 1700000100000, updatedAt: 3 },
+    key
+  );
+  const legacyPeople = await ppl.listPeople({ cryptoKey: key, store: legacyStore });
+  check(
+    'an older build\'s heartbeat on the person record still counts when it is newer',
+    legacyPeople.length === 1 && legacyPeople[0].lastActiveAt === 1700000900000
+  );
 
   /* -- relative date formatting for presence and connection ---------------- */
 

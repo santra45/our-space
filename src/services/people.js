@@ -170,6 +170,20 @@ export function personRecordId(personId) {
   return `person-${personId}`;
 }
 
+/**
+ * `presence-<id>`: when this person last had the app open.
+ *
+ * A record of its own beside the person record, not a field inside it. Person
+ * records merge last-write-wins on the WHOLE record, so a heartbeat stored in
+ * one carries this phone's copy of the name and device tags along with every
+ * tick - and a phone coming back after a weekend away would silently undo a
+ * rename or re-claim the other phone made meanwhile. A record that holds
+ * nothing but the time can only ever overwrite the time.
+ */
+export function presenceRecordId(personId) {
+  return `presence-${personId}`;
+}
+
 /** @returns {string} A bounded, trimmed display name, or '' when there is none. */
 export function sanitizeName(value) {
   if (typeof value !== 'string') return '';
@@ -214,10 +228,22 @@ export function toPerson(row) {
     name: sanitizeName(row.name),
     pronoun: sanitizePronoun(row.pronoun),
     deviceIds: sanitizeDeviceIds(row.deviceIds),
+    // Only person records written before presence moved to its own record
+    // carry this. listPeople takes the newer of the two.
     lastActiveAt: Number.isFinite(row.lastActiveAt) ? row.lastActiveAt : null,
     createdAt: Number.isFinite(row.createdAt) ? row.createdAt : 0,
     updatedAt: Number.isFinite(row.updatedAt) ? row.updatedAt : 0,
   };
+}
+
+/** Normalises one decrypted row into `{ personId, lastActiveAt }`, or null if it is not presence. */
+export function toPresence(row) {
+  if (!row || typeof row !== 'object') return null;
+  if (row._headerTampered === true || row._tableTampered === true) return null;
+  if (typeof row.personId !== 'string' || !TAG_PATTERN.test(row.personId)) return null;
+  if (row.id !== presenceRecordId(row.personId)) return null;
+  if (!Number.isFinite(row.lastActiveAt)) return null;
+  return { personId: row.personId, lastActiveAt: row.lastActiveAt };
 }
 
 /* ---------------------------------------------------------------- grammar */
@@ -321,9 +347,20 @@ export async function listPeople(args) {
   }
 
   const people = [];
+  const presence = new Map();
   for (const row of rows || []) {
     const person = toPerson(row);
-    if (person) people.push(person);
+    if (person) {
+      people.push(person);
+      continue;
+    }
+    const seen = toPresence(row);
+    if (seen) presence.set(seen.personId, seen.lastActiveAt);
+  }
+
+  for (const person of people) {
+    const latest = Math.max(presence.get(person.personId) || 0, person.lastActiveAt || 0);
+    person.lastActiveAt = latest || null;
   }
 
   people.sort((a, b) => a.createdAt - b.createdAt || (a.personId < b.personId ? -1 : 1));
@@ -447,13 +484,6 @@ export async function savePerson(args) {
         ? existing.pronoun
         : DEFAULT_PRONOUN;
 
-  const lastActiveAt =
-    args.lastActiveAt !== undefined
-      ? (Number.isFinite(args.lastActiveAt) ? args.lastActiveAt : null)
-      : existing && Number.isFinite(existing.lastActiveAt)
-        ? existing.lastActiveAt
-        : null;
-
   return await store.putEncrypted(
     PEOPLE_TABLE,
     {
@@ -462,7 +492,6 @@ export async function savePerson(args) {
       name,
       pronoun,
       deviceIds,
-      lastActiveAt,
       createdAt: existing && existing.createdAt ? existing.createdAt : Date.now(),
       updatedAt: await stampFrom(args),
     },
@@ -470,41 +499,50 @@ export async function savePerson(args) {
   );
 }
 
+/** Seals and writes a person's presence record, unthrottled. See presenceRecordId. */
+async function writePresence(args) {
+  const { cryptoKey, store, personId } = args;
+  return await store.putEncrypted(
+    PEOPLE_TABLE,
+    {
+      id: presenceRecordId(personId),
+      personId,
+      lastActiveAt: Date.now(),
+      updatedAt: await stampFrom(args),
+    },
+    cryptoKey
+  );
+}
+
 /**
- * Updates `lastActiveAt` for a person, throttled so repeated unlocks or tab focus
- * events don't churn writes or mailbox sync.
+ * Records that a person has the app open, throttled so repeated unlocks or tab
+ * focus events don't churn writes or mailbox sync. Writes the presence record
+ * only; the person record is never touched.
  *
  * @param {{ cryptoKey: CryptoKey, personId: string, store?: Object,
  *   timestamp?: () => number|Promise<number>, minIntervalMs?: number }} args
- * @returns {Promise<Object|null>} The sealed row if updated, or null if skipped by throttle.
+ * @returns {Promise<Object|null>} The sealed presence row if written, or null if skipped by throttle.
  */
 export async function touchPersonActive(args) {
   const { cryptoKey, personId } = args || {};
-  if (!cryptoKey || !personId) return null;
-  const store = (args && args.store) || db;
-  const minIntervalMs = (args && args.minIntervalMs) !== undefined ? args.minIntervalMs : 5 * 60 * 1000;
+  if (!cryptoKey || typeof personId !== 'string' || !TAG_PATTERN.test(personId)) return null;
+  const store = args.store || db;
+  const minIntervalMs = args.minIntervalMs !== undefined ? args.minIntervalMs : 5 * 60 * 1000;
 
-  const id = personRecordId(personId);
   let existing = null;
   try {
-    existing = toPerson(await store.getDecrypted(PEOPLE_TABLE, id, cryptoKey));
+    existing = toPresence(
+      await store.getDecrypted(PEOPLE_TABLE, presenceRecordId(personId), cryptoKey)
+    );
   } catch {
-    return null;
+    existing = null;
   }
-  if (!existing) return null;
 
-  const now = Date.now();
-  if (existing.lastActiveAt && now - existing.lastActiveAt < minIntervalMs) {
+  if (existing && Date.now() - existing.lastActiveAt < minIntervalMs) {
     return null; // Throttled: recently touched
   }
 
-  return await savePerson({
-    cryptoKey,
-    store,
-    personId,
-    lastActiveAt: now,
-    timestamp: args.timestamp,
-  });
+  return await writePresence({ cryptoKey, store, personId, timestamp: args.timestamp });
 }
 
 /**
@@ -540,7 +578,6 @@ export async function createCouple(args) {
     name: (mine && mine.name) || '',
     pronoun: mine && mine.pronoun,
     addDeviceId: deviceId,
-    lastActiveAt: Date.now(),
     timestamp: args.timestamp,
   });
 
@@ -553,10 +590,17 @@ export async function createCouple(args) {
     timestamp: args.timestamp,
   });
 
+  const presenceRow = await writePresence({
+    cryptoKey,
+    store,
+    personId: minePersonId,
+    timestamp: args.timestamp,
+  });
+
   setLocalPersonId(minePersonId);
 
   const { me, partner } = await resolveIdentity({ cryptoKey, store, deviceId });
-  return { me, partner, rows: [mineRow, theirsRow] };
+  return { me, partner, rows: [mineRow, theirsRow, presenceRow] };
 }
 
 /**
@@ -632,12 +676,13 @@ export async function claimPerson(args) {
     store,
     personId,
     addDeviceId: deviceId,
-    lastActiveAt: Date.now(),
     timestamp,
   });
 
+  const presenceRow = await writePresence({ cryptoKey, store, personId, timestamp });
+
   setLocalPersonId(personId);
-  return [...released, row];
+  return [...released, row, presenceRow];
 }
 
 /**
@@ -680,9 +725,11 @@ export default {
   MAX_NAME_LENGTH,
   derivePersonSlots,
   personRecordId,
+  presenceRecordId,
   sanitizeName,
   sanitizePronoun,
   toPerson,
+  toPresence,
   nameOf,
   grammarOf,
   possessiveOf,
@@ -693,6 +740,7 @@ export default {
   ownerIdsFor,
   resolveIdentity,
   savePerson,
+  touchPersonActive,
   createCouple,
   claimPerson,
   ensureDeviceClaimed,
