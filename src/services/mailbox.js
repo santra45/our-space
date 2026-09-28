@@ -193,6 +193,25 @@ function toWire(tableName, row) {
 }
 
 /**
+ * True when `next` announces exactly what `prev` already does: the same ids at
+ * the same versions in every table, in any order.
+ */
+function sameManifest(prev, next) {
+  if (!prev || typeof prev !== 'object') return false;
+  const tables = new Set([...Object.keys(prev), ...Object.keys(next)]);
+  for (const tableName of tables) {
+    const before = Array.isArray(prev[tableName]) ? prev[tableName] : [];
+    const after = Array.isArray(next[tableName]) ? next[tableName] : [];
+    if (before.length !== after.length) return false;
+    const versions = new Map(before.map((e) => [e.id, e.updatedAt]));
+    for (const entry of after) {
+      if (!versions.has(entry.id) || versions.get(entry.id) !== entry.updatedAt) return false;
+    }
+  }
+  return true;
+}
+
+/**
  * Publishes this device's records and then announces them.
  *
  * ORDER MATTERS AND IT IS NOT THE OBVIOUS ONE. Records go up first and the
@@ -205,7 +224,8 @@ function toWire(tableName, row) {
  *
  * @param {{ cryptoKey: CryptoKey, ownerId: string, overrides?: Object,
  *   includePhotos?: boolean, store?: Object }} args
- * @returns {Promise<{ ok: boolean, reason?: string, uploaded: number, skipped: number }>}
+ * @returns {Promise<{ ok: boolean, reason?: string, uploaded: number, skipped: number,
+ *   unchanged?: boolean }>}
  */
 export async function publish(args) {
   const { cryptoKey, ownerId } = args || {};
@@ -285,6 +305,14 @@ export async function publish(args) {
   // skipping them does not retract them from the other phone.
   if (args && args.includePhotos === false && published && published.memories) {
     confirmed.memories = published.memories;
+  }
+
+  // Nothing uploaded and nothing gone: the manifest out there already says
+  // exactly this. Writing it again tells the other phone nothing and spends a
+  // write from a small daily allowance, and publish runs on every unlock and
+  // every return to the app.
+  if (uploaded === 0 && sameManifest(published, confirmed)) {
+    return { ok: true, uploaded, skipped, unchanged: true };
   }
 
   try {

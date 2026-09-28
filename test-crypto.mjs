@@ -4918,6 +4918,14 @@ async function run() {
       store: hisPhone,
     });
     check('re-publishing an unchanged vault uploads nothing', republish.uploaded === 0);
+    check(
+      'and writes nothing at all, not even the manifest',
+      !mbxCalls.some((call) => call.startsWith('PUT '))
+    );
+    check(
+      'reporting that as unchanged rather than as a failure',
+      republish.ok === true && republish.unchanged === true
+    );
 
     await hisPhone.putEncrypted(
       'letters',
@@ -4931,6 +4939,10 @@ async function run() {
       store: hisPhone,
     });
     check('editing one record uploads exactly one record', edited.uploaded === 1);
+    check(
+      'and a real change still announces itself',
+      mbxCalls[mbxCalls.length - 1] === `PUT /m/${mbxId}/${HIS_BOX}/manifest`
+    );
 
     const gotEdit = await mbx.collect({
       cryptoKey: key,
