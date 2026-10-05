@@ -124,11 +124,19 @@ export const DEFAULT_PRONOUN = 'they';
  * work out which two were real.
  *
  * Deriving them means both devices independently arrive at the same two ids
- * without having spoken. If both do set up, the two writes collide on the same
- * two records and last-write-wins settles the names - which is a wrong name
- * that takes one edit to fix, rather than a structurally broken vault. This is
- * the same trick the daily question uses to agree on an order with no server:
- * the key is the only thing both sides already share.
+ * without having spoken. This is the same trick the daily question uses to
+ * agree on an order with no server: the key is the only thing both sides
+ * already share.
+ *
+ * WHAT THEY DO NOT AGREE ON IS WHICH HUMAN IS WHICH. createCouple files "you"
+ * under the first slot on every phone, so if both phones set up, the second
+ * one writes its own holder onto the FIRST person's record, and last-write-wins
+ * lets it. That is not just a wrong name: everything already filed under that
+ * id - daily answers above all - now reads as written by the other person.
+ * This used to say a collision cost one edit to fix. It cost two people their
+ * answers. PeopleSetup now waits for the other phone's records before it
+ * offers setup, and services/peopleRepair.js undoes it for a vault where it
+ * already happened.
  *
  * The vault key is non-extractable, so it cannot be hashed directly. It can
  * still encrypt, and AES-GCM over a fixed plaintext with a fixed IV is
