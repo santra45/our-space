@@ -5228,6 +5228,67 @@ async function run() {
       .status === 500
   );
 
+  section('23. A phone that lost its space');
+
+  const { requestPersistentStorage } = await import('./src/services/persistentStorage.js');
+
+  /* -- keeping the vault from being evicted -------------------------------- */
+
+  /** A stand-in for navigator.storage that counts how often it was asked. */
+  const fakeStorage = ({ persisted, persist }) => {
+    const calls = { persist: 0 };
+    return {
+      calls,
+      storage: {
+        persisted: persisted === undefined ? undefined : async () => persisted,
+        async persist() {
+          calls.persist++;
+          if (persist instanceof Error) throw persist;
+          return persist;
+        },
+      },
+    };
+  };
+
+  const psAlready = fakeStorage({ persisted: true, persist: true });
+  check(
+    'storage that is already kept is left alone',
+    (await requestPersistentStorage({ storage: psAlready.storage })) === 'persisted' &&
+      psAlready.calls.persist === 0
+  );
+
+  const psGrant = fakeStorage({ persisted: false, persist: true });
+  check(
+    'otherwise the browser is asked, once',
+    (await requestPersistentStorage({ storage: psGrant.storage })) === 'granted' &&
+      psGrant.calls.persist === 1
+  );
+
+  const psDeny = fakeStorage({ persisted: false, persist: false });
+  check(
+    'a refusal is reported as one, not as success',
+    (await requestPersistentStorage({ storage: psDeny.storage })) === 'denied'
+  );
+
+  const psNoQuery = fakeStorage({ persisted: undefined, persist: true });
+  check(
+    'a browser that can only be asked is still asked',
+    (await requestPersistentStorage({ storage: psNoQuery.storage })) === 'granted' &&
+      psNoQuery.calls.persist === 1
+  );
+
+  const psThrows = fakeStorage({ persisted: false, persist: new Error('blocked') });
+  check(
+    'a browser that throws does not take unlocking down with it',
+    (await requestPersistentStorage({ storage: psThrows.storage })) === 'unsupported'
+  );
+
+  check(
+    'and a browser without the API is simply unsupported',
+    (await requestPersistentStorage({ storage: undefined })) === 'unsupported' &&
+      (await requestPersistentStorage({ storage: {} })) === 'unsupported'
+  );
+
 
   /* ------------------------------------------------------- verdict */
   console.log('\n' + '='.repeat(64));

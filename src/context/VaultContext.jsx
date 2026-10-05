@@ -51,6 +51,7 @@ import {
   PBKDF2_ITERATIONS_CURRENT,
 } from '../services/crypto';
 import { setVaultKey, getVaultKey, clearVaultKey, subscribeVaultKey } from '../services/vaultKey';
+import { requestPersistentStorage } from '../services/persistentStorage';
 import {
   isBiometricAvailable,
   isBiometricEnrolled,
@@ -972,6 +973,15 @@ export function VaultProvider({ children }) {
   useEffect(() => {
     vaultConfigRef.current = vaultConfig;
   }, [vaultConfig]);
+
+  // Every way in - unlock, quick unlock, setup, pairing, restore - ends here, so
+  // this is the one place to ask the browser not to evict the vault. Asked
+  // after the fact rather than before, because by now there is something worth
+  // keeping. See services/persistentStorage.js for what eviction costs.
+  useEffect(() => {
+    if (!isUnlocked) return;
+    requestPersistentStorage();
+  }, [isUnlocked]);
 
   // Live config updates from the paired partner.
   useEffect(() => {
