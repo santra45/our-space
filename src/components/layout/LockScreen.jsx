@@ -1085,6 +1085,27 @@ export function LockScreen() {
                 </p>
               </div>
 
+              {/* On an empty phone this form erases nothing, so there is no gate -
+                  but a returning person can still land here, read "a passphrase
+                  only the two of you know" and type their usual one. Say plainly
+                  what this makes before they do. */}
+              {!hasVault && (
+                <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-[11px] text-amber-900 leading-relaxed">
+                  <p className="font-bold">This makes a brand-new, empty space.</p>
+                  <p className="mt-1">
+                    If your partner already set one up, don&apos;t make a second one. Join theirs
+                    with their invite link, and you&apos;ll both see the same things.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => switchMode('join')}
+                    className="mt-2 text-[11px] font-bold text-indigo-600 hover:text-indigo-700 underline"
+                  >
+                    Join your partner&apos;s space instead
+                  </button>
+                </div>
+              )}
+
               {hasVault &&
                 dangerGate(
                   'Starting a new space gives this phone a brand new lock.'
@@ -1161,7 +1182,7 @@ export function LockScreen() {
                   ? 'Setting things up…'
                   : hasVault
                     ? 'Erase & Start Fresh'
-                    : 'Create Our Space 💕'}
+                    : 'Create a New Space 💕'}
               </BouncyButton>
 
               {hasVault && (
