@@ -40,3 +40,6 @@ dist-ssr
 
 # Wrangler build/state cache, created on deploy.
 worker/.wrangler/
+
+# mobile folder only for mobile branchs
+mobile/
