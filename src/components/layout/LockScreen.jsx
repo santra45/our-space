@@ -47,7 +47,7 @@ import {
 } from '../../services/crypto';
 import db, { MAX_BACKUP_FILE_BYTES, readBackupVaultIdentity } from '../../db';
 import { parseInvite } from '../../utils/invite';
-import { isInstalledApp } from '../../utils/appEnvironment';
+import { detectInAppBrowser, isInstalledApp } from '../../utils/appEnvironment';
 import { defaultLockScreenMode } from '../../utils/lockScreenMode';
 import GlassCard from '../common/GlassCard';
 import BouncyButton from '../common/BouncyButton';
@@ -231,6 +231,10 @@ export function LockScreen() {
   const [mode, setMode] = useState('unlock'); // 'unlock' | 'setup' | 'join' | 'restore'
   /** Opened from the home screen icon rather than a browser tab. Fixed per launch. */
   const [installedApp] = useState(() => isInstalledApp());
+  /** Opened inside another app's built-in browser (Instagram and the like). */
+  const [inAppBrowser] = useState(() => detectInAppBrowser());
+  /** null until tried, then 'copied' or 'failed'. */
+  const [linkCopy, setLinkCopy] = useState(null);
   const [loading, setLoading] = useState(false);
   const [localError, setLocalError] = useState(null);
 
@@ -340,6 +344,17 @@ export function LockScreen() {
   /** The installed app came up empty, and no invite arrived to explain why. */
   const lostSpace =
     vaultCheckState === 'absent' && installedApp && !(inviteData && inviteData.salt);
+
+  /** Puts this page's link on the clipboard, so it can be opened in a real browser. */
+  const handleCopyLink = async () => {
+    tap();
+    try {
+      await navigator.clipboard.writeText(window.location.href);
+      setLinkCopy('copied');
+    } catch {
+      setLinkCopy('failed');
+    }
+  };
 
   /** The salt this join would adopt, as far as we can tell right now. */
   const pendingJoinSalt = useMemo(() => {
@@ -775,6 +790,32 @@ export function LockScreen() {
               >
                 <RefreshCw className="w-3.5 h-3.5" />
                 <span>Try again</span>
+              </button>
+            </div>
+          )}
+
+          {/* Opened inside another app's built-in browser, which keeps its own
+              storage. A space set up here would stay stuck inside that app,
+              and the installed app would still come up empty. */}
+          {canRenderForms && inAppBrowser && (
+            <div className="mb-4 p-3 rounded-xl bg-amber-50 border border-amber-200 text-[11px] text-amber-900 leading-relaxed">
+              <p className="font-bold">
+                You&apos;re inside {inAppBrowser.app || 'another app'} right now.
+              </p>
+              <p className="mt-1">
+                Anything you set up here stays stuck inside it. Tap the menu (⋮ or ⋯) and choose
+                to open this page in your browser, then carry on there.
+              </p>
+              <button
+                type="button"
+                onClick={handleCopyLink}
+                className="mt-2 text-[11px] font-bold text-indigo-600 hover:text-indigo-700 underline"
+              >
+                {linkCopy === 'copied'
+                  ? 'Copied! Now paste it into your browser.'
+                  : linkCopy === 'failed'
+                    ? 'This app won’t let us copy it. Use the menu instead.'
+                    : 'Or copy this page’s link'}
               </button>
             </div>
           )}

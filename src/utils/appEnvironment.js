@@ -9,6 +9,23 @@
 const INSTALLED_DISPLAY_MODES = ['standalone', 'fullscreen', 'minimal-ui'];
 
 /**
+ * Apps that open links in their own built-in browser instead of the phone's.
+ * Each of those keeps its own storage, separate from Chrome or Safari, so a
+ * space set up inside one stays stuck there while the installed app comes up
+ * empty. Checked in order, so Messenger is named before the Facebook tokens it
+ * shares.
+ */
+const IN_APP_BROWSERS = [
+  ['Instagram', /\bInstagram\b/],
+  ['Messenger', /Orca-Android|MessengerForiOS|MessengerLite/],
+  ['Facebook', /FBAN\/|FBAV\/|FB_IAB\//],
+  ['Snapchat', /\bSnapchat\b/],
+  ['TikTok', /musical_ly|BytedanceWebview/],
+  ['LinkedIn', /\bLinkedInApp\b/],
+  ['LINE', /\bLine\/\d/],
+];
+
+/**
  * True when the app was opened as an installed app (from its home screen icon)
  * rather than in a browser tab.
  *
@@ -27,4 +44,25 @@ export function isInstalledApp(env = globalThis) {
   }
   // iOS reports a home screen launch here instead of through display-mode.
   return Boolean(env && env.navigator && env.navigator.standalone === true);
+}
+
+/**
+ * Whether this page is running inside another app's built-in browser.
+ *
+ * @param {string} [userAgent] - Defaults to the real one.
+ * @returns {{ app: string|null }|null} null in an ordinary browser or the
+ *   installed app; otherwise the app's name when we recognise it, or
+ *   `app: null` for an Android WebView we cannot name.
+ */
+export function detectInAppBrowser(
+  userAgent = globalThis.navigator && globalThis.navigator.userAgent
+) {
+  if (typeof userAgent !== 'string' || userAgent.length === 0) return null;
+  for (const [app, pattern] of IN_APP_BROWSERS) {
+    if (pattern.test(userAgent)) return { app };
+  }
+  // Android's WebView marks itself with "wv". Chrome, Samsung Internet,
+  // Firefox, a Chrome tab opened by another app, and the installed app do not.
+  if (/; wv\)/.test(userAgent)) return { app: null };
+  return null;
 }

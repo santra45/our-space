@@ -5331,6 +5331,51 @@ async function run() {
     mode('checking', false, true) === null && mode('unreadable', true, true) === null
   );
 
+  /* -- a link opened inside another app ------------------------------------ */
+
+  const { detectInAppBrowser } = await import('./src/utils/appEnvironment.js');
+
+  const ANDROID_WEBVIEW =
+    'Mozilla/5.0 (Linux; Android 14; Pixel 8 Build/AP2A; wv) AppleWebKit/537.36 ' +
+    '(KHTML, like Gecko) Version/4.0 Chrome/129.0.0.0 Mobile Safari/537.36';
+  const UA = {
+    chrome:
+      'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) ' +
+      'Chrome/129.0.0.0 Mobile Safari/537.36',
+    samsung:
+      'Mozilla/5.0 (Linux; Android 14; SM-S918B) AppleWebKit/537.36 (KHTML, like Gecko) ' +
+      'SamsungBrowser/26.0 Chrome/122.0.0.0 Mobile Safari/537.36',
+    safari:
+      'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 ' +
+      '(KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1',
+    instagramAndroid: `${ANDROID_WEBVIEW} Instagram 350.0.0.0.0 Android (34/14; 420dpi)`,
+    instagramIphone:
+      'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 ' +
+      '(KHTML, like Gecko) Mobile/15E148 Instagram 350.0.0.0 (iPhone15,2; iOS 18_0)',
+    facebook: `${ANDROID_WEBVIEW} [FB_IAB/FB4A;FBAV/480.0.0.0;]`,
+    messenger: `${ANDROID_WEBVIEW} [FB_IAB/Orca-Android;FBAV/450.0.0.0;]`,
+  };
+
+  check(
+    'Chrome, Samsung Internet and Safari are ordinary browsers',
+    [UA.chrome, UA.samsung, UA.safari].every((ua) => detectInAppBrowser(ua) === null)
+  );
+  check(
+    'Instagram is recognised on both kinds of phone',
+    eq(detectInAppBrowser(UA.instagramAndroid), { app: 'Instagram' }) &&
+      eq(detectInAppBrowser(UA.instagramIphone), { app: 'Instagram' })
+  );
+  check(
+    'Facebook and Messenger are told apart',
+    eq(detectInAppBrowser(UA.facebook), { app: 'Facebook' }) &&
+      eq(detectInAppBrowser(UA.messenger), { app: 'Messenger' })
+  );
+  check(
+    'an Android WebView we cannot name is still caught',
+    eq(detectInAppBrowser(ANDROID_WEBVIEW), { app: null })
+  );
+  check('and an empty user agent is no reason to warn', detectInAppBrowser('') === null);
+
 
   /* ------------------------------------------------------- verdict */
   console.log('\n' + '='.repeat(64));
