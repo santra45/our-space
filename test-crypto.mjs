@@ -267,6 +267,7 @@ for (const method of [
   // The write paths, so the sections that reason about what an ordinary write
   // produces drive the real implementations rather than a restatement of them.
   'putEncrypted',
+  'putEncryptedMany',
   'softDelete',
   // Stamps the `_del` index mirror. bulkPut does not fire Dexie's tombstone
   // hooks and encryptRecord strips the field, so every write site calls this
@@ -5573,12 +5574,29 @@ async function run() {
   const seenBefore = Object.fromEntries(
     (await ppl.listPeople({ cryptoKey: key, store: hisPhone })).map((p) => [p.personId, p.lastActiveAt])
   );
+
+  // Every write has to go through the one transaction.
+  const writes = { single: 0, many: 0 };
+  hisPhone.putEncrypted = async function (...rest) {
+    writes.single++;
+    return FakeVaultStore.prototype.putEncrypted.apply(this, rest);
+  };
+  hisPhone.putEncryptedMany = async function (...rest) {
+    writes.many++;
+    return FakeVaultStore.prototype.putEncryptedMany.apply(this, rest);
+  };
   const fixed = await repair.swapUsBack({
     cryptoKey: key,
     store: hisPhone,
     deviceId: HIS,
     timestamp: incidentStamp,
   });
+  delete hisPhone.putEncrypted;
+  delete hisPhone.putEncryptedMany;
+  check(
+    'the whole swap lands in one transaction, with no write on its own',
+    writes.many === 1 && writes.single === 0
+  );
 
   const repaired = await archiveOf(hisPhone, HIS, ppl.getLocalPersonId());
   check(
@@ -5663,6 +5681,24 @@ async function run() {
     'and it refuses a vault that does not hold exactly two people',
     () => repair.swapUsBack({ cryptoKey: key, store: new FakeVaultStore(), deviceId: HIS }),
     (err) => /exactly two people/.test(err.message)
+  );
+
+  const allOrNothing = new FakeVaultStore();
+  await checkThrows(
+    'a batch that cannot all be sealed writes nothing at all',
+    () =>
+      allOrNothing.putEncryptedMany(
+        [
+          { table: ppl.PEOPLE_TABLE, fields: { id: ppl.personRecordId(SLOT_A), personId: SLOT_A, name: 'x', updatedAt: 1 } },
+          { table: 'notATable', fields: { id: 'nope', updatedAt: 1 } },
+        ],
+        key
+      ),
+    (err) => /unknown table/.test(err.message)
+  );
+  check(
+    'not even the rows before the bad one',
+    (await allOrNothing.table(ppl.PEOPLE_TABLE).toArray()).length === 0
   );
 
 

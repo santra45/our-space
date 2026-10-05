@@ -312,6 +312,41 @@ export class SweetheartDatabase extends Dexie {
   }
 
   /**
+   * Seals several records, then writes them all in one transaction.
+   *
+   * For changes that only make sense together, where half of one is worse than
+   * none of it. Sealing happens first and OUTSIDE the transaction, the same way
+   * applyBackupMerge verifies before it opens one: an IndexedDB transaction
+   * commits itself the moment it is left waiting on something that is not
+   * IndexedDB, and AES-GCM is exactly that. So either every row is sealed and
+   * then every row lands, or the tables are left as they were.
+   *
+   * @param {Array<{ table: string, fields: Object }>} entries
+   * @param {CryptoKey} key
+   * @returns {Promise<Array<{ table: string, row: Object }>>} The sealed rows, in order.
+   */
+  async putEncryptedMany(entries, key) {
+    if (!key) throw new Error('putEncryptedMany: vault is locked');
+
+    const sealed = [];
+    for (const { table, fields } of entries || []) {
+      if (!SYNCED_TABLES.includes(table)) {
+        throw new Error(`putEncryptedMany: unknown table "${table}"`);
+      }
+      sealed.push({ table, row: await encryptRecord(fields, key, { table }) });
+    }
+    if (sealed.length === 0) return sealed;
+
+    const tables = [...new Set(sealed.map((entry) => entry.table))].map((name) => this.table(name));
+    await this.transaction('rw', tables, async () => {
+      for (const { table, row } of sealed) {
+        await this.table(table).put(this._withDelIndex(row));
+      }
+    });
+    return sealed;
+  }
+
+  /**
    * Reads one row and decrypts it.
    * @returns {Promise<Object|null>}
    */

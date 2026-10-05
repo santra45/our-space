@@ -15,7 +15,7 @@
  *
  * WHAT THIS DOES, IN ONE GO
  *  1. Answers written since the trade move to the other person's rows
- *     (dailyQuestion.swapAnswersSince). Everything older is already where it
+ *     (dailyQuestion.planAnswerSwap). Everything older is already where it
  *     belongs, because it was written before the ids changed hands.
  *  2. The two person records trade name, pronoun and devices, so each id is
  *     back with the human it started with.
@@ -28,6 +28,11 @@
  *  5. This phone follows its own device to the other id. The other phone
  *     follows on its next sync, through resolveIdentity, without anyone
  *     touching it.
+ *
+ * ALL OR NOTHING. Every row is planned first and written in one transaction
+ * (db.putEncryptedMany). Half of this is worse than none of it: answers moved
+ * without the people swapped, or the other way round, and running it again
+ * would then move the wrong things.
  *
  * "SINCE" is when the two person records were last written, which is the trade
  * itself unless one of you was renamed afterwards.
@@ -43,7 +48,7 @@ import {
   setLocalPersonId,
   toPresence,
 } from './people.js';
-import { answerSpans, swapAnswersSince } from './dailyQuestion.js';
+import { ANSWER_TABLE, answerSpans, planAnswerSwap } from './dailyQuestion.js';
 
 /**
  * The moment the two of you traded places, as far as the records can tell.
@@ -108,8 +113,8 @@ export async function swapUsBack(args) {
   const since = tradedPlacesAt(people);
   if (since === null) throw new Error('swapUsBack: cannot tell when you traded places');
 
-  // 1. Answers first, so the spans below see them where they now belong.
-  const answers = await swapAnswersSince({
+  // 1. Answers, planned rather than written: see ALL OR NOTHING above.
+  const answerPlan = await planAnswerSwap({
     cryptoKey,
     store,
     personA: a.personId,
@@ -126,11 +131,12 @@ export async function swapUsBack(args) {
       ? b.personId
       : null;
 
-  // 3. Orphaned answer tags that can only be the other person's.
+  // 3. Orphaned answer tags that can only be the other person's, judged
+  //    against the answers as they will read once the plan lands.
   let adopted = [];
   if (holderId) {
     const partnerId = holderId === a.personId ? b.personId : a.personId;
-    adopted = orphansAnsweringAlongside(await answerSpans({ cryptoKey, store }), {
+    adopted = orphansAnsweringAlongside(await answerSpans({ rows: answerPlan.after }), {
       holderIds: [holderId, ...devices[holderId]],
       claimed: new Set([a.personId, b.personId, ...a.deviceIds, ...b.deviceIds]),
     });
@@ -138,26 +144,24 @@ export async function swapUsBack(args) {
     devices[partnerId] = [...devices[partnerId], ...adopted];
   }
 
-  const written = [];
+  const entries = answerPlan.rows.map((fields) => ({ table: ANSWER_TABLE, fields }));
+
   for (const [target, source] of [
     [a, b],
     [b, a],
   ]) {
-    written.push(
-      await store.putEncrypted(
-        PEOPLE_TABLE,
-        {
-          id: personRecordId(target.personId),
-          personId: target.personId,
-          name: source.name,
-          pronoun: source.pronoun,
-          deviceIds: devices[target.personId],
-          createdAt: target.createdAt || Date.now(),
-          updatedAt: await stamp(),
-        },
-        cryptoKey
-      )
-    );
+    entries.push({
+      table: PEOPLE_TABLE,
+      fields: {
+        id: personRecordId(target.personId),
+        personId: target.personId,
+        name: source.name,
+        pronoun: source.pronoun,
+        deviceIds: devices[target.personId],
+        createdAt: target.createdAt || Date.now(),
+        updatedAt: await stamp(),
+      },
+    });
   }
 
   // 4. Last online, so neither of you shows the other's.
@@ -177,24 +181,29 @@ export async function swapUsBack(args) {
     [b, a],
   ]) {
     if (!Number.isFinite(lastSeen[source.personId])) continue;
-    written.push(
-      await store.putEncrypted(
-        PEOPLE_TABLE,
-        {
-          id: presenceRecordId(target.personId),
-          personId: target.personId,
-          lastActiveAt: lastSeen[source.personId],
-          updatedAt: await stamp(),
-        },
-        cryptoKey
-      )
-    );
+    entries.push({
+      table: PEOPLE_TABLE,
+      fields: {
+        id: presenceRecordId(target.personId),
+        personId: target.personId,
+        lastActiveAt: lastSeen[source.personId],
+        updatedAt: await stamp(),
+      },
+    });
   }
 
-  // 5. This phone goes where its device went.
+  const sealed = await store.putEncryptedMany(entries, cryptoKey);
+
+  // 5. This phone goes where its device went - only once everything has landed.
   if (holderId) setLocalPersonId(holderId);
 
-  return { people: written, answers, holderId, since, adopted };
+  return {
+    people: sealed.filter((entry) => entry.table === PEOPLE_TABLE).map((entry) => entry.row),
+    answers: sealed.filter((entry) => entry.table === ANSWER_TABLE).map((entry) => entry.row),
+    holderId,
+    since,
+    adopted,
+  };
 }
 
 export default { swapUsBack, tradedPlacesAt, orphansAnsweringAlongside };

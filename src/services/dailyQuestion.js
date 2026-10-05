@@ -508,6 +508,30 @@ export async function listArchive(args) {
  * @returns {Promise<Array<Object>>} The sealed rows that changed, ready to broadcast.
  */
 export async function swapAnswersSince(args) {
+  const store = (args && args.store) || db;
+  const { rows } = await planAnswerSwap(args);
+  if (rows.length === 0) return [];
+  const sealed = await store.putEncryptedMany(
+    rows.map((fields) => ({ table: ANSWER_TABLE, fields })),
+    args.cryptoKey
+  );
+  return sealed.map((entry) => entry.row);
+}
+
+/**
+ * What swapAnswersSince would write, without writing it.
+ *
+ * Separate so a caller with more to change at the same moment - see
+ * services/peopleRepair.js - can put everything into one transaction rather
+ * than leaving answers moved and people not, or the other way round.
+ *
+ * @param {{ cryptoKey: CryptoKey, personA: string, personB: string, since: number,
+ *   store?: Object, timestamp?: () => number|Promise<number> }} args
+ * @returns {Promise<{ rows: Array<Object>, after: Array<Object> }>} `rows` are
+ *   the plain rows to seal and write; `after` is every answer row as it would
+ *   read once they were.
+ */
+export async function planAnswerSwap(args) {
   const { cryptoKey, personA, personB, since } = args || {};
   if (!cryptoKey) throw new Error('swapAnswersSince: vault is locked');
   if (!personA || !personB || personA === personB) {
@@ -518,10 +542,11 @@ export async function swapAnswersSince(args) {
   const store = args.store || db;
   const stamp = args.timestamp || (async () => Date.now());
   const otherOf = { [personA]: personB, [personB]: personA };
+  const before = await readAllRows(store, cryptoKey);
 
   // month -> owner -> { kept, moved }
   const months = new Map();
-  for (const row of await readAllRows(store, cryptoKey)) {
+  for (const row of before) {
     const owner = ownerOf(row);
     if (owner !== personA && owner !== personB) continue;
     if (!row.answers || typeof row.answers !== 'object') continue;
@@ -537,7 +562,7 @@ export async function swapAnswersSince(args) {
     months.get(row.month)[owner] = { kept, moved };
   }
 
-  const written = [];
+  const rows = [];
   for (const [month, owners] of months) {
     const anythingMoves = Object.values(owners).some((o) => Object.keys(o.moved).length > 0);
     if (!anythingMoves) continue;
@@ -552,23 +577,19 @@ export async function swapAnswersSince(args) {
         if (!prev || (entry.answeredAt || 0) >= (prev.answeredAt || 0)) answers[day] = entry;
       }
 
-      written.push(
-        await store.putEncrypted(
-          ANSWER_TABLE,
-          {
-            id: answerRecordId(month, owner),
-            ownerId: owner,
-            month,
-            answers,
-            updatedAt: await stamp(),
-          },
-          cryptoKey
-        )
-      );
+      rows.push({
+        id: answerRecordId(month, owner),
+        ownerId: owner,
+        month,
+        answers,
+        updatedAt: await stamp(),
+      });
     }
   }
 
-  return written;
+  const replaced = new Set(rows.map((row) => row.id));
+  const after = [...before.filter((row) => !replaced.has(row && row.id)), ...rows];
+  return { rows, after };
 }
 
 /**
@@ -576,16 +597,17 @@ export async function swapAnswersSince(args) {
  *
  * Day keys are `YYYY-MM-DD`, so comparing them as strings orders them.
  *
- * @param {{ cryptoKey: CryptoKey, store?: Object }} args
+ * @param {{ cryptoKey: CryptoKey, store?: Object, rows?: Array<Object> }} args -
+ *   `rows`, when given, are read instead of the store: planAnswerSwap's `after`.
  * @returns {Promise<Map<string, { first: string, last: string }>>}
  */
 export async function answerSpans(args) {
   const { cryptoKey } = args || {};
   const spans = new Map();
-  if (!cryptoKey) return spans;
+  if (!cryptoKey && !Array.isArray(args && args.rows)) return spans;
 
-  const store = args.store || db;
-  for (const row of await readAllRows(store, cryptoKey)) {
+  const rows = Array.isArray(args.rows) ? args.rows : await readAllRows(args.store || db, cryptoKey);
+  for (const row of rows) {
     const owner = ownerOf(row);
     if (!owner || !row.answers || typeof row.answers !== 'object') continue;
     for (const [day, entry] of Object.entries(row.answers)) {
@@ -617,6 +639,7 @@ export default {
   readDay,
   listAnswered,
   swapAnswersSince,
+  planAnswerSwap,
   answerSpans,
   totalQuestions: ALL_QUESTIONS.length,
 };
