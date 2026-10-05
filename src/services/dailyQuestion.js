@@ -490,6 +490,118 @@ export async function listArchive(args) {
   return typeof args.limit === 'number' ? out.slice(0, args.limit) : out;
 }
 
+/**
+ * Moves every answer written since `since` out of each person's rows and into
+ * the other's, month by month. Anything older stays exactly where it is.
+ *
+ * This is the answers half of undoing the two of you trading places (see
+ * services/peopleRepair.js), and the moment of the trade splits them cleanly.
+ * Before it, each id belonged to the right person, so everything filed under it
+ * is theirs. After it, each phone was writing under the other person's id, so
+ * everything new under an id belongs to the OTHER one.
+ *
+ * A day that ends up answered on both sides of a merge keeps the later entry,
+ * the same rule foldAnswers uses.
+ *
+ * @param {{ cryptoKey: CryptoKey, personA: string, personB: string, since: number,
+ *   store?: Object, timestamp?: () => number|Promise<number> }} args
+ * @returns {Promise<Array<Object>>} The sealed rows that changed, ready to broadcast.
+ */
+export async function swapAnswersSince(args) {
+  const { cryptoKey, personA, personB, since } = args || {};
+  if (!cryptoKey) throw new Error('swapAnswersSince: vault is locked');
+  if (!personA || !personB || personA === personB) {
+    throw new Error('swapAnswersSince: needs two different people');
+  }
+  if (!Number.isFinite(since)) throw new Error('swapAnswersSince: needs the moment to split at');
+
+  const store = args.store || db;
+  const stamp = args.timestamp || (async () => Date.now());
+  const otherOf = { [personA]: personB, [personB]: personA };
+
+  // month -> owner -> { kept, moved }
+  const months = new Map();
+  for (const row of await readAllRows(store, cryptoKey)) {
+    const owner = ownerOf(row);
+    if (owner !== personA && owner !== personB) continue;
+    if (!row.answers || typeof row.answers !== 'object') continue;
+
+    const kept = {};
+    const moved = {};
+    for (const [day, entry] of Object.entries(row.answers)) {
+      if (!isAnswer(entry)) continue;
+      if ((entry.answeredAt || 0) >= since) moved[day] = entry;
+      else kept[day] = entry;
+    }
+    if (!months.has(row.month)) months.set(row.month, {});
+    months.get(row.month)[owner] = { kept, moved };
+  }
+
+  const written = [];
+  for (const [month, owners] of months) {
+    const anythingMoves = Object.values(owners).some((o) => Object.keys(o.moved).length > 0);
+    if (!anythingMoves) continue;
+
+    for (const owner of [personA, personB]) {
+      const own = owners[owner] || { kept: {}, moved: {} };
+      const arriving = (owners[otherOf[owner]] || { moved: {} }).moved;
+
+      const answers = { ...own.kept };
+      for (const [day, entry] of Object.entries(arriving)) {
+        const prev = answers[day];
+        if (!prev || (entry.answeredAt || 0) >= (prev.answeredAt || 0)) answers[day] = entry;
+      }
+
+      written.push(
+        await store.putEncrypted(
+          ANSWER_TABLE,
+          {
+            id: answerRecordId(month, owner),
+            ownerId: owner,
+            month,
+            answers,
+            updatedAt: await stamp(),
+          },
+          cryptoKey
+        )
+      );
+    }
+  }
+
+  return written;
+}
+
+/**
+ * The first and last day each owner answered, for every owner that has.
+ *
+ * Day keys are `YYYY-MM-DD`, so comparing them as strings orders them.
+ *
+ * @param {{ cryptoKey: CryptoKey, store?: Object }} args
+ * @returns {Promise<Map<string, { first: string, last: string }>>}
+ */
+export async function answerSpans(args) {
+  const { cryptoKey } = args || {};
+  const spans = new Map();
+  if (!cryptoKey) return spans;
+
+  const store = args.store || db;
+  for (const row of await readAllRows(store, cryptoKey)) {
+    const owner = ownerOf(row);
+    if (!owner || !row.answers || typeof row.answers !== 'object') continue;
+    for (const [day, entry] of Object.entries(row.answers)) {
+      if (!isAnswer(entry)) continue;
+      const span = spans.get(owner);
+      if (!span) {
+        spans.set(owner, { first: day, last: day });
+        continue;
+      }
+      if (day < span.first) span.first = day;
+      if (day > span.last) span.last = day;
+    }
+  }
+  return spans;
+}
+
 export default {
   ANSWER_TABLE,
   MAX_ANSWER_LENGTH,
@@ -504,5 +616,7 @@ export default {
   saveAnswer,
   readDay,
   listAnswered,
+  swapAnswersSince,
+  answerSpans,
   totalQuestions: ALL_QUESTIONS.length,
 };
