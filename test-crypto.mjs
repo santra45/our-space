@@ -5376,6 +5376,73 @@ async function run() {
   );
   check('and an empty user agent is no reason to warn', detectInAppBrowser('') === null);
 
+  section('24. Swapped: when the two of you trade places by accident');
+
+  // The people module from section 20, with its in-memory localStorage.
+  const [SLOT_A, SLOT_B] = await ppl.derivePersonSlots(key);
+  let swClock = 1760000000000;
+  const swStamp = () => (swClock += 60 * 1000);
+
+  /** Writes a person record exactly as given - the shape a sync delivers. */
+  const putPerson = async (store, personId, name, deviceIds, createdAt = 1) =>
+    store.putEncrypted(
+      ppl.PEOPLE_TABLE,
+      {
+        id: ppl.personRecordId(personId),
+        personId,
+        name,
+        pronoun: 'they',
+        deviceIds,
+        createdAt,
+        updatedAt: swStamp(),
+      },
+      key
+    );
+
+  /** Resolves identity as the phone with this tag and hint would. */
+  const whoAmI = async (store, deviceId, hint) => {
+    ppl.clearLocalPersonId();
+    if (hint) ppl.setLocalPersonId(hint);
+    const out = await ppl.resolveIdentity({ cryptoKey: key, store, deviceId });
+    return { ...out, hintAfter: ppl.getLocalPersonId() };
+  };
+
+  /* -- the records can overrule a stale hint, but only clearly ------------- */
+
+  const prec = new FakeVaultStore();
+  await putPerson(prec, SLOT_A, 'Harshit', ['his-phone-tag-01']);
+  await putPerson(prec, SLOT_B, 'Noor', ['her-phone-tag-01']);
+
+  const followed = await whoAmI(prec, 'her-phone-tag-01', SLOT_A);
+  check(
+    'a hint pointing at a person who now belongs to another phone gives way to the records',
+    followed.me && followed.me.personId === SLOT_B && followed.hintAfter === SLOT_B
+  );
+
+  const prec2 = new FakeVaultStore();
+  await putPerson(prec2, SLOT_A, 'Harshit', []);
+  await putPerson(prec2, SLOT_B, 'Noor', ['her-phone-tag-01']);
+  const keptEmpty = await whoAmI(prec2, 'her-phone-tag-01', SLOT_A);
+  check(
+    'but a hinted person who lists no phone at all keeps the hint, because that is a dropped tag',
+    keptEmpty.me && keptEmpty.me.personId === SLOT_A
+  );
+
+  const prec3 = new FakeVaultStore();
+  await putPerson(prec3, SLOT_A, 'Harshit', ['his-phone-tag-01', 'her-phone-tag-01']);
+  await putPerson(prec3, SLOT_B, 'Noor', ['her-phone-tag-01']);
+  const keptListed = await whoAmI(prec3, 'her-phone-tag-01', SLOT_A);
+  check(
+    'and a hinted person who still lists this phone is never overruled',
+    keptListed.me && keptListed.me.personId === SLOT_A
+  );
+
+  const noHint = await whoAmI(prec, 'her-phone-tag-01', null);
+  check(
+    'with no hint at all the records decide, as before',
+    noHint.me && noHint.me.personId === SLOT_B && noHint.hintAfter === SLOT_B
+  );
+
 
   /* ------------------------------------------------------- verdict */
   console.log('\n' + '='.repeat(64));

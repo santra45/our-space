@@ -412,14 +412,33 @@ export async function resolveIdentity(args) {
 
   const hinted = getLocalPersonId();
   let me = hinted ? people.find((p) => p.personId === hinted) || null : null;
+  const listing = people.filter((p) => (p.deviceIds || []).includes(deviceId));
 
   // The hint is gone (or points at a person who was removed), but this device's
   // tag may still be listed on a person record - which it will be, on every
   // device that ever claimed one. That is the localStorage-eviction recovery
   // path, and it costs the user nothing because it never reaches them.
   if (!me) {
-    me = people.find((p) => (p.deviceIds || []).includes(deviceId)) || null;
+    me = listing[0] || null;
     if (me) setLocalPersonId(me.personId);
+  }
+
+  // The records can also overrule a hint that is still there. That happens
+  // when the hinted person now belongs to a different device and exactly one
+  // other person lists this one - which is what "swap us back" leaves behind
+  // on the phone that did not run it, and the only way that phone can follow
+  // without someone holding it. Every narrower case keeps the hint: a hinted
+  // person listing nobody has simply lost this tag to a sync, and
+  // ensureDeviceClaimed puts it back.
+  if (
+    me &&
+    listing.length === 1 &&
+    listing[0].personId !== me.personId &&
+    (me.deviceIds || []).length > 0 &&
+    !(me.deviceIds || []).includes(deviceId)
+  ) {
+    me = listing[0];
+    setLocalPersonId(me.personId);
   }
 
   if (!me) {
