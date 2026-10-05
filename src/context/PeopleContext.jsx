@@ -39,15 +39,17 @@ import {
   savePerson as savePersonRecord,
   touchPersonActive,
 } from '../services/people';
+import { swapUsBack as swapUsBackRecords } from '../services/peopleRepair';
+import { ANSWER_TABLE } from '../services/dailyQuestion';
 
 const PeopleContext = createContext(null);
 
-/** Hands a row to the partner if they happen to be listening. Never throws. */
-function broadcast(rows) {
+/** Hands rows to the partner if they happen to be listening. Never throws. */
+function broadcast(rows, table = PEOPLE_TABLE) {
   for (const row of Array.isArray(rows) ? rows : [rows]) {
     if (!row) continue;
     try {
-      peerSync.broadcastLiveRecord(PEOPLE_TABLE, row);
+      peerSync.broadcastLiveRecord(table, row);
     } catch {
       // Not connected. The record is written and the next manifest sync
       // carries it, which is the ordinary case rather than a failure.
@@ -158,6 +160,23 @@ export function PeopleProvider({ children }) {
     [cryptoKey, busy, refresh, stamp]
   );
 
+  /** See services/peopleRepair.js. The other phone follows on its next sync. */
+  const swapUsBack = useCallback(async () => {
+    if (!cryptoKey || busy) return false;
+    setBusy(true);
+    try {
+      const result = await swapUsBackRecords({ cryptoKey, timestamp: stamp });
+      broadcast(result.answers, ANSWER_TABLE);
+      broadcast(result.people);
+      await refresh();
+      return true;
+    } catch {
+      return false;
+    } finally {
+      setBusy(false);
+    }
+  }, [cryptoKey, busy, refresh, stamp]);
+
   // Read at call time rather than depended on. `me` is a new object after every
   // refresh, including the ones incoming sync triggers, so depending on it
   // re-ran the effect below, and its immediate touch, whenever the other
@@ -237,9 +256,10 @@ export function PeopleProvider({ children }) {
       createCouple,
       claimPerson,
       savePerson,
+      swapUsBack,
       touchLastActive,
     };
-  }, [state, busy, refresh, createCouple, claimPerson, savePerson, touchLastActive]);
+  }, [state, busy, refresh, createCouple, claimPerson, savePerson, swapUsBack, touchLastActive]);
 
   return <PeopleContext.Provider value={value}>{children}</PeopleContext.Provider>;
 }
