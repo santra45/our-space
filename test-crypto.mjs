@@ -5289,6 +5289,48 @@ async function run() {
       (await requestPersistentStorage({ storage: {} })) === 'unsupported'
   );
 
+  /* -- an installed app that comes up empty -------------------------------- */
+
+  const { isInstalledApp } = await import('./src/utils/appEnvironment.js');
+  const { defaultLockScreenMode } = await import('./src/utils/lockScreenMode.js');
+
+  /** A window whose display-mode media query answers `mode` and nothing else. */
+  const fakeWindow = (mode) => ({
+    matchMedia: (query) => ({ matches: query === `(display-mode: ${mode})` }),
+    navigator: {},
+  });
+
+  check('a home screen launch counts as installed', isInstalledApp(fakeWindow('standalone')));
+  check(
+    'so does a full-screen or minimal-ui one',
+    isInstalledApp(fakeWindow('fullscreen')) && isInstalledApp(fakeWindow('minimal-ui'))
+  );
+  check('a browser tab does not', !isInstalledApp(fakeWindow('browser')));
+  check('iOS saying so on navigator counts too', isInstalledApp({ navigator: { standalone: true } }));
+  check(
+    'a window that cannot answer is not installed',
+    !isInstalledApp({
+      matchMedia: () => {
+        throw new Error('no media queries here');
+      },
+    }) && !isInstalledApp({})
+  );
+
+  const mode = (vaultCheckState, inviteHasSalt, installed) =>
+    defaultLockScreenMode({ vaultCheckState, inviteHasSalt, installed });
+
+  check(
+    'a phone with a vault opens on unlock, installed or not, invite or not',
+    mode('present', false, true) === 'unlock' && mode('present', true, false) === 'unlock'
+  );
+  check('an installed app with nothing in it opens on join', mode('absent', false, true) === 'join');
+  check('a browser tab with nothing in it still opens on create', mode('absent', false, false) === 'setup');
+  check('an invite opens on join either way', mode('absent', true, false) === 'join');
+  check(
+    'and nothing is chosen while we cannot tell',
+    mode('checking', false, true) === null && mode('unreadable', true, true) === null
+  );
+
 
   /* ------------------------------------------------------- verdict */
   console.log('\n' + '='.repeat(64));

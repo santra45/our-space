@@ -47,6 +47,8 @@ import {
 } from '../../services/crypto';
 import db, { MAX_BACKUP_FILE_BYTES, readBackupVaultIdentity } from '../../db';
 import { parseInvite } from '../../utils/invite';
+import { isInstalledApp } from '../../utils/appEnvironment';
+import { defaultLockScreenMode } from '../../utils/lockScreenMode';
 import GlassCard from '../common/GlassCard';
 import BouncyButton from '../common/BouncyButton';
 import { fireHeartConfetti } from '../common/ConfettiBurst';
@@ -227,6 +229,8 @@ export function LockScreen() {
   const [partnerInviteInput, setPartnerInviteInput] = useState('');
   const [inviteData, setInviteData] = useState(null);
   const [mode, setMode] = useState('unlock'); // 'unlock' | 'setup' | 'join' | 'restore'
+  /** Opened from the home screen icon rather than a browser tab. Fixed per launch. */
+  const [installedApp] = useState(() => isInstalledApp());
   const [loading, setLoading] = useState(false);
   const [localError, setLocalError] = useState(null);
 
@@ -317,16 +321,25 @@ export function LockScreen() {
    * not. Honouring `#salt=` here is how a crafted link used to drop an existing
    * user straight onto a form that replaced their salt: one tap, one passphrase,
    * whole vault orphaned. The link is remembered and applied after unlocking.
+   *
+   * An installed app with no vault opens on JOIN, not CREATE: that is almost
+   * always someone whose space was evicted or cleared, and CREATE would take
+   * their usual passphrase and give them a second, separate space.
    */
   useEffect(() => {
     if (modeTouched.current) return;
-    if (vaultCheckState === 'present') {
-      setMode('unlock');
-    } else if (vaultCheckState === 'absent') {
-      setMode(inviteData && inviteData.salt ? 'join' : 'setup');
-    }
-    // 'checking' and 'unreadable' deliberately choose nothing.
-  }, [vaultCheckState, inviteData]);
+    const next = defaultLockScreenMode({
+      vaultCheckState,
+      inviteHasSalt: Boolean(inviteData && inviteData.salt),
+      installed: installedApp,
+    });
+    // null while 'checking' or 'unreadable': those deliberately choose nothing.
+    if (next) setMode(next);
+  }, [vaultCheckState, inviteData, installedApp]);
+
+  /** The installed app came up empty, and no invite arrived to explain why. */
+  const lostSpace =
+    vaultCheckState === 'absent' && installedApp && !(inviteData && inviteData.salt);
 
   /** The salt this join would adopt, as far as we can tell right now. */
   const pendingJoinSalt = useMemo(() => {
@@ -930,9 +943,26 @@ export function LockScreen() {
                 <p className="text-xs text-slate-500 mt-2">
                   {inviteData && inviteData.partnerPeerId
                     ? 'Your partner invited you! 💕'
-                    : 'Use your partner’s invite link to join their space.'}
+                    : lostSpace
+                      ? 'Welcome back 💕'
+                      : 'Use your partner’s invite link to join their space.'}
                 </p>
               </div>
+
+              {/* The installed app opened with nothing in it. Say what most likely
+                  happened and how to get it back, before they reach for CREATE. */}
+              {lostSpace && (
+                <div className="p-3 rounded-xl bg-indigo-50/70 border border-indigo-100 text-[11px] text-indigo-900 leading-relaxed flex gap-2">
+                  <LifeBuoy className="w-4 h-4 text-indigo-500 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <p className="font-bold">It looks like this phone lost your space.</p>
+                    <p className="mt-1">
+                      Ask your partner for your invite link and paste it below. Everything you two
+                      have shared will come right back.
+                    </p>
+                  </div>
+                </div>
+              )}
 
               {/* If no salt came from the URL, take a pasted link or code. */}
               {!(inviteData && inviteData.salt) && (
