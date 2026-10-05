@@ -206,6 +206,14 @@ standalone window with no address bar, and a service worker caches the app shell
 starts offline. Your records were always local; the worker just means the app itself loads
 without a connection.
 
+Once your space is open, the app asks the browser to keep its storage instead of treating
+it as disposable, so a phone that runs low on space does not quietly throw the vault away.
+Clearing the browser's site data on purpose still erases it. If that happens, the installed
+app opens on *Join* rather than *Create*: paste your partner's invite link and everything
+you have shared comes back. Open invite links in your real browser, not inside Instagram or
+Facebook. Their built-in browsers keep separate storage, and the lock screen says so if you
+land in one.
+
 ### Testing on a phone
 
 `npm run dev` serves over `http://<your-ip>:5173`, and that is **not** a secure context, so
@@ -306,10 +314,12 @@ src/
     people.js           The two of you - names, pronouns, and whose record is whose
     deviceId.js         Which of the two devices wrote a record
     limits.js           Size ceilings shared by storage and the wire
+    persistentStorage.js  Asks the browser not to evict the vault
   db/index.js         Dexie schema, backup import/export, record integrity gates
   context/            VaultContext (lock/unlock), SyncContext (pairing lifecycle)
   components/         One folder per screen, plus layout/ common/ sync/
-  utils/              Dates, image compression, invite links
+  utils/              Dates, image compression, invite links, which window the app runs
+                      in, and which form the lock screen opens on
 worker/               The optional mailbox - a Cloudflare Worker that cannot read a word
 test-crypto.mjs       Test suite — runs in plain node, no browser needed
 ```
