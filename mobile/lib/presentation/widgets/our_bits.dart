@@ -178,8 +178,6 @@ class OurIconCircle extends StatelessWidget {
   }
 }
 
-enum OurIconButtonKind { add, edit, delete, plain }
-
 class OurIconButton extends StatelessWidget {
   const OurIconButton({
     super.key,
