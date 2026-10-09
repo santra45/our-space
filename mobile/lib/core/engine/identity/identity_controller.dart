@@ -39,6 +39,13 @@ class IdentityController extends ChangeNotifier {
   Object? _lastKey;
   bool appInForeground = true;
 
+  bool _disposed = false;
+
+  @override
+  void notifyListeners() {
+    if (!_disposed) super.notifyListeners();
+  }
+
   Identity get identity => _identity;
   IdentityStatus get status => _identity.status;
   List<Person> get everyone => _identity.people;
@@ -159,6 +166,7 @@ class IdentityController extends ChangeNotifier {
 
   @override
   void dispose() {
+    _disposed = true;
     vault.removeListener(_onVault);
     unawaited(_changes.cancel());
     unawaited(_local.cancel());

@@ -76,6 +76,13 @@ class SyncService extends ChangeNotifier {
   String? _lastNotice;
   bool _burstCheckRunning = false;
 
+  bool _disposed = false;
+
+  @override
+  void notifyListeners() {
+    if (!_disposed) super.notifyListeners();
+  }
+
   bool get mailboxEnabled => mailbox.isEnabled;
   MailboxStatus get status => _status;
   String? get lastNotice => _lastNotice;
@@ -196,6 +203,7 @@ class SyncService extends ChangeNotifier {
 
   @override
   void dispose() {
+    _disposed = true;
     _timer?.cancel();
     vault.removeListener(_onVault);
     unawaited(_localSub.cancel());

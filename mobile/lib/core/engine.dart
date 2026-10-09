@@ -32,7 +32,7 @@ export 'engine/repositories/milestones_repository.dart';
 export 'engine/repositories/roulette_repository.dart';
 export 'engine/repositories/table_repository.dart';
 export 'engine/storage/tables.dart';
-export 'engine/storage/vault_store.dart' show VaultStore, MergePlan, MergeResult, MergeStats;
+export 'engine/storage/vault_store.dart' show VaultStore, MergePlan, MergeResult, MergeStats, StoreError, Row, TableWrite, SealedWrite;
 export 'engine/sync/backup_service.dart';
 export 'engine/sync/mailbox.dart' show MailboxConfig, Mailbox, PublishResult, CollectResult, MailboxSyncResult;
 export 'engine/sync/sync_service.dart';

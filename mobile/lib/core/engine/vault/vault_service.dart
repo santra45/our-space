@@ -86,6 +86,13 @@ class VaultService extends ChangeNotifier {
   int? _iterations;
   VaultConfig? _config;
 
+  bool _disposed = false;
+
+  @override
+  void notifyListeners() {
+    if (!_disposed) super.notifyListeners();
+  }
+
   VaultCheckState get state => _state;
 
   bool? get isInitialized => switch (_state) {
@@ -512,5 +519,11 @@ class VaultService extends ChangeNotifier {
     _config = null;
     store.clock.reset();
     if (wasUnlocked) notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    super.dispose();
   }
 }
