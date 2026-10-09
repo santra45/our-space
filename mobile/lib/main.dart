@@ -50,8 +50,6 @@ class OurSpaceApp extends StatelessWidget {
   }
 }
 
-Widget openVaultGate(BuildContext context, Widget shell) => shell;
-
 Widget legacyVaultGate(BuildContext context, Widget shell) => LegacyVaultGate(shell: shell);
 
 class LegacyVaultGate extends StatefulWidget {
