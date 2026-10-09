@@ -1,7 +1,3 @@
-/**
- * src/components/common/BouncyButton.jsx
- * Spring animated button with Android haptic tick
- */
 import React from 'react';
 import { motion } from 'framer-motion';
 import { useHaptics } from '../../hooks/useHaptics';
@@ -9,7 +5,7 @@ import { useHaptics } from '../../hooks/useHaptics';
 export function BouncyButton({
   children,
   onClick,
-  variant = 'primary', // 'primary' | 'secondary' | 'ghost' | 'matcha' | 'lavender'
+  variant = 'primary',
   className = '',
   disabled = false,
   type = 'button',

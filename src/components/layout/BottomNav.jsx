@@ -1,7 +1,3 @@
-/**
- * src/components/layout/BottomNav.jsx
- * Mobile thumb-friendly bottom navigation bar with pastel active indicators
- */
 import React from 'react';
 import { motion } from 'framer-motion';
 import { Heart, Camera, Sparkles, Mail, CheckSquare } from 'lucide-react';

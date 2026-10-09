@@ -1,16 +1,3 @@
-/**
- * src/components/countdown/MilestoneTracker.jsx
- * Dynamic live relationship counter, anniversary countdown, and encrypted custom milestones.
- *
- * Schema v2: only `id`, `updatedAt` and `deleted` remain in plaintext on disk. The
- * milestone's `title` and its `date` both live inside the encrypted record
- * envelope, so the `date` index is gone and the reverse-chronological ordering
- * below happens in memory, after decryptRecord().
- *
- * Every calendar day in this file comes from toLocalDateInput(), never from
- * `toISOString().split('T')[0]` - the latter is UTC and reports yesterday for all
- * of the Americas overnight and until 05:30 in IST.
- */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Heart, Calendar, Sparkles, Plus, Trophy, Award, Trash2, AlertTriangle, Pencil } from 'lucide-react';
@@ -32,12 +19,6 @@ import db from '../../db';
 import { decryptRecord, generateUrlSafeNonce } from '../../services/crypto';
 import peerSync from '../../services/peerSync';
 
-/**
- * Collision-resistant id for a milestone.
- *
- * `'ms-' + Date.now()` collides whenever both partners record something inside
- * the same millisecond, and last-write-wins then silently destroys one of them.
- */
 function newMilestoneId() {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
     return `ms-${crypto.randomUUID()}`;
@@ -45,7 +26,6 @@ function newMilestoneId() {
   return `ms-${generateUrlSafeNonce(12)}`;
 }
 
-/** Monotonic write stamp, so a skewed device clock cannot permanently win or lose. */
 function nextTimestamp() {
   try {
     return peerSync.getSyncSafeTimestamp();
@@ -54,7 +34,6 @@ function nextTimestamp() {
   }
 }
 
-/** Drops decryptRecord's `_`-prefixed diagnostics before writing a record back. */
 function stripInternalFields(record) {
   const out = {};
   for (const [field, value] of Object.entries(record)) {
@@ -64,7 +43,6 @@ function stripInternalFields(record) {
   return out;
 }
 
-/** Sort key for a milestone whose `date` may be missing or unparseable. */
 function milestoneSortKey(record) {
   if (!record.date) return 0;
   const parsed = parseLocalDate(record.date).getTime();
@@ -96,18 +74,11 @@ export function MilestoneTracker() {
     if (startDate) setNewDate(startDate);
   }, [startDate]);
 
-  // Raw rows only, purely for liveness. `date` is encrypted now, so the query
-  // cannot order by it - see the decrypt pass below.
   const storedMilestones = useLiveQuery(() => db.milestones.toArray(), []);
 
   const decryptCache = useRef(new Map());
 
-  /* --------------------------------------------------------------------- *
-   * Decrypt pass
-   * --------------------------------------------------------------------- */
-
   useEffect(() => {
-    // A different key invalidates every cached plaintext.
     decryptCache.current = new Map();
   }, [cryptoKey]);
 
@@ -131,10 +102,6 @@ export function MilestoneTracker() {
         if (!row || typeof row !== 'object') continue;
         if (row.deleted === true) continue;
 
-        // useLiveQuery returns fresh object identities on every write to the
-        // table, so without this cache every milestone would be re-decrypted
-        // whenever any one of them changed. The IV rotates on each
-        // re-encryption, which makes it a sound staleness marker.
         const fingerprint = row.iv || row.titleIv || '';
         const cacheKey = `${row.id}::${row.updatedAt}::${fingerprint}`;
         seen.add(cacheKey);
@@ -143,16 +110,12 @@ export function MilestoneTracker() {
         if (!record) {
           let decrypted;
           try {
-            // The table is REQUIRED here. Without it decryptRecord has no expected
-            // table to compare the sealed `_tbl` against, so a row sealed for a
-            // different one is never flagged and renders as ordinary content.
             decrypted = await decryptRecord(row, cryptoKey, { table: 'milestones' });
           } catch {
             skipped += 1;
             continue;
           }
           if (decrypted._headerTampered) {
-            // A peer rewrote the plaintext id/updatedAt/deleted header. Refuse it.
             skipped += 1;
             continue;
           }
@@ -181,10 +144,6 @@ export function MilestoneTracker() {
     };
   }, [storedMilestones, cryptoKey]);
 
-  /* --------------------------------------------------------------------- *
-   * Mutations
-   * --------------------------------------------------------------------- */
-
   const handleSaveStartDate = useCallback(async () => {
     await updateVaultSettings({ startDate: newDate });
     setIsEditingDate(false);
@@ -203,9 +162,6 @@ export function MilestoneTracker() {
           {
             id: newMilestoneId(),
             title,
-            // Stored as the bare local calendar day the picker emitted. Running
-            // it through new Date(x).toISOString() would move it to UTC midnight
-            // and shift the displayed day for most of the world.
             date: milestoneDate,
             updatedAt: nextTimestamp(),
             deleted: false,
@@ -232,9 +188,6 @@ export function MilestoneTracker() {
       tap();
 
       try {
-        // Tombstone rather than delete: the row keeps its id and a bumped
-        // updatedAt so the removal replicates, and drops its payload so the
-        // title is really gone.
         const row = await db.softDelete('milestones', id, cryptoKey);
         if (row) peerSync.broadcastLiveRecord('milestones', row);
         setError('');
@@ -292,7 +245,6 @@ export function MilestoneTracker() {
 
   return (
     <div className="space-y-5">
-      {/* Primary Big Days Counter */}
       <GlassCard className="text-center relative overflow-hidden bg-gradient-to-b from-white/90 to-blush-50/80 border-2 border-blush-200">
         <div className="absolute -top-10 -right-10 w-36 h-36 bg-blush-200/40 rounded-full blur-2xl pointer-events-none" />
         <div className="absolute -bottom-10 -left-10 w-36 h-36 bg-lavender-200/40 rounded-full blur-2xl pointer-events-none" />
@@ -313,7 +265,6 @@ export function MilestoneTracker() {
           <span className="text-2xl font-bold text-blush-500 ml-2">Days</span>
         </motion.div>
 
-        {/* Live Sub-counter: Hours, Mins, Secs */}
         <div className="grid grid-cols-3 gap-2 max-w-[260px] mx-auto my-3 text-center">
           <div className="bg-white/70 py-1.5 px-2 rounded-2xl border border-blush-100 shadow-sm">
             <span className="block text-lg font-bold text-slate-700 leading-tight">
@@ -335,7 +286,6 @@ export function MilestoneTracker() {
           </div>
         </div>
 
-        {/* Start Date Indicator / Edit */}
         <div className="pt-2">
           {isEditingDate ? (
             <div className="flex items-center justify-center gap-2 max-w-xs mx-auto">
@@ -369,7 +319,6 @@ export function MilestoneTracker() {
           )}
         </div>
 
-        {/* Heart Burst Trigger */}
         <div className="mt-4 pt-4 border-t border-blush-100/70 flex justify-center">
           <BouncyButton
             onClick={async () => {
@@ -393,10 +342,8 @@ export function MilestoneTracker() {
         </div>
       </GlassCard>
 
-      {/* Upcoming Milestones Grid */}
       {milestones && (
         <div className="grid grid-cols-2 gap-3">
-          {/* Next Anniversary */}
           <GlassCard className="p-4 flex flex-col justify-between border border-blush-100/90">
             <div className="flex items-center justify-between text-blush-500 mb-2">
               <Award className="w-5 h-5" />
@@ -419,7 +366,6 @@ export function MilestoneTracker() {
             </div>
           </GlassCard>
 
-          {/* Next 100-Day Milestone */}
           <GlassCard className="p-4 flex flex-col justify-between border border-lavender-100/90">
             <div className="flex items-center justify-between text-lavender-500 mb-2">
               <Trophy className="w-5 h-5" />
@@ -444,7 +390,6 @@ export function MilestoneTracker() {
         </div>
       )}
 
-      {/* Custom Milestones Scrapbook */}
       <GlassCard className="p-5">
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
@@ -462,7 +407,6 @@ export function MilestoneTracker() {
           </button>
         </div>
 
-        {/* Failure surface - previously these paths failed silently */}
         {(error || skippedCount > 0) && (
           <div className="flex items-start gap-2 p-3 mb-3 rounded-2xl bg-amber-50 border border-amber-200 text-amber-800">
             <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />

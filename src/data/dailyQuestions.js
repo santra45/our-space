@@ -1,38 +1,6 @@
-/**
- * src/data/dailyQuestions.js
- * The question bank.
- *
- * WHY THESE ARE WRITTEN RATHER THAN BORROWED
- * The well-known sets are not ours to ship. We're Not Really Strangers is a
- * copyrighted deck, the app banks are proprietary, and Aron's 36 questions come
- * from a paper. Beyond that, all of them are written for people in the same
- * room. These are written for two people who are not.
- *
- * WHAT IS DELIBERATELY ABSENT
- * Nothing assumes a shared physical past - no "remember that restaurant", no
- * "the first time you held my hand". A question that quietly assumes a history
- * the two people do not have is worse than no question, because it lands as a
- * small reminder of what is missing. Memory questions here are about
- * conversations, first impressions, and the things that happen over a phone.
- *
- * BATCHES ARE APPEND-ONLY
- * The day-to-question mapping is a shuffle of this bank. Adding questions to an
- * EXISTING batch would reshuffle the whole thing and start repeating ones
- * already answered. Adding a NEW batch appends to the end and disturbs nothing.
- * So: never edit or reorder a shipped batch. Add batch two.
- *
- * Tones are `light` | `memory` | `deep` | `future` | `apart`. Nothing reads
- * them yet; they are here so the balance of the bank is reviewable, and so a
- * future "keep it light today" filter has something to filter on.
- */
-
 const q = (id, tone, text) => Object.freeze({ id, tone, text });
 
-/**
- * Batch one. 180 questions - roughly six months of daily use.
- */
 const BATCH_ONE = Object.freeze([
-  /* ---------------------------------------------------------------- light */
   q('b1-001', 'light', 'What is the most useless thing you know a lot about?'),
   q('b1-002', 'light', 'If you had to describe me to a stranger using only three words, which three?'),
   q('b1-003', 'light', 'What food would you happily eat every single day for a year?'),
@@ -70,7 +38,6 @@ const BATCH_ONE = Object.freeze([
   q('b1-035', 'light', 'What is something you are looking forward to this week, however small?'),
   q('b1-036', 'light', 'What is a word or phrase you use far too often?'),
 
-  /* --------------------------------------------------------------- memory */
   q('b1-037', 'memory', 'What do you actually remember about the first time we spoke?'),
   q('b1-038', 'memory', 'What did you think of me before you knew me properly?'),
   q('b1-039', 'memory', 'What is a message from me you have gone back and read again?'),
@@ -102,7 +69,6 @@ const BATCH_ONE = Object.freeze([
   q('b1-065', 'memory', 'When did you first tell someone you were serious about me?'),
   q('b1-066', 'memory', 'What is something we did early on that we should start doing again?'),
 
-  /* ----------------------------------------------------------------- deep */
   q('b1-067', 'deep', 'What is something you want me to understand about you but struggle to explain?'),
   q('b1-068', 'deep', 'What do you think I underestimate about myself?'),
   q('b1-069', 'deep', 'What is something you are afraid of that you have never said out loud?'),
@@ -140,7 +106,6 @@ const BATCH_ONE = Object.freeze([
   q('b1-101', 'deep', 'What would you like to be braver about?'),
   q('b1-102', 'deep', 'What is something you have never asked me but have wondered about?'),
 
-  /* --------------------------------------------------------------- future */
   q('b1-103', 'future', 'What is the first thing you want to do when we are finally in the same place?'),
   q('b1-104', 'future', 'What does an ordinary Tuesday with me look like, in your head?'),
   q('b1-105', 'future', 'What is something you want us to be better at?'),
@@ -174,7 +139,6 @@ const BATCH_ONE = Object.freeze([
   q('b1-133', 'future', 'What is a place you want to show me, and what will you show me first?'),
   q('b1-134', 'future', 'What kind of old person do you want to be?'),
 
-  /* ---------------------------------------------------------------- apart */
   q('b1-135', 'apart', 'What is the hardest part of the day when we are apart?'),
   q('b1-136', 'apart', 'What do you miss that is not the obvious thing?'),
   q('b1-137', 'apart', 'What is something you wanted to show me today but could not?'),
@@ -223,20 +187,14 @@ const BATCH_ONE = Object.freeze([
   q('b1-180', 'apart', 'What has today actually been like, past the version you would normally give?'),
 ]);
 
-/**
- * Every batch, oldest first. NEVER reorder or edit a shipped batch - see the
- * header. Append a new one.
- */
 export const QUESTION_BATCHES = Object.freeze([
   Object.freeze({ id: 'b1', questions: BATCH_ONE }),
 ]);
 
-/** Flat view, in batch order. The shuffle happens per batch, not across them. */
 export const ALL_QUESTIONS = Object.freeze(
   QUESTION_BATCHES.flatMap((batch) => batch.questions)
 );
 
-/** @param {string} id @returns {{id: string, tone: string, text: string}|null} */
 export function findQuestion(id) {
   return ALL_QUESTIONS.find((question) => question.id === id) || null;
 }

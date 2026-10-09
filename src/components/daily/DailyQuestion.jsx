@@ -1,17 +1,3 @@
-/**
- * src/components/daily/DailyQuestion.jsx
- * Today's question, on the first screen either of you sees.
- *
- * WHY A CARD AND NOT A TAB
- * A daily habit cannot live behind navigation. This sits at the top of the
- * landing tab, so it is the first thing in front of them every time they open
- * the app - the rest of the feature (writing, the archive) opens from here.
- *
- * THE GATE IS NOT ENFORCED HERE
- * services/dailyQuestion.js withholds the partner's answer until yours exists,
- * and this component simply never receives it. That is on purpose: a gate
- * implemented in a screen is one refactor away from being rendered by accident.
- */
 import React, { useCallback, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -33,7 +19,6 @@ import {
   listArchive,
 } from '../../services/dailyQuestion';
 
-/** `2026-09-10` -> `10 September`. */
 function prettyDay(day) {
   try {
     const [y, m, d] = String(day).split('-').map(Number);
@@ -47,13 +32,6 @@ function prettyDay(day) {
   }
 }
 
-/**
- * The write-an-answer form.
- *
- * Extracted because it is now reached from two places - today, and a day from
- * the archive being answered late - and two copies of a form that writes to the
- * same records is how the two quietly stop agreeing about what they write.
- */
 function AnswerForm({ draft, onDraft, onSubmit, saving, error, hint, footer }) {
   return (
     <form onSubmit={onSubmit} className="space-y-3">
@@ -101,21 +79,8 @@ export function DailyQuestion() {
   const [error, setError] = useState('');
   const [showArchive, setShowArchive] = useState(false);
   const [archive, setArchive] = useState([]);
-  /*
-    A day from the archive that is being answered late, or null for today.
-    Whoever started using the app second has a backlog of these, and before
-    they existed that backlog was permanent: their partner's answers from
-    before they joined could never be opened by anything.
-  */
   const [catchUp, setCatchUp] = useState(null);
 
-  /*
-    The id answers are written under is the PERSON, not the device - a device
-    tag is lost the first time a browser clears its storage, and it took a
-    year of answers with it. The device tag is still the fallback for a vault
-    where nobody has entered their names yet, so this screen keeps working
-    exactly as it did before people existed.
-  */
   const ownerId = myOwnerId || getDeviceId();
   const ownerIds = myOwnerIds;
 
@@ -127,8 +92,6 @@ export function DailyQuestion() {
       setToday(question);
       setState(day);
     } catch {
-      // A screen that cannot read today is not an emergency - it just has
-      // nothing to show, and the rest of the app carries on around it.
       setToday(null);
     }
   }, [cryptoKey, ownerId, ownerIds]);
@@ -137,9 +100,6 @@ export function DailyQuestion() {
     refresh();
   }, [refresh]);
 
-  /* Their answer can land while this is open, so follow the table rather than
-     only reading once. Their NAME can change under it too, which is why the
-     copy below reads it from context rather than capturing it. */
   useEffect(() => {
     const onUpdate = () => refresh();
     peerSync.on('data-updated', onUpdate);
@@ -168,9 +128,6 @@ export function DailyQuestion() {
         ownerIds,
         questionId: target.question.id,
         text: draft,
-        // Absent for today, and the day being caught up on otherwise. A month
-        // bucket is keyed by day, so writing into a past one was never a
-        // different operation - this screen simply never offered it.
         when: catchUp ? dateFromDayKey(catchUp.day) : undefined,
         timestamp: () => peerSync.getSyncSafeTimestamp(),
       });
@@ -179,8 +136,6 @@ export function DailyQuestion() {
       celebration();
       fireHeartConfetti();
       if (catchUp) {
-        // Straight back to the archive, where the answer that was locked behind
-        // this one is now sitting open.
         setCatchUp(null);
         await loadArchive();
       }
@@ -204,16 +159,10 @@ export function DailyQuestion() {
   const partnerWaiting = !!(state && state.partnerHasAnswered) && !answered;
   const bothIn = answered && !!(state && state.partnerAnswer);
 
-  /*
-    "they writes one" is the bug every app with neutral copy eventually ships.
-    The pronoun set carries `has`/`have` for exactly this, so the verb is asked
-    for rather than assumed - see grammarOf in services/people.js.
-  */
   const writeVerb = partnerGrammar.has === 'have' ? 'write' : 'writes';
 
   return (
     <>
-      {/* ---------------------------------------------------------- the card */}
       <motion.button
         type="button"
         onClick={() => {
@@ -246,23 +195,6 @@ export function DailyQuestion() {
         </p>
       </motion.button>
 
-      {/* --------------------------------------------------------- the sheet */}
-      {/*
-        PORTALLED TO <body>, and it has to be.
-
-        This card lives inside <main>, which carries `relative z-10` - and that
-        makes it a stacking context, so every z-index inside it is resolved
-        AGAINST ITS SIBLINGS ONLY. The sheet asking for z-50 was therefore
-        asking to be at the top of a stack that the browser then painted, whole,
-        at z-10: underneath the z-40 bottom nav.
-
-        The result was not a cosmetic overlap. The last ~62px of the sheet sat
-        behind the nav and received none of its taps - elementFromPoint on the
-        archive button returned an icon in the nav - so on a phone-height screen
-        the archive was simply unreachable, and tapping it switched tabs
-        instead. Header.jsx hit the identical trap with the invite prompt and
-        solved it the same way.
-      */}
       {createPortal(
       <AnimatePresence>
         {isOpen && (
@@ -285,7 +217,6 @@ export function DailyQuestion() {
               </button>
 
               {catchUp ? (
-                /* ------------------------------------- a day being caught up */
                 <>
                   <p className="text-[11px] font-bold text-lavender-500 uppercase tracking-wide mb-1">
                     {prettyDay(catchUp.day)}
@@ -418,12 +349,6 @@ export function DailyQuestion() {
                             {entry.question ? entry.question.text : 'A question from back then'}
                           </p>
 
-                          {/*
-                            A day their partner answered and this person did not.
-                            It used to be simply absent from the archive, which
-                            made whoever started later see almost nothing
-                            forever, with no way to ever close the gap.
-                          */}
                           {entry.missed ? (
                             <button
                               type="button"

@@ -1,7 +1,3 @@
-/**
- * src/components/common/GlassCard.jsx
- * Frosted pastel glass container with rounded-3xl corners and smooth border glow
- */
 import React from 'react';
 import { motion } from 'framer-motion';
 

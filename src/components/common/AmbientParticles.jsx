@@ -1,7 +1,3 @@
-/**
- * src/components/common/AmbientParticles.jsx
- * Floating gentle pastel hearts and sparkles drifting in the background
- */
 import React, { useMemo } from 'react';
 import { motion } from 'framer-motion';
 

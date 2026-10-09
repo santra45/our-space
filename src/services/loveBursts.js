@@ -1,48 +1,11 @@
-/**
- * src/services/loveBursts.js
- * Love bursts that survive being sent to a phone that is not listening.
- *
- * WHY THIS IS NOT ONE RECORD PER BURST
- * The obvious shape - append a row every time someone taps the button - is a
- * trap in a peer-to-peer app. Sync compares whole manifests, so every burst
- * ever sent would be listed on every reconnection for the rest of the
- * relationship. A few taps a day is a few thousand manifest entries a year, and
- * pruning them does not help: a deletion here is a tombstone, which is another
- * row in the same manifest.
- *
- * So each device keeps ONE record with a running count. Sending increments your
- * own; your partner notices the number went up by three while she was away.
- * Exactly two rows exist however long you use it, and the replication rules
- * already in the app carry them without knowing they are special:
- *
- *   - Only the owner writes its own record, so last-write-wins never has a real
- *     conflict to resolve.
- *   - A count only ever goes up, so a stale copy loses on its timestamp and the
- *     newer one carries the whole backlog with it.
- *   - Delivery when both phones are open is the ordinary live-record broadcast;
- *     delivery after a gap is the ordinary manifest diff. There is no second
- *     code path for the offline case, which is why the offline case works.
- *
- * WHAT IS LOCAL, AND WHY
- * How many of your partner's bursts you have already been shown is this
- * device's business and nobody else's. Writing it into the synced record would
- * push a "seen" flag back across the wire, invent a write conflict on a record
- * with a single owner, and tell her when you opened the app. It lives in
- * localStorage instead, and losing it is harmless - see the first-run note on
- * readSeenCounts().
- */
-
 import db from '../db/index.js';
 import { getDeviceId } from './deviceId.js';
 
-/** The table these live in. Declared in db/index.js version 3. */
 export const LOVE_BURST_TABLE = 'loveBursts';
 
 
-/** `{ counts: { [recordId]: number } }` - how far we had counted last time. */
 const SEEN_KEY = 'sweetheart_burst_seen_v1';
 
-/** Above this we stop counting and just say "lots". */
 export const MANY_BURSTS = 99;
 
 function readStored(key) {
@@ -62,31 +25,14 @@ function writeStored(key, value) {
   }
 }
 
-/**
- * This device's tag. Shared with every other feature that needs to know which
- * of the two devices wrote a record - see services/deviceId.js.
- *
- * @returns {string}
- */
 export function getBurstOwnerId() {
   return getDeviceId();
 }
 
-/** @returns {string} The record id this device writes its own tally into. */
 export function ownBurstRecordId() {
   return `burst-${getBurstOwnerId()}`;
 }
 
-/**
- * @returns {Object|null} The per-record counts we have already celebrated, or
- *   null when this device has never looked before.
- *
- * The null is load-bearing. A phone that has just restored a backup, or has had
- * its storage cleared, pulls down a tally that may already be in the hundreds.
- * Treating "no memory of counting" as "counted zero" would greet her with
- * "247 love bursts", which is not a nice surprise, it is a bug wearing one.
- * collectUnseenBursts() takes the null as a cue to start from today instead.
- */
 function readSeenCounts() {
   try {
     const raw = readStored(SEEN_KEY);
@@ -104,14 +50,6 @@ function writeSeenCounts(counts) {
   writeStored(SEEN_KEY, JSON.stringify({ counts }));
 }
 
-/**
- * Records that these tallies have been shown, so they are not shown again.
- *
- * Takes the maximum rather than assigning, so that two callers racing on the
- * same records cannot walk the mark backwards and replay a burst.
- *
- * @param {Array<{ id: string, count: number }>} records
- */
 export function markBurstsSeen(records) {
   const counts = readSeenCounts() || {};
   for (const record of records || []) {
@@ -123,7 +61,6 @@ export function markBurstsSeen(records) {
   writeSeenCounts(counts);
 }
 
-/** Monotonic write stamp, matching what every other write path in the app uses. */
 async function defaultTimestamp() {
   try {
     const { default: peerSync } = await import('./peerSync.js');
@@ -133,18 +70,6 @@ async function defaultTimestamp() {
   }
 }
 
-/**
- * Adds one to this device's tally and writes it back sealed.
- *
- * Works whether or not the partner is reachable - that is the entire point.
- * Broadcasting the returned row is the caller's job, and is only an
- * optimisation: a row that never gets broadcast is picked up by the next
- * manifest diff exactly the same way.
- *
- * @param {CryptoKey} cryptoKey
- * @param {{ store?: Object, timestamp?: () => number|Promise<number> }} [options]
- * @returns {Promise<Object>} The sealed row, ready to broadcast.
- */
 export async function sendLoveBurst(cryptoKey, options = {}) {
   if (!cryptoKey) throw new Error('sendLoveBurst: vault is locked');
 
@@ -159,8 +84,6 @@ export async function sendLoveBurst(cryptoKey, options = {}) {
       current = Math.floor(existing.count);
     }
   } catch {
-    // Unreadable or absent. Starting again from one loses history we cannot
-    // read anyway, and is far better than refusing to send.
     current = 0;
   }
 
@@ -176,14 +99,6 @@ export async function sendLoveBurst(cryptoKey, options = {}) {
   );
 }
 
-/**
- * How many bursts have arrived that this device has not shown her yet.
- *
- * @param {CryptoKey} cryptoKey
- * @param {{ store?: Object }} [options]
- * @returns {Promise<{ total: number, lastSentAt: number,
- *   records: Array<{ id: string, count: number }> }>}
- */
 export async function collectUnseenBursts(cryptoKey, options = {}) {
   const empty = { total: 0, lastSentAt: 0, records: [] };
   if (!cryptoKey) return empty;
@@ -205,16 +120,12 @@ export async function collectUnseenBursts(cryptoKey, options = {}) {
       row.id !== mine &&
       Number.isFinite(row.count) &&
       row.count > 0 &&
-      // A record whose header or table binding was rewritten is not evidence of
-      // anything. Everything else in the app refuses those; so does this.
       row._headerTampered !== true &&
       row._tableTampered !== true
   );
 
   const seen = readSeenCounts();
 
-  // First look on this device: adopt where the tallies already stand, so the
-  // count starts from today rather than from the beginning of the relationship.
   if (seen === null) {
     writeSeenCounts(
       Object.fromEntries(theirs.map((row) => [row.id, Math.floor(row.count)]))
@@ -240,21 +151,6 @@ export async function collectUnseenBursts(cryptoKey, options = {}) {
   return { total, lastSentAt, records };
 }
 
-/**
- * The sentence they read. Kept here beside the counting so the two cannot drift.
- *
- * `name` is the whole difference between a notification and a moment. "Noor
- * sent you a love burst" is the person; "your partner sent you a love burst" is
- * a product. The fallback is still there and still correct, because a vault
- * where nobody has entered their names yet has no name to use - see
- * services/people.js.
- *
- * @param {number} total
- * @param {boolean} wasConnected - Whether the partner was reachable at the time,
- *   which is the difference between "just now" and "while you were away".
- * @param {string} [name] - What to call them. Falls back to "Your partner".
- * @returns {string}
- */
 export function describeBursts(total, wasConnected, name) {
   if (total <= 0) return '';
 

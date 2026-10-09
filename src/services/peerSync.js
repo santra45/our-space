@@ -1,41 +1,3 @@
-/**
- * src/services/peerSync.js
- * Security-Hardened P2P WebRTC Data Replication Manager using PeerJS
- *
- * PROTOCOL: SWEETHEART_V2
- * Every frame on the wire is `{ protocol: 'SWEETHEART_V2', payload: { ciphertext, iv } }`
- * where the payload is the AES-GCM encryption of a JSON message under the shared
- * vault key. A peer that cannot produce a valid frame cannot say anything at all.
- *
- * WHAT CHANGED FROM V1 (and why)
- *  - Replication is BIDIRECTIONAL. Both peers advertise a manifest on authorization,
- *    so records that exist only on the answering side are no longer stranded.
- *  - Every sync exchange is a SESSION with an explicit `sessionId`, an explicit
- *    SYNC_COMPLETE terminator and a timeout. Neither side can hang in `syncing`.
- *  - SYNC_RECORDS_BATCH is CHUNKED and sequenced. A record that cannot fit in a
- *    single frame is reported through SYNC_ERROR instead of vanishing.
- *  - Every write path compares `updatedAt` against the local row and refuses stale
- *    data, with a deterministic tie-break so both devices converge on the same
- *    winner rather than flip-flopping.
- *  - Insane timestamps (NaN, Infinity, far-future) are rejected outright, so a
- *    device with a broken clock cannot pin a record as "newest" forever.
- *  - A decrypt failure BEFORE authentication means a passphrase mismatch and kills
- *    the session. A decrypt failure AFTER authentication is one bad frame: it is
- *    counted and dropped, and only a sustained run tears the session down.
- *  - checkConnectionType() reports 'unknown' when it does not know, instead of
- *    asserting 'direct'. There is no TURN server, so a route that never nominates
- *    a candidate pair surfaces as an actionable ICE failure.
- *
- * STATUS EVENT CONTRACT
- * `emit('status', { state, code, ... })`. `state` is the connection lifecycle and
- * is the ONLY thing UI should use to decide "are we connected". Non-fatal problems
- * are emitted as WARNINGS: they carry the CURRENT state plus a `warning` string, so
- * surfacing a problem never makes a live connection look dead.
- *
- * The relative imports below spell out `.js` on purpose: Vite does not need it,
- * plain Node does, and `node test-crypto.mjs` loads this module to check that the
- * backup merge really uses _incomingWins rather than a second copy of the rule.
- */
 import Peer from 'peerjs';
 import {
   encryptJSON,
@@ -50,75 +12,38 @@ import {
 import { PEER_ID_REGEX } from '../utils/invite.js';
 import db, { SYNCED_TABLES, MAX_IMAGE_BLOB_BYTES, MAX_RECORDS_PER_TABLE } from '../db/index.js';
 import { buildIceServers } from './iceServers.js';
-// Wire ceilings live in one place so the local photo limit can be derived from
-// them; see services/limits.js for why they used to drift.
 import {
   MAX_BATCH_PAYLOAD_BYTES,
   MAX_SINGLE_RECORD_BYTES,
 } from './limits.js';
 
-/* ------------------------------------------------------------------------- *
- * Protocol constants
- * ------------------------------------------------------------------------- */
-
 const PROTOCOL_ID = 'SWEETHEART_V2';
 const LEGACY_PROTOCOL_ID = 'SWEETHEART_V1';
 
-/** Hard ceiling on an inbound ciphertext string. Anything larger is hostile or broken. */
 const MAX_CIPHERTEXT_LENGTH = 30 * 1024 * 1024;
 
 const AUTH_TIMEOUT_MS = 30000;
 const CONNECT_OPEN_TIMEOUT_MS = 15000;
 
-/**
- * A peer we have NEVER authenticated with gets a much shorter leash than a peer
- * we know. Our peer id is permanent and is announced to a public broker on every
- * launch, so anyone who has ever seen it can dial us forever. Giving a stranger
- * the same 15s/30s squat window as a real partner is what let a reconnect loop
- * hold the single pairing slot indefinitely.
- */
 const UNKNOWN_CONNECT_OPEN_TIMEOUT_MS = 8000;
 const UNKNOWN_AUTH_TIMEOUT_MS = 12000;
 
-/**
- * How long an unknown, unauthenticated incumbent may hold the slot before a new
- * arrival is allowed to evict it. A real peer sends its first protocol frame
- * within about one round trip, so anything still silent after this has proved
- * nothing and is not worth protecting.
- */
 const STRANGER_EVICT_AFTER_MS = 3000;
 
-/**
- * Per-peer-id admission backoff. A cooldown is armed the moment a peer is let
- * in and only cleared when it actually authenticates, so a loop of failed
- * attempts throttles itself: 2s, 4s, 8s ... up to 5 minutes.
- */
 const ADMISSION_BACKOFF_BASE_MS = 2000;
 const ADMISSION_BACKOFF_MAX_MS = 5 * 60 * 1000;
-/** A known partner on a flaky network may retry this often before any backoff. */
 const KNOWN_PEER_FREE_ATTEMPTS = 3;
 const KNOWN_PEER_BACKOFF_MAX_MS = 15000;
-/** Admission records older than this are forgotten, so a bad night is not permanent. */
 const ADMISSION_ENTRY_TTL_MS = 30 * 60 * 1000;
-/** Hard cap on the admission table so a peer-id-rotating flood cannot grow it without bound. */
 const ADMISSION_MAX_TRACKED_PEERS = 128;
-/**
- * Global circuit breaker. Past this many unknown inbound admissions in a window
- * we are plainly under a flood, and we refuse ALL unknown inbound connections
- * until it subsides. The known partner keeps getting in, and dialling OUT is
- * unaffected, so the user can still pair deliberately. Safety over convenience:
- * refusing strangers is recoverable, a permanently squatted slot is not.
- */
 const ADMISSION_FLOOD_WINDOW_MS = 60000;
 const ADMISSION_FLOOD_MAX_UNKNOWN = 6;
-/** Strangers must not be able to spam the user with toasts, so refusals are throttled. */
 const ADMISSION_WARN_INTERVAL_MS = 30000;
 
 const HEARTBEAT_INTERVAL_MS = 15000;
 const HEARTBEAT_TIMEOUT_MS = 50000;
 const SYNC_SESSION_TIMEOUT_MS = 120000;
 
-/** How far ahead of our own clock a partner's timestamp may be before we distrust it. */
 const MAX_CLOCK_SKEW_MS = 24 * 60 * 60 * 1000;
 
 const MAX_DECRYPT_FAILURES = 5;
@@ -131,39 +56,17 @@ const ROUTE_PROBE_MAX_ATTEMPTS = 12;
 
 const ISO_DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
 
-/**
- * There is deliberately no TURN server in this app (a relay would see the
- * ciphertext volume and both IPs, and would need to be paid for and trusted), so
- * a route that never establishes is a real dead end the user has to act on.
- */
 const ICE_FAILURE_MESSAGE =
   'Could not open a direct connection to your partner. This app uses no relay server, so a strict mobile network (CGNAT) on either side can block pairing. Try putting both devices on the same Wi-Fi, or switch one device to a different network.';
 
 const LOCAL_PEER_ID_KEY = 'sweetheart_device_peer_id';
 const SYNC_CLOCK_KEY = 'sweetheart_sync_clock';
-/**
- * The last peer id that actually completed the challenge-response. Admission
- * control needs to tell "my partner reconnecting after a tunnel" apart from "a
- * stranger looping on my public peer id", and only a proven id can do that.
- * SyncContext already keeps the paired id in localStorage, so this stores
- * nothing new about the user.
- */
 const KNOWN_PARTNER_KEY = 'sweetheart_known_partner_peer';
-
-/* ------------------------------------------------------------------------- *
- * Peer identity
- * ------------------------------------------------------------------------- */
 
 const PEER_ID_PREFIX = 'love-';
 
-/**
- * Crockford base32: 32 symbols, no i / l / o / u so a hand-typed id cannot be
- * misread. Purely alphanumeric, which keeps the id valid under PEER_ID_REGEX and
- * under every signalling-server id rule we might meet.
- */
 const BASE32_ALPHABET = '0123456789abcdefghjkmnpqrstvwxyz';
 
-/** 10 bytes = 80 bits = exactly 16 base32 symbols. No padding, no bias, no loss. */
 const PEER_ID_RANDOM_BYTES = 10;
 
 function getRandomBytes(byteLength) {
@@ -173,17 +76,6 @@ function getRandomBytes(byteLength) {
   return bytes;
 }
 
-/**
- * Generates a peer id that keeps every bit of its entropy.
- *
- * The previous implementation base64'd 6 random bytes and then ran
- * `.toLowerCase().replace(/[^a-z0-9]/g, 'x')` over it, folding A-Z onto a-z and
- * both '+' and '/' onto the single symbol 'x'. That collapsed 48 uniform bits to
- * about 40.75 bits over a non-uniform 36-symbol alphabet. Base32 needs no
- * mangling at all: the output is already lowercase alphanumeric.
- *
- * @returns {string} e.g. "love-4kq7z2m9r3wxb8vn" (80 bits of entropy)
- */
 function generatePeerId() {
   const bytes = getRandomBytes(PEER_ID_RANDOM_BYTES);
   let value = 0;
@@ -210,10 +102,8 @@ function getStoredDevicePeerId() {
   try {
     if (typeof localStorage === 'undefined') return null;
     const id = localStorage.getItem(LOCAL_PEER_ID_KEY);
-    // Ids minted by older builds are still perfectly usable; only the generator changed.
     if (id && PEER_ID_REGEX.test(id)) return id;
   } catch {
-    // storage unavailable (private mode); fall through to a fresh id
   }
   return null;
 }
@@ -225,7 +115,6 @@ function setStoredDevicePeerId(id) {
       localStorage.setItem(LOCAL_PEER_ID_KEY, id);
     }
   } catch {
-    // safe fail
   }
 }
 
@@ -235,7 +124,6 @@ function getStoredKnownPartnerId() {
     const id = localStorage.getItem(KNOWN_PARTNER_KEY);
     if (id && PEER_ID_REGEX.test(id)) return id;
   } catch {
-    // storage unavailable; admission control simply treats everyone as unknown
   }
   return null;
 }
@@ -247,19 +135,9 @@ function setStoredKnownPartnerId(id) {
       localStorage.setItem(KNOWN_PARTNER_KEY, id);
     }
   } catch {
-    // safe fail
   }
 }
 
-/* ------------------------------------------------------------------------- *
- * Wire allowlists
- * ------------------------------------------------------------------------- */
-
-/**
- * Tables that may cross the wire. Derived from the database's own list and then
- * explicitly stripped of `vaultMeta`: the salt and canary that key the entire
- * vault must never be requestable, sendable or writable by a peer.
- */
 const ALLOWED_TABLES = new Set(SYNCED_TABLES.filter((name) => name !== 'vaultMeta'));
 
 const ALLOWED_MESSAGE_TYPES = new Set([
@@ -277,20 +155,8 @@ const ALLOWED_MESSAGE_TYPES = new Set([
   'PONG',
 ]);
 
-/** The whole of a record's plaintext: the header sync compares, and the seal. */
 const WIRE_FIELDS_COMMON = ['id', 'updatedAt', 'deleted', 'v', 'ciphertext', 'iv'];
 
-/**
- * The only per-table addition: a photo's type tag, which travels beside the
- * bytes rather than inside the envelope.
- *
- * Everything else a record has is INSIDE the ciphertext, so there is nothing
- * else a peer may put on the wire. The metadata names that used to be listed
- * here belonged to a plaintext-column shape this app no longer has; leaving them
- * on the allowlist let a peer write readable junk into our tables next to a
- * perfectly valid envelope. Local-only bookkeeping (`_del`) is deliberately
- * absent too: the receiver derives it itself.
- */
 const WIRE_FIELDS_BY_TABLE = {
   memories: [],
 };
@@ -299,18 +165,6 @@ function wireFieldsFor(table) {
   return new Set([...WIRE_FIELDS_COMMON, ...(WIRE_FIELDS_BY_TABLE[table] || [])]);
 }
 
-/**
- * The user-facing sentence for a refusal that is NOT staleness.
- *
- * Kept here, in one place, because the same fact reaches the user from two
- * directions (we refused their rows; they refused ours) and the two messages
- * must not drift into contradicting each other. It names the actual remedy: the
- * refusal is caused by the SENDER's rows predating the integrity binding, and
- * only the sender's device can fix that, by updating the app.
- *
- * @param {number} count
- * @returns {string}
- */
 function unverifiableWarningText(count) {
   const plural = count === 1 ? '' : 's';
   return (
@@ -332,21 +186,14 @@ export class PeerSyncManager {
     this.isSyncing = false;
 
     this.pendingChallengeNonce = null;
-    /** Peer we deliberately dialled. Only this peer may win a pre-auth glare tie-break. */
     this.dialingPeerId = null;
 
-    /* --- Admission control (S7) --- */
-    /** Last peer id that completed the handshake. Survives a reload; see KNOWN_PARTNER_KEY. */
     this._knownPartnerId = getStoredKnownPartnerId();
-    /** peerId -> { attempts, blockedUntil, lastSeenAt }. Bounded by ADMISSION_MAX_TRACKED_PEERS. */
     this._admission = new Map();
-    /** Timestamps of recent UNKNOWN inbound admissions, for the flood circuit breaker. */
     this._unknownAdmissions = [];
-    /** Whoever currently holds the single connection slot, and what they have proved. */
     this._slotKnown = false;
     this._slotSince = 0;
     this._slotProgressed = false;
-    /** Throttles the "a stranger was refused" toast so a flood cannot spam the UI. */
     this._admissionWarnedAt = 0;
 
     this.authTimeoutTimer = null;
@@ -354,23 +201,18 @@ export class PeerSyncManager {
     this.heartbeatTimer = null;
     this.lastPongAt = 0;
 
-    /** 'direct' | 'relayed' | 'unknown' | null. `null` means "no connection", never "direct". */
     this.connectionType = null;
     this.routeProbeTimer = null;
     this.routeProbeAttempts = 0;
     this._iceListener = null;
     this._icePeerConnection = null;
-    /** Set when ICE reports `failed`, so the close that follows stays quiet. */
     this._routeFailed = false;
 
     this.decryptFailures = 0;
 
-    /** sessionId -> session. `out` = we advertised, we owe records. `in` = we requested, we owe a SYNC_COMPLETE. */
     this._outSessions = new Map();
     this._inSessions = new Map();
 
-    /** Highest partner timestamp we have accepted, used to keep our own writes monotonic. */
-    /** Highest stamp this device has issued this session; never walks backwards. */
     this._lastIssuedStamp = 0;
     this._observedRemoteMax = 0;
     this._clockSkewWarned = false;
@@ -378,10 +220,6 @@ export class PeerSyncManager {
     this._hasRetriedUnavailableId = false;
     this.initPromise = null;
   }
-
-  /* ----------------------------------------------------------------------- *
-   * Event bus
-   * ----------------------------------------------------------------------- */
 
   on(event, callback) {
     if (!this.listeners.has(event)) {
@@ -414,23 +252,12 @@ export class PeerSyncManager {
     });
   }
 
-  /**
-   * The connection lifecycle state as it stands right now.
-   * @returns {'disconnected'|'handshaking'|'authorized'|'syncing'}
-   */
   _currentState() {
     if (!this.isConnected) return 'disconnected';
     if (!this.isAuthorized) return 'handshaking';
     return this.isSyncing ? 'syncing' : 'authorized';
   }
 
-  /**
-   * Emits a NON-FATAL problem.
-   *
-   * The status object carries the CURRENT lifecycle state, not an error state, so
-   * reporting a dropped frame or a refused stranger can never make a live,
-   * authenticated connection render as disconnected. UI shows `status.warning`.
-   */
   _emitWarning(code, warning, extra = {}) {
     this.emit('status', {
       state: this._currentState(),
@@ -443,18 +270,6 @@ export class PeerSyncManager {
     });
   }
 
-  /**
-   * Emits a FATAL problem: the session is over.
-   *
-   * REG-1: the UI treats every state emitted here ('error', 'auth_failed',
-   * 'ice_failed') as terminal - SyncContext drops `isAuthorized` and clears the
-   * route badge - so emitting one while the data channel is still live paints a
-   * dead link over an authenticated session that nothing will ever re-assert.
-   * Rather than trusting fourteen call sites to remember to tear down first,
-   * the invariant is enforced here: announcing the session is over MAKES it
-   * over. Anything that is genuinely survivable must use _emitWarning, which
-   * carries the current lifecycle state instead.
-   */
   _emitFatal(code, error, state = 'error') {
     if (this.activeConnection || this.isConnected) {
       this._closeActiveConnection();
@@ -462,15 +277,6 @@ export class PeerSyncManager {
     this.emit('status', { state, code, error });
   }
 
-  /* ----------------------------------------------------------------------- *
-   * Lifecycle
-   * ----------------------------------------------------------------------- */
-
-  /**
-   * Initialize local WebRTC Peer
-   * @param {CryptoKey} cryptoKey - The derived vault key for auth & encryption
-   * @param {string} [customId] - Optional custom Peer ID
-   */
   async init(cryptoKey, customId = null) {
     this.cryptoKey = cryptoKey;
 
@@ -486,9 +292,6 @@ export class PeerSyncManager {
       throw new Error('Invalid custom Peer ID format');
     }
 
-    // STUN plus a relay to fall back to. Two phones both on mobile data can
-    // have no direct route to each other at all, and without somewhere to
-    // relay through, that is simply a connection that never happens.
     const iceServers = buildIceServers();
 
     this.initPromise = new Promise((resolve, reject) => {
@@ -503,7 +306,7 @@ export class PeerSyncManager {
       try {
         this.peer = new Peer(peerId, {
           config: { iceServers },
-          debug: 0, // Disable internal PeerJS logging
+          debug: 0,
         });
       } catch {
         this.initPromise = null;
@@ -524,18 +327,14 @@ export class PeerSyncManager {
       });
 
       this.peer.on('error', (err) => {
-        // If a previous socket didn't close cleanly on reload, wait briefly and retry once with the same id.
         if (err?.type === 'unavailable-id') {
           if (!this._hasRetriedUnavailableId) {
             this._hasRetriedUnavailableId = true;
             setTimeout(() => {
-              // PeerJS destroy() cascades a close onto any live data connection, but
-              // tearing it down explicitly keeps our own state honest first.
               this._closeActiveConnection();
               try {
                 this.peer?.destroy();
               } catch {
-                // ignore
               }
               this.peer = null;
               this.initPromise = null;
@@ -562,17 +361,11 @@ export class PeerSyncManager {
           msg = 'Trouble with the connection. Check your internet and try again.';
         }
 
-        // REG-1, same class: this is the SIGNALLING socket failing, and the
-        // 'disconnected' handler right below deliberately keeps the P2P data
-        // channel alive through exactly that. Emitting a terminal 'error' while
-        // an authenticated session is still carrying data would tell the user
-        // their link is dead when it demonstrably is not.
         if (this.isAuthorized && this.activeConnection?.open) {
           this._emitWarning('signalling_' + (err?.type || 'error'), msg, { errorType: err?.type });
           return;
         }
 
-        // Terminal state, so honour the same invariant _emitFatal enforces.
         if (this.activeConnection || this.isConnected) this._closeActiveConnection();
         this.emit('status', {
           state: 'error',
@@ -583,14 +376,11 @@ export class PeerSyncManager {
       });
 
       this.peer.on('disconnected', () => {
-        // Signalling server dropped us. The P2P data channel is independent and
-        // must not be disturbed, so only the socket is re-established.
         try {
           if (this.peer && !this.peer.destroyed) {
             this.peer.reconnect();
           }
         } catch {
-          // safe fail
         }
       });
     });
@@ -598,16 +388,12 @@ export class PeerSyncManager {
     return this.initPromise;
   }
 
-  /**
-   * Connect to partner's Peer ID with strict input validation
-   */
   async connectToPartner(partnerPeerId) {
     const cleanId = (partnerPeerId || '').trim();
     if (!cleanId || !PEER_ID_REGEX.test(cleanId) || cleanId === this.myPeerId) {
       throw new Error('Invalid Partner Peer ID format');
     }
 
-    // Already talking to exactly this partner: leave a good session alone.
     if (this.isConnected && this.isAuthorized && this.activeConnection?.peer === cleanId) {
       return;
     }
@@ -639,27 +425,15 @@ export class PeerSyncManager {
     this._setupConnection(conn, true);
   }
 
-  /* ----------------------------------------------------------------------- *
-   * Admission control
-   * ----------------------------------------------------------------------- */
-
-  /**
-   * A peer we have reason to expect: the one we are dialling right now, or the
-   * one that last completed a handshake on this device. Everyone else is a
-   * stranger, no matter how plausible their id looks.
-   */
   _isKnownPeer(peerId) {
     if (!peerId) return false;
     return peerId === this.dialingPeerId || peerId === this._knownPartnerId;
   }
 
-  /** Drops stale admission records so a rough evening does not become a permanent block. */
   _pruneAdmission(now) {
     for (const [peerId, entry] of this._admission) {
       if (now - entry.lastSeenAt > ADMISSION_ENTRY_TTL_MS) this._admission.delete(peerId);
     }
-    // A flood that rotates peer ids would otherwise grow this map forever.
-    // Evict oldest-first; the flood breaker below is what actually stops them.
     while (this._admission.size > ADMISSION_MAX_TRACKED_PEERS) {
       const oldest = this._admission.keys().next().value;
       if (oldest === undefined) break;
@@ -670,17 +444,6 @@ export class PeerSyncManager {
     );
   }
 
-  /**
-   * Decides whether an INBOUND peer may take the pairing slot at all.
-   *
-   * S7: the previous build only applied admission control when the slot was
-   * already occupied, so in the idle state - the normal state - any stranger who
-   * knew our permanent, publicly-brokered peer id could take the slot and hold it
-   * for the full open/auth timeout, over and over, forever. Pairing denial is not
-   * a bounded delay when nothing rate-limits the reconnect.
-   *
-   * @returns {{ allowed: boolean, reason?: string }}
-   */
   _admitInbound(peerId, isKnown) {
     const now = Date.now();
     this._pruneAdmission(now);
@@ -691,22 +454,12 @@ export class PeerSyncManager {
     }
 
     if (!isKnown && this._unknownAdmissions.length >= ADMISSION_FLOOD_MAX_UNKNOWN) {
-      // Under a flood we shut the door on everyone we cannot vouch for. The known
-      // partner still gets in, and dialling out still works, so this degrades
-      // pairing rather than breaking the app. Losing the slot to an attacker is
-      // not recoverable by the user; being told to try again is.
       return { allowed: false, reason: 'flood' };
     }
 
     return { allowed: true };
   }
 
-  /**
-   * Arms this peer's cooldown as it takes the slot. It is cleared only by a
-   * successful handshake (_noteAdmissionSuccess), so a loop that never
-   * authenticates walks itself up an exponential backoff while a real partner
-   * pays nothing after its first good connection.
-   */
   _noteAdmission(peerId, isKnown) {
     const now = Date.now();
     const entry = this._admission.get(peerId) || { attempts: 0, blockedUntil: 0, lastSeenAt: now };
@@ -726,12 +479,10 @@ export class PeerSyncManager {
     }
     entry.blockedUntil = now + backoff;
 
-    // Re-insert so map order stays oldest-first for the size eviction above.
     this._admission.delete(peerId);
     this._admission.set(peerId, entry);
   }
 
-  /** A completed handshake proves this peer belongs here. Forget every strike. */
   _noteAdmissionSuccess(peerId) {
     if (!peerId) return;
     this._admission.delete(peerId);
@@ -739,25 +490,14 @@ export class PeerSyncManager {
     setStoredKnownPartnerId(peerId);
   }
 
-  /** Refuses a connection without ever letting it touch the slot. */
   _refuseConnection(conn, warningCode, warningText) {
     try {
       conn.close();
     } catch {
-      // ignore
     }
     this._refuseWarn(warningCode, warningText);
   }
 
-  /**
-   * Whether a newcomer may evict the peer currently holding the slot.
-   *
-   * Only ever applies to an UNAUTHENTICATED incumbent. A known peer always beats
-   * a stranger, and a stranger that has not yet delivered a single decryptable
-   * frame has proved nothing and is evictable once its grace period is up. That
-   * is what stops a squatter from locking out a real partner, without letting an
-   * attacker interrupt a handshake that is visibly making progress.
-   */
   _mayEvictIncumbent(conn) {
     if (!this.activeConnection || this.isAuthorized) return false;
     if (this._slotKnown) return false;
@@ -766,17 +506,9 @@ export class PeerSyncManager {
     return Date.now() - this._slotSince >= STRANGER_EVICT_AFTER_MS;
   }
 
-  /**
-   * Admission control for a new data connection.
-   *
-   * An AUTHENTICATED session is never sacrificed for an unauthenticated newcomer,
-   * and during the pre-auth window only the peer we are actually dialling is
-   * allowed into the glare tie-break. Anyone else is refused outright, so a
-   * stranger cannot pick a low peer id and repeatedly kill handshakes.
-   */
   _setupConnection(conn, isInitiator) {
     if (!conn || typeof conn.peer !== 'string') return;
-    if (this.activeConnection === conn) return; // already wired up
+    if (this.activeConnection === conn) return;
 
     const isKnown = isInitiator || this._isKnownPeer(conn.peer);
 
@@ -791,13 +523,9 @@ export class PeerSyncManager {
           );
           return;
         }
-        // Same partner reconnecting (reload, network handoff): replace cleanly.
       } else {
         const expectedPeer = this.dialingPeerId || existing.peer;
         if (conn.peer !== expectedPeer) {
-          // Not who we were talking to. Normally refused - but a stranger must
-          // not be able to squat the slot and lock the real partner out, so a
-          // stalled, unproven incumbent can be evicted.
           if (!this._mayEvictIncumbent(conn)) {
             this._refuseConnection(
               conn,
@@ -807,20 +535,15 @@ export class PeerSyncManager {
             return;
           }
         } else if (this.myPeerId && this.myPeerId <= conn.peer) {
-          // Genuine glare: both sides dialled each other at once. Deterministic
-          // tie-break, but only ever against the peer we were already talking to.
           try {
             conn.close();
           } catch {
-            // ignore
           }
           return;
         }
       }
     }
 
-    // The idle slot is NOT free for the taking. Rate-limit and flood-break every
-    // inbound peer before it is allowed to start any timer of ours.
     if (!isInitiator) {
       const verdict = this._admitInbound(conn.peer, isKnown);
       if (!verdict.allowed) {
@@ -837,9 +560,6 @@ export class PeerSyncManager {
     }
 
     this._closeActiveConnection();
-    // _closeActiveConnection clears dialingPeerId, but we are, right now, dialling
-    // this peer - losing that would make our own partner look like a stranger to
-    // the glare tie-break and to admission control.
     if (isInitiator) this.dialingPeerId = conn.peer;
     this.activeConnection = conn;
     this.decryptFailures = 0;
@@ -848,9 +568,6 @@ export class PeerSyncManager {
     this._slotSince = Date.now();
     this._slotProgressed = false;
 
-    // The auth clock starts the moment a peer occupies the slot, not when the data
-    // channel opens: otherwise a peer that stalls ICE squats here forever. An
-    // unknown peer gets a materially shorter leash than one we expect.
     this._startAuthTimeout(conn, isKnown);
     this._startConnectOpenTimeout(conn, isKnown);
 
@@ -859,8 +576,6 @@ export class PeerSyncManager {
       this._clearConnectOpenTimeout();
       this.isConnected = true;
 
-      // NOT 'connected'. Nothing is verified yet - this peer is a stranger until
-      // the challenge-response completes. UI must never render this as paired.
       this.emit('status', { state: 'handshaking', code: 'channel_open', partnerId: conn.peer });
 
       if (isInitiator) {
@@ -886,8 +601,6 @@ export class PeerSyncManager {
 
     conn.on('close', () => {
       if (this.activeConnection !== conn) return;
-      // An ICE failure has already reported itself with actionable copy; letting
-      // the close overwrite it with a bare "disconnected" would throw that away.
       const routeFailed = this._routeFailed;
       this._closeActiveConnection();
       if (!routeFailed) {
@@ -903,10 +616,6 @@ export class PeerSyncManager {
     });
   }
 
-  /**
-   * Anything that escapes the message pipeline. Storage exhaustion is fatal and
-   * must be visible; everything else degrades to a dropped frame.
-   */
   _handlePipelineError(err) {
     const name = err?.name || '';
     if (name === 'QuotaExceededError' || name === 'NotEnoughSpaceError') {
@@ -923,13 +632,6 @@ export class PeerSyncManager {
     );
   }
 
-  /**
-   * @param {boolean} isKnown - Whether this peer is one we expect. A stranger gets
-   *   a shorter window AND a quiet teardown: reporting every stranger's timeout as
-   *   a loud "authentication failed" would hand an attacker a way to spam alarming
-   *   toasts at the user. The loud path is kept for a first-ever pairing, where a
-   *   timeout really is the answer the user is waiting for.
-   */
   _startAuthTimeout(conn, isKnown = true) {
     this._clearAuthTimeout();
     const timeout = isKnown ? AUTH_TIMEOUT_MS : UNKNOWN_AUTH_TIMEOUT_MS;
@@ -954,7 +656,6 @@ export class PeerSyncManager {
     }, timeout);
   }
 
-  /** Throttled warning, shared with _refuseConnection so strangers cannot spam the UI. */
   _refuseWarn(code, text) {
     const now = Date.now();
     if (now - this._admissionWarnedAt < ADMISSION_WARN_INTERVAL_MS) return;
@@ -969,12 +670,6 @@ export class PeerSyncManager {
     }
   }
 
-  /**
-   * Bounds how long a peer may hold the connection slot without opening a channel.
-   * An unknown peer that never opens a channel is the cheapest possible squat -
-   * it costs the attacker one signalling message - so its window is short and its
-   * teardown is quiet.
-   */
   _startConnectOpenTimeout(conn, isKnown = true) {
     this._clearConnectOpenTimeout();
     const timeout = isKnown ? CONNECT_OPEN_TIMEOUT_MS : UNKNOWN_CONNECT_OPEN_TIMEOUT_MS;
@@ -1004,25 +699,15 @@ export class PeerSyncManager {
     }
   }
 
-  /* ----------------------------------------------------------------------- *
-   * Liveness
-   * ----------------------------------------------------------------------- */
-
   _startHeartbeat() {
     this._clearHeartbeat();
     this.lastPongAt = Date.now();
     this.heartbeatTimer = setInterval(() => {
       this._heartbeatTick().catch(() => {
-        // handled inside
       });
     }, HEARTBEAT_INTERVAL_MS);
   }
 
-  /**
-   * A half-open RTCDataChannel keeps accepting send() without error, which is
-   * exactly what happens on a mobile network handoff. The only reliable detector
-   * is a missing reply, so the interval enforces one.
-   */
   async _heartbeatTick() {
     if (!this.isConnected || !this.isAuthorized || !this.activeConnection?.open || !this.cryptoKey) {
       this._clearHeartbeat();
@@ -1078,7 +763,6 @@ export class PeerSyncManager {
       try {
         this.activeConnection.close();
       } catch {
-        // ignore
       }
       this.activeConnection = null;
     }
@@ -1089,21 +773,6 @@ export class PeerSyncManager {
     this.emit('status', { state: 'disconnected', code: 'closed_locally' });
   }
 
-  /* ----------------------------------------------------------------------- *
-   * Connection route
-   * ----------------------------------------------------------------------- */
-
-  /**
-   * Inspects the WebRTC candidate pair to classify the route.
-   *
-   * There is deliberately NO TURN server in this app, so "relayed" can only ever
-   * mean a relay the browser found on its own. What matters here is honesty: when
-   * ICE has not nominated a pair yet, or getStats is unavailable, or anything
-   * throws, the answer is 'unknown'. Claiming 'direct' in those cases is what made
-   * the old "Direct P2P" badge effectively hardcoded on.
-   *
-   * @returns {Promise<'direct' | 'relayed' | 'unknown' | null>} null only when there is no connection at all.
-   */
   async checkConnectionType() {
     if (!this.isConnected || !this.activeConnection) return null;
 
@@ -1140,19 +809,12 @@ export class PeerSyncManager {
     }
   }
 
-  /**
-   * ICE has usually not nominated a pair at the instant authentication finishes,
-   * so a single sample there is worthless. This polls until the route is known
-   * (or gives up and says so) and watches for outright ICE failure.
-   */
   _startRouteProbe() {
     this._clearRouteProbe();
     this.routeProbeAttempts = 0;
 
     const pc = this.activeConnection?.peerConnection;
     if (pc && typeof pc.addEventListener === 'function') {
-      // addEventListener, never `pc.oniceconnectionstatechange = ...`: PeerJS owns
-      // that property and assigning to it silently breaks its own negotiation.
       this._iceListener = () => {
         const state = pc.iceConnectionState;
         if (state === 'failed') {
@@ -1209,16 +871,11 @@ export class PeerSyncManager {
       try {
         this._icePeerConnection.removeEventListener('iceconnectionstatechange', this._iceListener);
       } catch {
-        // ignore
       }
     }
     this._iceListener = null;
     this._icePeerConnection = null;
   }
-
-  /* ----------------------------------------------------------------------- *
-   * Transport
-   * ----------------------------------------------------------------------- */
 
   async _send(message) {
     const conn = this.activeConnection;
@@ -1235,19 +892,12 @@ export class PeerSyncManager {
     conn.send({ protocol: PROTOCOL_ID, payload });
   }
 
-  /**
-   * Initiator step: send a cryptographically secure random challenge nonce.
-   */
   async _sendAuthChallenge() {
     if (!this.activeConnection || !this.cryptoKey) return;
     const nonce = generateSecureNonce(16);
     this.pendingChallengeNonce = nonce;
     await this._send({ type: 'CHALLENGE', nonce });
   }
-
-  /* ----------------------------------------------------------------------- *
-   * Message pipeline
-   * ----------------------------------------------------------------------- */
 
   async _handleMessage(msg) {
     if (!msg || typeof msg !== 'object' || !msg.payload || typeof msg.payload !== 'object') {
@@ -1267,8 +917,6 @@ export class PeerSyncManager {
     const { ciphertext, iv } = msg.payload;
     if (typeof ciphertext !== 'string' || typeof iv !== 'string') return;
     if (ciphertext.length > MAX_CIPHERTEXT_LENGTH) {
-      // The only way to hit this from a well-behaved partner is a record that
-      // slipped past their own send-side cap. Never silent.
       if (this.isAuthorized) {
         this._emitWarning(
           'oversized_message',
@@ -1281,7 +929,7 @@ export class PeerSyncManager {
       return;
     }
 
-    if (!this.cryptoKey) return; // vault locked mid-session; not a passphrase problem
+    if (!this.cryptoKey) return;
 
     let decrypted;
     try {
@@ -1291,11 +939,8 @@ export class PeerSyncManager {
       return;
     }
 
-    // A frame that decrypts proves the channel is alive and the key matches.
     this.decryptFailures = 0;
     this.lastPongAt = Date.now();
-    // Real protocol progress. From here the slot holder is no longer evictable by
-    // a newcomer, so an attacker cannot interrupt a handshake that is working.
     this._slotProgressed = true;
 
     if (!decrypted || typeof decrypted !== 'object' || !ALLOWED_MESSAGE_TYPES.has(decrypted.type)) {
@@ -1324,12 +969,10 @@ export class PeerSyncManager {
         try {
           await this._send({ type: 'PONG', t: Date.now() });
         } catch {
-          // The next heartbeat tick will notice if the channel is really gone.
         }
         break;
 
       case 'PONG':
-        // lastPongAt already refreshed above.
         break;
 
       case 'SYNC_CONFIG':
@@ -1365,14 +1008,6 @@ export class PeerSyncManager {
     }
   }
 
-  /**
-   * BEFORE authentication a decrypt failure means the two vaults hold different
-   * keys - that really is a passphrase mismatch and the session is over.
-   *
-   * AFTER authentication the key is proven, so a failure is one corrupted frame.
-   * Killing the session (and blaming the passphrase) would be a lie. Count it,
-   * drop it, and only tear down on a sustained run.
-   */
   _handleDecryptFailure() {
     if (!this.isAuthorized) {
       this._closeActiveConnection();
@@ -1459,15 +1094,6 @@ export class PeerSyncManager {
     await this._onAuthorized();
   }
 
-  /**
-   * Shared post-authentication path.
-   *
-   * BOTH sides run this, and BOTH sides advertise a manifest. That is what makes
-   * replication bidirectional: previously only the initiator advertised, so a
-   * record that existed only on the answering device was never offered to anyone.
-   * Neither of these sessions asks for a reciprocal, so exactly two sessions run
-   * per handshake and the exchange provably terminates.
-   */
   async _onAuthorized() {
     this._clearAuthTimeout();
     this._clearConnectOpenTimeout();
@@ -1475,7 +1101,6 @@ export class PeerSyncManager {
     this.dialingPeerId = null;
     this.lastPongAt = Date.now();
 
-    // Honest until proven otherwise: the route is unknown until ICE settles.
     this.connectionType = 'unknown';
     this._startHeartbeat();
 
@@ -1491,10 +1116,6 @@ export class PeerSyncManager {
     await this.syncNow({ wantReciprocal: false });
   }
 
-  /* ----------------------------------------------------------------------- *
-   * Sync sessions
-   * ----------------------------------------------------------------------- */
-
   _sessionMap(kind) {
     return kind === 'out' ? this._outSessions : this._inSessions;
   }
@@ -1507,11 +1128,6 @@ export class PeerSyncManager {
       startedAt: Date.now(),
       applied: 0,
       rejected: 0,
-      // Rows the partner sent that we refused an overwrite or a delete because
-      // their binding could not be verified. Tracked apart from `rejected`
-      // (unreadable) and from staleness (our copy is genuinely newer) because it
-      // is the only one of the three the user can act on - see
-      // _commitStagedRecords.
       unverifiable: 0,
       expectedSeq: 0,
       timer: null,
@@ -1534,10 +1150,8 @@ export class PeerSyncManager {
     return session;
   }
 
-  /** Restarts a session's stall timer. Called on every observable step forward. */
   _touchSession(session) {
     if (!session) return;
-    // A session that already finished or timed out must not resurrect its timer.
     if (this._sessionMap(session.kind).get(session.id) !== session) return;
     if (session.timer) clearTimeout(session.timer);
     session.timer = setTimeout(() => {
@@ -1579,11 +1193,6 @@ export class PeerSyncManager {
     }
   }
 
-  /**
-   * Ends one session and reports it. `synced` is only emitted once EVERY session
-   * has drained, so the other direction still running cannot flip the UI out of
-   * its syncing state prematurely.
-   */
   _finishSession(kind, sessionId, message, extra = {}) {
     this._closeSession(kind, sessionId);
     this.emit('status', {
@@ -1601,19 +1210,9 @@ export class PeerSyncManager {
     try {
       await this._send({ type: 'SYNC_ERROR', sessionId, code, message, ...extra });
     } catch {
-      // If we cannot even report the error, the session timer will finish the job.
     }
   }
 
-  /**
-   * Advertises the local manifest, opening a sync session we own.
-   *
-   * @param {{ wantReciprocal?: boolean }} [options] - When true (the default, i.e.
-   *   a user-triggered "Sync Now"), the partner is asked to advertise its own
-   *   manifest back. A reciprocal manifest is always sent with `wantReciprocal:false`,
-   *   so the exchange is at most one level deep and can never ping-pong.
-   * @returns {Promise<boolean>} True when a session was opened.
-   */
   async syncNow(options = {}) {
     if (!this.isConnected || !this.isAuthorized || !this.activeConnection?.open) return false;
     if (this._outSessions.size >= MAX_CONCURRENT_SESSIONS) return false;
@@ -1637,9 +1236,6 @@ export class PeerSyncManager {
     }
   }
 
-  /**
-   * Consumer side. Works out what we are missing and asks for exactly that.
-   */
   async _onSyncManifest(decrypted) {
     const sessionId = decrypted.sessionId;
     if (typeof sessionId !== 'string' || sessionId.length < 8 || sessionId.length > 64) {
@@ -1673,16 +1269,12 @@ export class PeerSyncManager {
       await this._sendSyncError(sessionId, 'manifest_rejected', 'Could not read the local manifest');
       this._emitWarning(
         'manifest_rejected',
-        // Deliberately does NOT interpolate err.message: these read like
-        // "Cannot verify which copy of a record is newer" and this string goes
-        // on screen in a couple's app, not into a log.
         'Could not compare notes with your partner. Try again.'
       );
       return;
     }
 
     if (requests.length === 0) {
-      // Nothing wanted: terminate this direction immediately.
       await this._sendSyncComplete(sessionId, 0, 0);
     } else {
       this._openSession('in', sessionId, { phase: 'requested', requested: requests.length });
@@ -1698,56 +1290,18 @@ export class PeerSyncManager {
       }
     }
 
-    // Bidirectional convergence for a user-triggered sync. The reply carries
-    // wantReciprocal:false, which is what bounds the exchange.
     if (decrypted.wantReciprocal === true && this._outSessions.size === 0) {
       await this.syncNow({ wantReciprocal: false });
     }
   }
 
-  /**
-   * @param {string} sessionId
-   * @param {number} applied
-   * @param {number} rejected
-   * @param {number} [unverifiable] - How many of the partner's rows we refused
-   *   an overwrite or delete because we could not verify them. A build that
-   *   predates this field ignores it, which is exactly the build most likely to
-   *   be on the receiving end of it.
-   */
   async _sendSyncComplete(sessionId, applied, rejected, unverifiable = 0) {
     try {
       await this._send({ type: 'SYNC_COMPLETE', sessionId, applied, rejected, unverifiable });
     } catch {
-      // The provider's session timer will clean up.
     }
   }
 
-  /**
-   * Compares a remote manifest against ours.
-   *
-   * Ties (`remote.updatedAt === local.updatedAt`) are deliberately NOT requested:
-   * fetching every equal-timestamp record on every round would transfer the whole
-   * library forever. The deterministic tie-break lives on the apply path, where it
-   * actually matters, because that is where two competing versions meet.
-   */
-  /**
-   * The manifest diff, for a caller that is not a live connection.
-   *
-   * Exists so services/mailbox.js can ask "what of this does this device not
-   * have?" without owning a second copy of the answer. The rule below is
-   * subtle - the same-millisecond tie-break that lets a deletion beat an edit
-   * took a bug to find - and two implementations of it would eventually
-   * disagree, which would surface as records that sync over a cable but never
-   * through the mailbox.
-   *
-   * Requires no connection and no authorization, because it decides nothing: it
-   * returns a list of ids this device would like to see. What may actually be
-   * written is settled by the apply path, which verifies every record against
-   * the vault key no matter where it came from.
-   *
-   * @param {Object} remoteManifest
-   * @returns {Promise<Array<{ table: string, id: string }>>}
-   */
   async diffAgainstLocal(remoteManifest) {
     if (!remoteManifest || typeof remoteManifest !== 'object') return [];
     return await this._diffManifest(remoteManifest);
@@ -1763,8 +1317,6 @@ export class PeerSyncManager {
       if (!ALLOWED_TABLES.has(table) || !Array.isArray(remoteItems)) continue;
       if (remoteItems.length > MAX_RECORDS_PER_TABLE) continue;
 
-      // Carries `deleted` as well as `updatedAt`: the equal-timestamp tie-break
-      // below needs both.
       const localMap = new Map(
         (localManifest[table] || []).map((i) => [i.id, { updatedAt: i.updatedAt, deleted: i.deleted === true }])
       );
@@ -1772,9 +1324,6 @@ export class PeerSyncManager {
       for (const rItem of remoteItems) {
         if (!rItem || typeof rItem.id !== 'string' || rItem.id.length > 128) continue;
 
-        // Number.isFinite is the guard that matters: `typeof NaN === 'number'` and
-        // `typeof Infinity === 'number'` both pass a naive typeof check, and an
-        // Infinity timestamp would win every comparison forever.
         if (!Number.isFinite(rItem.updatedAt) || rItem.updatedAt < 0) continue;
         if (rItem.updatedAt > now + MAX_CLOCK_SKEW_MS) {
           sawFutureTimestamp = true;
@@ -1783,25 +1332,6 @@ export class PeerSyncManager {
 
         const local = localMap.get(rItem.id);
 
-        // Equal timestamps used to be skipped outright, to stop two devices
-        // requesting the same record from each other forever. But _incomingWins
-        // has a tie-break for exactly this case - a deletion beats an edit made
-        // in the same millisecond - and skipping here meant that rule never got
-        // the chance to run. If one phone edited an item while the other deleted
-        // it at the same instant, NEITHER side asked for the other's copy and
-        // the two stayed permanently out of step on that record.
-        //
-        // So mirror tie-break 1 here, and only that one. If the remote copy is a
-        // tombstone and ours is not, the remote wins and we pull it. The reverse
-        // case needs no request: from the other device's point of view OUR copy
-        // is the tombstone, so it pulls from us. Exactly one side asks, both
-        // converge on the deletion, and there is no ping-pong.
-        //
-        // Not mirrored: _incomingWins' second tie-break, the fingerprint
-        // comparison for two same-instant EDITS. The manifest carries only id,
-        // updatedAt and deleted, so there is nothing here to compare - detecting
-        // that case would mean putting a content fingerprint on the wire. Same
-        // millisecond, same delete flag, different content stays unreconciled.
         const wantsRemote =
           local === undefined ||
           rItem.updatedAt > local.updatedAt ||
@@ -1828,10 +1358,6 @@ export class PeerSyncManager {
     );
   }
 
-  /**
-   * Provider side. Chunks the requested records into frames that stay well under
-   * the ciphertext ceiling, sequenced so the consumer can detect a gap.
-   */
   async _onSyncRequestRecords(decrypted) {
     const sessionId = decrypted.sessionId;
     const session = typeof sessionId === 'string' ? this._outSessions.get(sessionId) : null;
@@ -1845,7 +1371,6 @@ export class PeerSyncManager {
       return;
     }
     if (session.phase !== 'advertised') {
-      // A second request list would restart `seq` at 0 and desync the consumer.
       await this._sendSyncError(sessionId, 'duplicate_request', 'Records were already sent for that session', {
         fatal: true,
       });
@@ -1897,7 +1422,6 @@ export class PeerSyncManager {
         const bytes = this._estimateWireBytes(wire);
 
         if (bytes > MAX_SINGLE_RECORD_BYTES) {
-          // No silent drops. Both sides find out.
           oversized.push({ table: req.table, id: req.id });
           continue;
         }
@@ -1923,7 +1447,6 @@ export class PeerSyncManager {
         );
       }
 
-      // Always terminate the stream, even when nothing matched.
       await flush(true);
     } catch (err) {
       this._closeSession('out', sessionId);
@@ -1935,10 +1458,6 @@ export class PeerSyncManager {
     }
   }
 
-  /**
-   * Consumer side. Applies one chunk and, on the final one, terminates the session
-   * with an explicit SYNC_COMPLETE so the provider stops waiting.
-   */
   async _onSyncRecordsBatch(decrypted) {
     const sessionId = decrypted.sessionId;
     const session = typeof sessionId === 'string' ? this._inSessions.get(sessionId) : null;
@@ -1979,12 +1498,6 @@ export class PeerSyncManager {
 
       await this._sendSyncComplete(sessionId, applied, rejected, unverifiable);
 
-      // "All memories up to date!" is a claim, and with `unverifiable > 0` it is
-      // a false one: the partner made changes, we received them, and we threw
-      // them away. Emit no message at all in that case and let the warning below
-      // carry the news, rather than printing a reassurance and a contradiction
-      // in two banners at once. (SyncContext only records `message` when it is
-      // truthy, so a null here leaves the previous notice to expire on its own.)
       const message =
         applied > 0
           ? `Synced ${applied} update${applied === 1 ? '' : 's'} from your partner!`
@@ -2021,17 +1534,6 @@ export class PeerSyncManager {
     }
   }
 
-  /**
-   * Provider side: the consumer is done, so this direction is finished.
-   *
-   * "Your partner is up to date!" was printed here whenever `applied` came back
-   * 0, which included the case where the partner had received our changes and
-   * refused all of them. From THIS side that is the more likely direction of the
-   * problem - we are the ones whose rows cannot be verified - so the count is
-   * read off the wire and reported. A partner on an older build sends no
-   * `unverifiable` field at all; it reads as 0 and this behaves exactly as it
-   * did, which is the best that can be done from this end.
-   */
   _onSyncComplete(decrypted) {
     const sessionId = decrypted.sessionId;
     if (typeof sessionId !== 'string' || !this._outSessions.has(sessionId)) return;
@@ -2078,18 +1580,6 @@ export class PeerSyncManager {
     this._emitWarning(code, human);
   }
 
-  /* ----------------------------------------------------------------------- *
-   * Record marshalling
-   * ----------------------------------------------------------------------- */
-
-  /**
-   * Converts a stored row into its wire form.
-   *
-   * A row is `{ id, updatedAt, deleted, v, ciphertext, iv }` plus an
-   * independently-encrypted `imageBlob`; the blob is base64'd because JSON cannot
-   * carry binary. Local-only bookkeeping (`_del`) never leaves this device - the
-   * receiver derives its own.
-   */
   _toWireRecord(table, row) {
     const allowed = wireFieldsFor(table);
     const wire = {};
@@ -2111,11 +1601,6 @@ export class PeerSyncManager {
     return wire;
   }
 
-  /**
-   * Cheap byte estimate for one wire record. Everything that can be large is a
-   * base64 string (ciphertext, imageBlobBase64), so string length is an accurate
-   * proxy and avoids stringifying the payload twice.
-   */
   _estimateWireBytes(wire) {
     let bytes = 128;
     for (const [field, value] of Object.entries(wire)) {
@@ -2126,16 +1611,11 @@ export class PeerSyncManager {
     return bytes;
   }
 
-  /**
-   * Structural validation of an inbound record header.
-   * @returns {{ ok: boolean, code?: string }}
-   */
   _validateWireRecord(data) {
     if (!data || typeof data !== 'object' || Array.isArray(data)) return { ok: false, code: 'shape' };
     if (typeof data.id !== 'string' || data.id.length < 1 || data.id.length > 128) {
       return { ok: false, code: 'bad_id' };
     }
-    // Rejects NaN and Infinity, both of which pass a bare `typeof === 'number'`.
     if (!Number.isFinite(data.updatedAt) || data.updatedAt < 0) {
       return { ok: false, code: 'bad_timestamp' };
     }
@@ -2143,19 +1623,10 @@ export class PeerSyncManager {
       return { ok: false, code: 'future_timestamp' };
     }
     if (typeof data.deleted !== 'boolean') return { ok: false, code: 'bad_tombstone' };
-    // Version 2 or nothing, and an ABSENT version is not a pass. There is one
-    // record shape, and a peer claiming another is a peer this build cannot
-    // reason about.
     if (data.v !== RECORD_SCHEMA_VERSION) return { ok: false, code: 'bad_version' };
     return { ok: true };
   }
 
-  /**
-   * Copies an inbound record through a strict field allowlist so a hostile or
-   * corrupted peer cannot persist arbitrary keys into the live tables. Never
-   * mutates the caller's object.
-   * @returns {Object|null} The row to store, or null to reject it.
-   */
   _sanitizeIncomingRow(table, data) {
     const allowed = wireFieldsFor(table);
     const row = {};
@@ -2169,9 +1640,6 @@ export class PeerSyncManager {
     row.id = data.id;
     row.updatedAt = data.updatedAt;
     row.deleted = data.deleted === true;
-    // `_del` is the 0/1 index mirror IndexedDB needs (it refuses boolean keys).
-    // Dexie hooks maintain it too, but writing it here keeps the manifest correct
-    // even on write paths that bypass hooks.
     row._del = row.deleted ? 1 : 0;
 
     if (table === 'memories' && typeof data.imageBlobBase64 === 'string') {
@@ -2187,71 +1655,13 @@ export class PeerSyncManager {
     return row;
   }
 
-  /**
-   * Proves an inbound record is genuinely ours before it is written.
-   *
-   * peerSync holds the vault key, and the envelope is a small JSON blob (the photo
-   * itself stays binary and is opened only when it is displayed), so this is one
-   * cheap AES-GCM open per record, plus - only when a record carries a photo -
-   * one SHA-256 pass over those bytes.
-   *
-   * WHAT IT PROVES IS UNCONDITIONAL ON THE FIRST DIMENSION AND SCOPED ON THE
-   * OTHER TWO, because the three bindings did not ship together:
-   *
-   *  - EVERY row: the key opened the envelope, and the envelope's own copy of
-   *    the plaintext id / updatedAt / deleted header matches the row's
-   *    (`_headerTampered`). No exception - encryptRecord has sealed that header
-   *    inside the payload since the envelope existed at all - so a peer can
-   *    never rewrite a header undetected. A row that is not an envelope never
-   *    reaches the check; it is refused outright below.
-   *  - A row sealed WITH a digest map: the SHA-256 of the attached photo
-   *    bytes matches too (`_binaryTampered`), so a peer cannot keep a valid
-   *    envelope while swapping the photo underneath it.
-   *  - A row sealed WITH a table binding: the table the peer filed it under
-   *    matches the one it was sealed for (`_tableTampered`), so a peer cannot
-   *    replay a bucketList tombstone as a delete against a letter.
-   *
-   * Two cases stay unverified on purpose, and they are the same case twice: an
-   * envelope sealed before the digest map existed, and one sealed before the
-   * table binding existed. Both are accepted as-is rather than rejected
-   * outright, because refusing them would break every photo already in the vault
-   * and cut a partner off completely rather than partially. See
-   * BINARY_DIGEST_FIELD and TABLE_BINDING_FIELD in crypto.js.
-   *
-   * BUT `unverified` IS NOT `ok`. Such an envelope cannot prove which bytes or
-   * which table it belongs to, so _commitStagedRecords lets it create and
-   * refuses it every update and every delete. A partner still on a build that
-   * predates those bindings has all of their edits land in that bucket for as
-   * long as that lasts; their creates still arrive.
-   *
-   * Callers must therefore report an `unverified` refusal as its own outcome
-   * (`unverifiable`), not as staleness - the partner is NOT up to date, and the
-   * only fix is on their device.
-   *
-   * @param {Object} row
-   * @param {string} [table] - The table the peer filed this row under. Omit it
-   *   and the table dimension is simply not checked.
-   * @returns {Promise<{ ok: boolean, code?: string, unverified?: boolean }>}
-   *   `{ok:false, code}` refuses the row outright. `{ok:true, unverified:false}`
-   *   is proved on every dimension. `{ok:true, unverified:true}` opened cleanly
-   *   but carries at least one ABSENT binding: it may create, never overwrite or
-   *   delete. `unverified` is present on every ok verdict and is the field
-   *   _stageIncomingRecords carries onto the staged entry.
-   */
   async _verifyRecordIntegrity(row, table) {
     if (!this.cryptoKey) return { ok: false, code: 'locked' };
-    // Asked FIRST, and asked plainly, rather than inferred from a decrypt that
-    // resolved. decryptRecord() throws on anything that is not a complete
-    // envelope, so this agrees with it - but the whole two-tier rule is stated
-    // in terms of this predicate, and a gate should not rest on how some other
-    // function happens to fail.
     if (!recordHasAuthenticatedHeader(row)) {
       return { ok: false, code: 'unauthenticated' };
     }
     try {
       const plain = await decryptRecord(row, this.cryptoKey, { table });
-      // Reported separately from header_tampered only so the rejection counter
-      // names the real reason; every one of these verdicts refuses the write.
       if (plain && plain._binaryTampered === true) {
         return { ok: false, code: 'binary_tampered' };
       }
@@ -2261,11 +1671,6 @@ export class PeerSyncManager {
       if (plain && plain._headerTampered === true) {
         return { ok: false, code: 'header_tampered' };
       }
-      // Binding ABSENT is neither ok nor tampered. It is reported so the caller
-      // can allow a create but refuse an overwrite - the same rule the import
-      // path applies. Nothing this device does can repair it either: an envelope
-      // an attacker harvested before binding existed would otherwise stay a
-      // permanent capability against that id.
       if (plain && (plain._binaryUnverified === true || plain._tableUnverified === true)) {
         return { ok: true, unverified: true };
       }
@@ -2275,11 +1680,6 @@ export class PeerSyncManager {
     }
   }
 
-  /**
-   * Validates, sanitizes and integrity-checks a list of inbound records.
-   * Deliberately runs OUTSIDE any Dexie transaction: awaiting Web Crypto inside
-   * one would let the transaction commit out from under us.
-   */
   async _stageIncomingRecords(items) {
     const staged = [];
     const reasons = new Map();
@@ -2308,17 +1708,12 @@ export class PeerSyncManager {
         continue;
       }
 
-      // `item.table` is the peer's own claim about where this row belongs, and
-      // it is exactly the claim being checked: a sealed table binding that
-      // disagrees with it is a cross-table replay.
       const integrity = await this._verifyRecordIntegrity(row, item.table);
       if (!integrity.ok) {
         note(integrity.code);
         continue;
       }
 
-      // Carried on the staged entry rather than mutating the row: `row` is what
-      // gets written to IndexedDB, and a bookkeeping field would be persisted.
       staged.push({ table: item.table, row, unverifiedBinding: integrity.unverified === true });
     }
 
@@ -2326,14 +1721,6 @@ export class PeerSyncManager {
     return { staged, rejected, reasons };
   }
 
-  /**
-   * Decides whether an inbound version replaces the local one.
-   *
-   * Newer wins. Older LOSES - that is the whole point, and its absence is what let
-   * a stale LIVE_RECORD_BROADCAST silently clobber newer local data. Equal
-   * timestamps are broken deterministically so both devices pick the SAME winner
-   * and converge, instead of each keeping its own copy forever.
-   */
   _incomingWins(existing, incoming) {
     if (!existing) return true;
 
@@ -2343,59 +1730,18 @@ export class PeerSyncManager {
     if (remoteAt > localAt) return true;
     if (remoteAt < localAt) return false;
 
-    // Tie-break 1: a deletion is never resurrected by a same-instant edit.
     const localDeleted = existing.deleted === true;
     const remoteDeleted = incoming.deleted === true;
     if (localDeleted !== remoteDeleted) return remoteDeleted;
 
-    // Tie-break 2: lexicographic on a stable fingerprint. Both devices compare the
-    // same pair of strings, so both reach the same verdict.
     return this._fingerprint(incoming) > this._fingerprint(existing);
   }
 
   _fingerprint(row) {
-    // ONLY authenticated material. Every field that matters is inside
-    // `ciphertext`, which is sealed, so nothing else needs to be here - and
-    // anything else that WERE here would be attacker-choosable. Unsealed
-    // top-level fields used to be folded in for the older record shape, and on a
-    // sealed row that was a working attack: appending `captionCipher: "zzzz"` to
-    // an otherwise byte-identical replay flipped the tie-break, because
-    // _incomingWins(local, {...local, captionCipher: 'zzzz'}) returned true.
     const parts = [String(row.v || RECORD_SCHEMA_VERSION), row.ciphertext || '', row.iv || ''];
-    // DELIBERATELY NOT the blob's byteLength. It used to be appended here, and
-    // that was a working attack: the length is not authenticated, so an attacker
-    // could replay a harvested envelope BYTE FOR BYTE - same ciphertext, same iv,
-    // same updatedAt, no forgery needed - with a garbage photo whose length in
-    // decimal happens to sort high ('900...' beats '64'). Every other part of the
-    // fingerprint matched, so this one attacker-chosen string decided the
-    // tie-break and the real photo was overwritten.
-    //
-    // Nothing is lost by dropping it. For a row sealed by the current
-    // encryptRecord the blob's digest lives INSIDE the encrypted payload, so a
-    // different blob necessarily means different ciphertext, which is already in
-    // the fingerprint above. For an older row the length proves nothing at all.
     return parts.join('|');
   }
 
-  /**
-   * Writes staged records, skipping anything the merge rule says is stale.
-   * The transaction is scoped to the tables actually being touched - `vaultMeta`
-   * is never among them, so a photo import cannot block a salt read.
-   *
-   * TWO KINDS OF "NOT WRITTEN", AND THEY MUST NOT SHARE A COUNTER.
-   * `stale` means the merge rule looked at both copies and ours is newer. That
-   * is a non-event: nothing is missing and there is nothing for anyone to do.
-   * `unverifiable` means the partner's copy might well have been the newer one
-   * and we refused it anyway, because it could not be proved to belong to the id
-   * it targets. That IS an event - the partner's edit is gone and the only fix
-   * is on their device - and it used to be counted as `stale`, which the caller
-   * then reported as "up to date". A partner on a build that predates the photo
-   * digest or the table binding has EVERY update and EVERY delete land in this
-   * bucket for as long as they stay on it.
-   *
-   * @param {Array<{table: string, row: Object, unverifiedBinding: boolean}>} staged
-   * @returns {Promise<{ applied: number, stale: number, unverifiable: number }>}
-   */
   async _commitStagedRecords(staged) {
     if (staged.length === 0) return { applied: 0, stale: 0, unverifiable: 0 };
 
@@ -2409,28 +1755,10 @@ export class PeerSyncManager {
     await db.transaction('rw', tables, async () => {
       for (const { table, row, unverifiedBinding } of staged) {
         const existing = await db.table(table).get(row.id);
-        // SEALED OR NOTHING, whether or not anything is already here.
-        //
-        // Creating used to be free: an unsealed row was allowed to land at an id
-        // this device had never seen, because the app still had to accept the
-        // older record shape. It does not any more, so a peer cannot put
-        // anything into our tables that it did not seal under the vault key -
-        // and the header of everything that does land is bound to its contents.
-        //
-        // _verifyRecordIntegrity has already refused anything unsealed, so this
-        // is belt and braces. It stays because it is the sentence the rule is
-        // written in, on the one path that writes to the user's library with no
-        // human in the loop at all.
         if (!recordHasAuthenticatedHeader(row)) {
           unverifiable++;
           continue;
         }
-        // A binding that is merely absent is weaker than sealed: an envelope
-        // predating the photo digest or the table binding cannot prove which
-        // bytes or which table it belongs to, so it may create but never
-        // overwrite or delete. Without this a harvested pre-binding envelope
-        // erases a photo (swap the bytes, or just omit them) with no UI in the
-        // way at all, because the sync path has no confirmation step.
         if (existing && unverifiedBinding === true) {
           unverifiable++;
           continue;
@@ -2444,8 +1772,6 @@ export class PeerSyncManager {
       }
     });
 
-    // Keeps our own future writes ahead of anything the partner has issued, so a
-    // device with a slow clock cannot be permanently out-voted.
     for (const { row } of staged) {
       if (row.updatedAt > this._observedRemoteMax) this._observedRemoteMax = row.updatedAt;
     }
@@ -2463,35 +1789,13 @@ export class PeerSyncManager {
     return { applied, rejected, stale, unverifiable };
   }
 
-  /* ----------------------------------------------------------------------- *
-   * Live broadcast
-   * ----------------------------------------------------------------------- */
-
-  /**
-   * Real-time push of a single record. Fire-and-forget by design: it NEVER
-   * rejects, so the six call sites that do not attach a .catch() cannot produce
-   * an unhandled rejection. A failure is surfaced as a warning and the record is
-   * picked up by the next manifest sync.
-   *
-   * @param {string} table
-   * @param {Object} record - The stored row (i.e. what db.putEncrypted returned).
-   * @returns {Promise<boolean>} True when the record was handed to the channel.
-   */
   async broadcastLiveRecord(table, record) {
     if (!record || typeof record !== 'object' || typeof record.id !== 'string') return false;
     if (!ALLOWED_TABLES.has(table)) return false;
 
-    // EVERY local write passes through here, which makes this the one honest
-    // place to say "something of ours changed". It fires BEFORE the connection
-    // check below, because the whole reason the mailbox exists is the case
-    // where there is no connection - announcing a change only when a partner
-    // happens to be listening would leave the mailbox updated exclusively at
-    // the moments it is not needed.
     try {
       this.emit('local-record', { table, id: record.id });
     } catch {
-      // A listener threw. Not this method's problem, and certainly not a reason
-      // to skip the broadcast below.
     }
 
     if (!this.isConnected || !this.isAuthorized) return false;
@@ -2519,11 +1823,6 @@ export class PeerSyncManager {
     }
   }
 
-  /**
-   * Applies one live-broadcast record - through exactly the same validation,
-   * integrity check and staleness guard as a batched sync. The old blind put()
-   * here is what let a late-arriving broadcast overwrite newer local data.
-   */
   async _applySingleLiveRecord(record) {
     if (!this.isAuthorized || !record || typeof record !== 'object') return;
 
@@ -2539,10 +1838,6 @@ export class PeerSyncManager {
       return;
     }
 
-    // A stale broadcast is silently ignored: our copy is simply newer, and that is
-    // a race the user can neither see nor act on. An UNVERIFIABLE one is the
-    // opposite - the partner's live edit was discarded and only their device can
-    // fix it - so it is surfaced, on the same wording the batched path uses.
     const { applied, unverifiable } = await this._commitStagedRecords(staged);
     if (applied > 0) {
       this.emit('data-updated', { single: true, count: applied, table: record.table });
@@ -2554,13 +1849,6 @@ export class PeerSyncManager {
     }
   }
 
-  /* ----------------------------------------------------------------------- *
-   * Vault config
-   * ----------------------------------------------------------------------- */
-
-  /**
-   * Syncs relationship anniversary start date & couple names across devices.
-   */
   async syncVaultConfig(config) {
     if (!this.isConnected || !this.isAuthorized || !this.cryptoKey) return false;
     try {
@@ -2578,11 +1866,6 @@ export class PeerSyncManager {
     }
   }
 
-  /**
-   * The sender coerces its own fields; the receiver must not simply trust that.
-   * Everything here is bounded and shape-checked before it reaches the app, which
-   * writes it straight into vault settings.
-   */
   _onSyncConfig(config) {
     if (!config || typeof config !== 'object' || Array.isArray(config)) {
       this._emitWarning('bad_config', 'We could not read their details. Try again.');
@@ -2615,27 +1898,9 @@ export class PeerSyncManager {
     this.emit('config-synced', { coupleNames, startDate, updatedAt });
   }
 
-  /* ----------------------------------------------------------------------- *
-   * Clock
-   * ----------------------------------------------------------------------- */
-
-  /**
-   * A write timestamp that is monotonic on this device AND ahead of anything the
-   * partner has issued.
-   *
-   * Raw `Date.now()` last-write-wins means a device whose clock runs slow can
-   * never win a merge, and one whose clock runs fast wins everything. Callers that
-   * stamp `updatedAt` on a new or edited record should use this instead of
-   * `Date.now()`.
-   *
-   * @returns {number}
-   */
   getSyncSafeTimestamp() {
     const now = Date.now();
 
-    // A stamp beyond this is refused by the partner outright (see
-    // _validateWireRecord), so a floor above it can only mint records that can
-    // never be accepted. Anything past it is treated as damage, not history.
     const ceiling = now + MAX_CLOCK_SKEW_MS;
 
     let floor = 0;
@@ -2646,21 +1911,8 @@ export class PeerSyncManager {
         if (Number.isFinite(parsed) && parsed > 0) floor = parsed;
       }
     } catch {
-      // storage unavailable; in-memory high-water mark still applies
     }
 
-    // Clamp a poisoned floor back to real time.
-    //
-    // The floor is monotonic on purpose, but that made a clock change permanent.
-    // Set the phone's date to next year - which is exactly what someone does to
-    // peek at a time-locked letter - save or edit anything, and the floor is
-    // stamped a year ahead. Put the clock back and the floor stays there,
-    // because it only ever moves forward. Every record this phone writes from
-    // then on is dated in the future, and the partner refuses all of them until
-    // real time catches up. Months of memories, silently one-way.
-    //
-    // Both the stored floor and the remote high-water mark get the same
-    // treatment: neither is allowed to argue this device into the far future.
     if (floor > ceiling) {
       floor = now;
       this._emitWarning(
@@ -2670,18 +1922,6 @@ export class PeerSyncManager {
     }
     const remoteFloor = Math.min(this._observedRemoteMax, ceiling);
 
-    // `_lastIssuedStamp` is what keeps this strictly increasing WITHIN a session,
-    // and it is not redundant with the stored floor.
-    //
-    // The clamp above is a ceiling test, and the ceiling moves with the wall
-    // clock. A partner legitimately a few hours ahead can push one stamp up near
-    // the ceiling; a moment later the ceiling has barely moved, the stored floor
-    // now sits above it, and the clamp would haul this device back to `now` -
-    // issuing a stamp EARLIER than the one before it. Last-write-wins then reads
-    // a newer edit as older, on this device's own records.
-    //
-    // So the ceiling may reset where the clock starts from, but it may never
-    // walk this device's own stamps backwards.
     const next = Math.max(now, floor + 1, remoteFloor + 1, this._lastIssuedStamp + 1);
     this._lastIssuedStamp = next;
 
@@ -2690,43 +1930,26 @@ export class PeerSyncManager {
         localStorage.setItem(SYNC_CLOCK_KEY, String(next));
       }
     } catch {
-      // safe fail
     }
 
     return next;
   }
 
-  /* ----------------------------------------------------------------------- *
-   * Teardown
-   * ----------------------------------------------------------------------- */
-
-  /**
-   * Disconnect from the current partner session (leaves the local peer listening).
-   */
   disconnect() {
     this.closeConnection();
   }
 
-  /**
-   * Drops the signalling socket and the peer node but KEEPS the vault key, so
-   * init() can rebuild everything without the user unlocking again. Used on page
-   * hide, where the page may well come back.
-   */
   releaseTransport() {
     this._closeActiveConnection();
     try {
       this.peer?.destroy();
     } catch {
-      // ignore
     }
     this.peer = null;
     this.myPeerId = null;
     this.initPromise = null;
   }
 
-  /**
-   * Full teardown of the local peer node and all key material (vault lock).
-   */
   destroy() {
     this.releaseTransport();
     this.cryptoKey = null;
@@ -2739,18 +1962,11 @@ export class PeerSyncManager {
 export const peerSync = new PeerSyncManager();
 
 if (typeof window !== 'undefined') {
-  /**
-   * `pagehide` rather than `beforeunload`: beforeunload also fires on navigations
-   * the user then CANCELS, and on bfcache-eligible navigations they can come back
-   * from. The old handler destroyed the key in both cases, leaving a live page
-   * with no way to reconnect short of re-entering the passphrase.
-   */
   window.addEventListener('pagehide', (event) => {
-    if (event.persisted) return; // going into bfcache; the page may return intact
+    if (event.persisted) return;
     try {
       peerSync.releaseTransport();
     } catch {
-      // ignore
     }
   });
 
@@ -2762,12 +1978,9 @@ if (typeof window !== 'undefined') {
         try {
           peerSync.peer.reconnect();
         } catch {
-          // ignore
         }
       }
 
-      // Coming back from a long background can leave a half-open data channel that
-      // still accepts send(). Force the liveness check rather than waiting.
       if (peerSync.isAuthorized) {
         peerSync._heartbeatTick().catch(() => {});
       }

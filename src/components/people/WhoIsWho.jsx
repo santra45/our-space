@@ -1,19 +1,3 @@
-/**
- * src/components/people/WhoIsWho.jsx
- * Change a name, a pronoun, or which of you is holding this phone.
- *
- * WHY THIS HAS TO EXIST
- * Because PeopleSetup tells people it does. Its one-tap screen ends with "pick
- * the wrong one? Tap the other name any time in Settings", and a promise like
- * that either is true or it is the app lying to someone at the exact moment
- * they are worried they broke something.
- *
- * SWITCHING IS THE IMPORTANT ONE, not renaming. A mis-tap on the claim screen
- * means this device is writing answers as the wrong person, and the longer it
- * goes unnoticed the more there is to untangle. claimPerson is exclusive - the
- * device tag comes off whoever held it - so switching here genuinely moves this
- * phone rather than leaving it claimed by both.
- */
 import React, { useState } from 'react';
 import { UserRound, Check, Pencil } from 'lucide-react';
 import { usePeople } from '../../context/PeopleContext';
@@ -34,8 +18,6 @@ export function WhoIsWho() {
   const [name, setName] = useState('');
   const [pronoun, setPronoun] = useState('they');
 
-  // Nothing to show until there are people. The setup card is what appears
-  // instead, and it is already on screen when this would be empty.
   if (status !== 'ready' || !me) return null;
 
   const startEdit = (person) => {

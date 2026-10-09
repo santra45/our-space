@@ -1,12 +1,3 @@
-/**
- * src/components/layout/Header.jsx
- * Mobile top bar with partner sync status indicator and vault lock button.
- *
- * Every indicator here is driven by `isAuthorized`, never by the raw socket
- * state: peerSync reports `handshaking` for a channel that opened but has not
- * proved it holds the vault key, and any stranger who knows our peer id can
- * reach that state. Only a peer that survived the challenge gets a green pill.
- */
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import {
@@ -53,8 +44,6 @@ export function Header({ onOpenSync }) {
   }, []);
 
   const getStatusDisplay = () => {
-    // A fatal problem outranks everything: it is the only place the user learns
-    // that the passphrases differ or that ICE never found a route.
     if (syncError) {
       return {
         label: 'Sync hiccup',
@@ -81,7 +70,6 @@ export function Header({ onOpenSync }) {
           icon: Wifi,
         };
       }
-      // X3: the route genuinely is not known yet. Say so instead of guessing.
       return {
         label: 'Connected 💕',
         color: 'bg-emerald-100 text-emerald-700 border-emerald-200',
@@ -90,7 +78,6 @@ export function Header({ onOpenSync }) {
       };
     }
 
-    // Channel open, identity NOT proven. Deliberately not green.
     if (isHandshaking) {
       return {
         label: 'Checking…',
@@ -123,7 +110,6 @@ export function Header({ onOpenSync }) {
   return (
     <header className="sticky top-0 z-30 pt-safe px-4 py-3 backdrop-blur-md bg-blush-50/70 border-b border-blush-100/50">
       <div className="max-w-md mx-auto flex items-center justify-between">
-        {/* Left: Couple Title */}
         <div className="flex items-center gap-2 min-w-0">
           <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-blush-400 to-blush-300 flex items-center justify-center text-white shadow-sm shadow-blush-300/50 shrink-0">
             <Heart className="w-4 h-4 fill-white" />
@@ -152,7 +138,6 @@ export function Header({ onOpenSync }) {
           </div>
         </div>
 
-        {/* Right: Sync Status Pill & Lock Button */}
         <div className="flex items-center gap-2 shrink-0">
           <button
             onClick={() => {
@@ -186,7 +171,6 @@ export function Header({ onOpenSync }) {
         </div>
       </div>
 
-      {/* X4: fatal sync problem, with the actionable wording peerSync supplied */}
       {syncError && (
         <div className="max-w-md mx-auto mt-2">
           <div className="flex items-start gap-2 px-3 py-2 bg-rose-50 border border-rose-200 rounded-2xl shadow-sm">
@@ -219,7 +203,6 @@ export function Header({ onOpenSync }) {
         </div>
       )}
 
-      {/* Non-fatal problem. Carries the live state, so it must never look fatal. */}
       {!syncError && syncWarning && (
         <div className="max-w-md mx-auto mt-2">
           <div className="px-3 py-1.5 bg-amber-50 border border-amber-200 text-amber-700 text-[11px] font-semibold rounded-2xl text-center shadow-sm">
@@ -228,7 +211,6 @@ export function Header({ onOpenSync }) {
         </div>
       )}
 
-      {/* Sync progress notice received from partner */}
       {lastSyncNotice && (
         <div className="max-w-md mx-auto mt-2 animate-bounce">
           <div className="px-3 py-1.5 bg-blush-500 text-white text-xs font-semibold rounded-full text-center shadow-md shadow-blush-300/40">
@@ -237,11 +219,6 @@ export function Header({ onOpenSync }) {
         </div>
       )}
 
-      {/* X6: a peer id from a link is not consent to dial it.
-          Portalled to <body>: this <header> sets backdrop-blur, which makes it a
-          containing block for fixed descendants, so an overlay rendered inline
-          would be trapped inside the header strip and painted under the z-40
-          bottom nav. */}
       {pendingInvite &&
         createPortal(
           <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
