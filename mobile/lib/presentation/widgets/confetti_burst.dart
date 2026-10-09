@@ -326,10 +326,9 @@ class ConfettiCanvasController extends ChangeNotifier {
 }
 
 class _ConfettiCanvasState extends State<ConfettiCanvas> with SingleTickerProviderStateMixin {
-  static const Duration _frame = Duration(microseconds: 16667);
+  static const Duration _minStep = Duration(milliseconds: 15);
   late final Ticker _ticker = createTicker(_onTick);
-  Duration _last = Duration.zero;
-  Duration _carry = Duration.zero;
+  Duration? _lastStep;
   Size _size = Size.zero;
 
   @override
@@ -341,8 +340,7 @@ class _ConfettiCanvasState extends State<ConfettiCanvas> with SingleTickerProvid
 
   void _ensureRunning() {
     if (widget.controller.isActive && !_ticker.isActive) {
-      _last = Duration.zero;
-      _carry = _frame;
+      _lastStep = null;
       _ticker.start();
     }
   }
@@ -350,15 +348,11 @@ class _ConfettiCanvasState extends State<ConfettiCanvas> with SingleTickerProvid
   void _onTick(Duration elapsed) {
     final controller = widget.controller;
     controller.spawnPending(_size);
-    _carry += elapsed - _last;
-    _last = elapsed;
-    var steps = 0;
-    while (_carry >= _frame && steps < 4) {
-      _carry -= _frame;
-      steps += 1;
+    final last = _lastStep;
+    if (last == null || elapsed - last > _minStep) {
+      _lastStep = elapsed;
       controller.stepFrame();
     }
-    if (_carry > _frame * 4) _carry = Duration.zero;
     if (!controller.isActive) _ticker.stop();
   }
 
