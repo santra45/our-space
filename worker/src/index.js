@@ -1,86 +1,7 @@
-/**
- * worker/src/index.js
- * The mailbox. A shelf that holds sealed envelopes and cannot read one.
- *
- * WHAT THIS IS FOR
- * Our Space syncs phone-to-phone over WebRTC, which requires both phones awake,
- * both apps open, at the same moment. For two people in one house that is a
- * minor annoyance. For two people in different time zones it is the reason the
- * app stops getting used. This removes the "at the same moment" part and
- * nothing else.
- *
- * WHAT IT IS NOT
- * It is not a queue and it is not a server that knows anything. It stores
- * opaque bytes at exact keys and hands them back. It cannot list a bucket, it
- * cannot read a record, it does not know who you are, how many of you there
- * are, or that any of this has to do with a relationship.
- *
- * WHY NOTHING IS EVER DELETED ON DELIVERY
- * The obvious design is a queue: push a change, the other phone collects it,
- * erase it. That needs an acknowledgement, and an acknowledgement that goes
- * missing either erases something that was never applied or delivers it twice.
- * It also breaks the moment one person has two devices, because whichever one
- * collects first destroys the copy the other one needed.
- *
- * So this is a MIRROR. Each device publishes its current state and overwrites
- * in place. Reading the same object twice is a no-op, delivery needs no
- * bookkeeping, and an interrupted sync resumes by simply starting again. A
- * deletion travels as a TOMBSTONE that gets written like any other record -
- * which is why this Worker deliberately implements no DELETE at all. Removing
- * an object would mean the other phone never learns the record died, and a
- * deleted letter would come back to life on the next sync.
- *
- * WHAT STOPS A STRANGER READING IT
- * The path. Every mailbox lives under a 256-bit id derived from the vault key
- * (see src/services/mailbox.js), so finding one means guessing it, and this
- * Worker will not enumerate: there is no list route and an unknown key is a
- * flat 404. Everything inside is AES-GCM ciphertext produced on a phone, so a
- * guessed path yields bytes nobody can open. The app's existing rules treat
- * every inbound record as hostile regardless, which is what lets this thing be
- * deployed by someone who has not audited it.
- *
- * ABOUT THE TOKEN, HONESTLY
- * MAILBOX_TOKEN is compiled into a browser bundle on the client side, so it is
- * public to anyone who opens devtools. It is here to stop a passer-by burning
- * the request quota, not to keep a secret. The path is the credential. Do not
- * mistake the token for security, and do not reuse a real password for it.
- *
- * WHERE IT STORES THINGS
- * Workers KV, because it is included in the Workers free plan with no payment
- * method on file. R2 has a far larger free tier but requires a card to activate
- * even so, which is a silly thing to ask of someone setting this up for two
- * people. Both bindings work here - see readObject - so switching later is a
- * one-line change in wrangler.toml.
- *
- * KV IS EVENTUALLY CONSISTENT, and that is fine here but worth knowing. A write
- * can take up to a minute to be visible everywhere, and a miss can stay cached
- * about as long. The entire point of this thing is that the two of you are NOT
- * online together, so a minute is nothing - but if you publish on one phone and
- * immediately check the other, that is why it looks like nothing happened.
- *
- * DEPLOY
- *   cd worker
- *   npx wrangler kv namespace create MAILBOX   # paste the id into wrangler.toml
- *   npx wrangler secret put MAILBOX_TOKEN      # any long random string
- *   npx wrangler deploy
- */
-
-/**
- * Ceiling on one stored object. A photo record is the large case, ~12MB after
- * base64, and KV's own per-value limit is 25MB.
- */
 const MAX_OBJECT_BYTES = 16 * 1024 * 1024;
 
-/** `/m/<mailboxId>/<owner>/manifest` or `/m/<mailboxId>/<owner>/rec/<table>/<key>`. */
 const PATH = /^\/m\/([0-9a-f]{32,64})\/([A-Za-z0-9_-]{8,64})\/(manifest|rec\/[A-Za-z0-9]{1,32}\/[A-Za-z0-9_-]{1,255})$/;
 
-/**
- * Constant-time string compare.
- *
- * An early-exit compare leaks the token a character at a time to anyone willing
- * to measure. The token is not much of a secret (see above), but writing the
- * fast version here is how the habit leaks into somewhere it matters.
- */
 function safeEqual(a, b) {
   if (typeof a !== 'string' || typeof b !== 'string' || a.length !== b.length) return false;
   let diff = 0;
@@ -88,12 +9,6 @@ function safeEqual(a, b) {
   return diff === 0;
 }
 
-/**
- * CORS. The app is the only caller and it is served from one known origin, so
- * ALLOWED_ORIGIN is checked rather than reflected - reflecting the request's
- * own Origin is the same as allowing everyone, which is the default people
- * reach for and then never revisit.
- */
 function corsHeaders(request, env) {
   const allowed = env.ALLOWED_ORIGIN || '';
   const origin = request.headers.get('Origin') || '';
@@ -103,27 +18,11 @@ function corsHeaders(request, env) {
     'Access-Control-Max-Age': '86400',
     Vary: 'Origin',
   };
-  // A comma-separated list, so a preview deployment can be added without
-  // opening the Worker to the whole web.
   const list = allowed.split(',').map((s) => s.trim()).filter(Boolean);
   if (origin && list.includes(origin)) headers['Access-Control-Allow-Origin'] = origin;
   return headers;
 }
 
-/**
- * Reads one object from whichever store is bound, or null when it is not there.
- *
- * WHY THIS WORKS FOR BOTH KV AND R2
- * KV is the default because it is on the Workers free plan and needs no payment
- * method on file, which R2 does even for its free tier - a real barrier for
- * someone setting this up for two people who will never approach any limit.
- * But R2 remains a perfectly good binding here for anyone who already has it,
- * and the two APIs differ by one call, so supporting both costs almost nothing
- * and means nobody has to migrate.
- *
- * R2's get() returns an object with a body; KV's returns the value directly and
- * has to be told what type to decode it as. `head` exists only on R2.
- */
 async function readObject(store, key) {
   if (typeof store.head === 'function') {
     const object = await store.get(key);
@@ -138,8 +37,6 @@ function reply(status, body, extra) {
     headers: {
       'Content-Type': 'application/octet-stream',
       'Cache-Control': 'no-store',
-      // Nothing here is a document, and a browser must never be tempted to
-      // treat a stored blob as one.
       'X-Content-Type-Options': 'nosniff',
       ...extra,
     },
@@ -155,7 +52,6 @@ export default {
     }
 
     if (!cors['Access-Control-Allow-Origin']) {
-      // Not a browser we recognise. Say as little as possible.
       return reply(403, null, cors);
     }
 
@@ -171,8 +67,6 @@ export default {
     const url = new URL(request.url);
     const match = PATH.exec(url.pathname);
     if (!match) {
-      // Covers every shape this Worker refuses to serve, including anything
-      // that looks like a listing. There is no route that enumerates.
       return reply(404, null, cors);
     }
 
@@ -181,8 +75,6 @@ export default {
 
     if (request.method === 'GET') {
       const body = await readObject(env.MAILBOX, key);
-      // A missing object is the ordinary case, not an error: it is what the
-      // other phone sees before you have ever published.
       if (body === null) return reply(404, null, cors);
       return reply(200, body, cors);
     }
@@ -191,9 +83,6 @@ export default {
       const declared = Number(request.headers.get('Content-Length') || '0');
       if (declared > MAX_OBJECT_BYTES) return reply(413, 'Too large', cors);
 
-      // Content-Length can be absent or a lie, so the body is read and measured
-      // before anything is stored. Without this a chunked upload walks straight
-      // past the check above.
       const body = await request.arrayBuffer();
       if (body.byteLength > MAX_OBJECT_BYTES) return reply(413, 'Too large', cors);
 
@@ -201,9 +90,6 @@ export default {
       return reply(204, null, cors);
     }
 
-    // DELETE is deliberately absent. A deletion in this app travels as a
-    // tombstone record that is WRITTEN, not as an object that disappears - see
-    // the header comment.
     return reply(405, null, cors);
   },
 };
