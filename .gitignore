@@ -1,4 +1,3 @@
-# Logs
 logs
 *.log
 npm-debug.log*
@@ -7,13 +6,11 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
-# Node dependencies
 node_modules
 dist
 dist-ssr
 *.local
 
-# Editor directories and files
 .vscode/*
 !.vscode/extensions.json
 .idea
@@ -24,10 +21,6 @@ dist-ssr
 *.sln
 *.sw?
 
-# Environment variables & local vaults
-#
-# The negation has to come LAST. A broader `.env*` further down silently
-# re-ignored .env.example and the template could not be committed at all.
 .env
 .env.*
 .env*
@@ -35,14 +28,11 @@ dist-ssr
 *.vault
 .vercel
 
-# Local dev tooling
 .claude/
 .gemini/
 .agents/
 .agent/
 
-# Wrangler build/state cache, created on deploy.
 worker/.wrangler/
 
-# mobile folder only for mobile branchs
 mobile/
