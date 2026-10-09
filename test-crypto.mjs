@@ -1,79 +1,4 @@
-/**
- * test-crypto.mjs
- * Verification suite for the zero-knowledge crypto layer.
- *
- * Run with `npm test`. No framework, no dependencies - Node's own WebCrypto is
- * the same implementation the browser uses, so everything here is a real
- * AES-GCM / PBKDF2 / HKDF operation rather than a mock.
- *
- * COVERAGE
- *   1. Primitives            base64, nonces, salts, validators
- *   2. KDF derivation        one iteration count, and what a recorded one means
- *   3. Passphrase handling   NFKC normalisation, trimming, verified derivation
- *   4. Canary                passphrase proof used by unlock, pairing and backup
- *   5. AEAD                  associated data actually binds
- *   6. Record envelopes      schema v2, metadata genuinely encrypted at rest
- *  6b. Bound photo bytes    a swapped blob under a valid envelope is detected,
- *                           and a pre-digest row still opens
- *   7. One record shape      an unsealed row is not a record and never becomes one
- *   8. Time locks            seal/unseal, and that the date is BOUND, not checked
- *   9. Backups               containers round-trip, with or without a recorded count
- *  10. Invites               a stranger's link cannot choose our PBKDF2 salt
- *  11. Foreign backups       a stranger's file cannot overwrite a colliding id
- * 11d. Photo-swap forgery   a kept envelope plus swapped bytes is refused on
- *                           both the import and the sync gate
- * 11e. Table binding       an envelope sealed for one table cannot be replayed
- *                           into another, and an unbound one may only create
- * 11septies. Honest refusals  a row refused for an unverifiable binding is
- *                           counted and reported as that, never as staleness
- * 11octies.  Restore preview  the same split on the import path, and
- *                           applyBackupMerge's re-check re-derives the verdict
- * 11nonies.  Tamper on read   a swapped photo under a bound envelope is flagged
- *                           where every screen already looks for it
- *  12. Merge precedence      an older backup does not revert newer local work
- *  13. Rescue restore        adopt an identity, unlock with the ORIGINAL phrase
- *  14. Import sanitising     a restored clock artefact cannot win forever
- *  15. Tamper isolation      one bad record does not poison the whole restore
- *
- * HOW SECTIONS 11-15 REACH db/index.js WITHOUT A BROWSER
- * `planBackupMerge`, `applyBackupMerge`, `restoreVaultIdentity`,
- * `readVaultIdentity` and `exportRawDataForBackup` are methods on a Dexie
- * subclass, but the only Dexie surface they touch is `table(name)` with
- * get/put/toArray/bulkGet/bulkPut, `transaction()` and `vaultMeta`. So
- * `FakeVaultStore` below supplies exactly that in memory and the SHIPPED methods
- * are then borrowed onto it verbatim. The storage underneath is fake; none of
- * the logic on top of it is. The precedence rule really is fetched out of
- * peerSync at call time - section 12 proves that with a spy rather than assuming
- * it.
- *
- * WHAT THIS SUITE CANNOT COVER (nothing below is stubbed to look covered)
- *  - The `blocked` event that drives
- *    isUpgradeBlocked()/subscribeUpgradeBlocked(). It needs a real IndexedDB
- *    with two live connections. There is no upgrade callback left to cover:
- *    the app declares one schema version and nothing migrates.
- *  - The `_del` tombstone hooks, which are Dexie CRUD hooks.
- *  - Every React gate: LockScreen's restore mode, its unreadable panel and its
- *    slow/blocked hint during 'checking', SyncHubModal's ImportPreview rendering
- *    (section 11c covers only the classification it branches on),
- *    SecretCapsule's sealed-vs-date-gated banner, VaultContext's
- *    guardDestructiveWrite,
- *    vaultCheckState/retryVaultCheck, wipeSyncedTables ordering and the
- *    DESTROY_CONFIRMATION_PHRASE prompt. Section 13 reproduces the crypto
- *    sequence VaultContext.restoreVaultFromBackup performs, not the UI that
- *    decides to call it.
- *  - peerSync's TRANSPORT half: admission control, per-peer backoff, the flood
- *    breaker and _emitFatal closing the connection. Those need PeerJS/WebRTC.
- *    Its APPLY half is covered: section 11septies runs the shipped
- *    _stageIncomingRecords / _verifyRecordIntegrity / _commitStagedRecords /
- *    _applySingleLiveRecord on the shipped singleton, with the `db` singleton's
- *    `table` and `transaction` pointed at a FakeVaultStore for the duration.
- *    The pure merge rule (_incomingWins/_fingerprint) is exercised directly.
- *  - getSyncSafeTimestamp()'s localStorage high-water floor, and therefore
- *    softDelete()'s use of it.
- *  - SecretCapsule's retro-seal re-read/verify loop, which is React + Dexie.
- */
 import {
-  // primitives
   generateSalt,
   generateSecureNonce,
   generateUrlSafeNonce,
@@ -81,7 +6,6 @@ import {
   base64ToBuffer,
   isValidBase64,
   isValidSalt,
-  // kdf
   deriveKeyFromPassphrase,
   deriveKeyWithVerification,
   deriveVaultKeyBits,
@@ -89,30 +13,25 @@ import {
   normalizePassphrase,
   PBKDF2_ITERATIONS_CURRENT,
   MIN_PASSPHRASE_LENGTH,
-  // canary
   createCanary,
   readCanary,
   verifyPassphraseAgainstMeta,
   VAULT_CANARY_TOKEN,
-  // aead
   encryptText,
   decryptText,
   encryptJSON,
   decryptJSON,
   encryptBlob,
   decryptBlob,
-  // records
   encryptRecord,
   decryptRecord,
   RECORD_SCHEMA_VERSION,
   PLAINTEXT_RECORD_FIELDS,
-  // time locks
   sealTimeLocked,
   unsealTimeLocked,
   isTimeLockOpen,
   getTimeLockBoundary,
   TimeLockedError,
-  // backups
   createEncryptedBackup,
   decryptBackupContainer,
   recordHasAuthenticatedHeader,
@@ -125,8 +44,6 @@ import db, {
   compareVaultIdentity,
 } from './src/db/index.js';
 import peerSync from './src/services/peerSync.js';
-
-/* ------------------------------------------------------------------ harness */
 
 let passed = 0;
 const failures = [];
@@ -141,7 +58,6 @@ function check(label, condition) {
   }
 }
 
-/** Asserts that `fn` rejects, optionally matching the error. */
 async function checkThrows(label, fn, match) {
   try {
     await fn();
@@ -164,29 +80,14 @@ function section(title) {
 
 const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 
-/** Fast key for tests that are not about the KDF itself. */
 const fastKey = (passphrase, salt) => deriveKeyFromPassphrase(passphrase, salt, { iterations: 2000 });
 
-/* -------------------------------------------------- a device, without Dexie */
-
-/**
- * The minimum Dexie surface db/index.js's backup and identity code actually
- * uses, backed by plain Maps.
- *
- * This exists so the REAL methods can run in Node. It deliberately implements
- * storage only - no timestamp comparison, no validation, no precedence - so a
- * bug in the shipped logic cannot be masked by a helpful reimplementation here.
- * The methods themselves are copied onto the prototype below, straight off
- * SweetheartDatabase, so these tests fail if that code changes behaviour.
- */
 class FakeVaultStore {
-  /** @param {Record<string, Object[]>} [seed] Rows per table, keyed by table name. */
   constructor(seed = {}) {
     this._tables = new Map();
     for (const name of EXPORTED_TABLES) {
       this._tables.set(name, new Map((seed[name] || []).map((row) => [row.id, row])));
     }
-    /** Set to make every read throw, standing in for a blocked/failed IndexedDB. */
     this.failReads = false;
   }
 
@@ -220,8 +121,6 @@ class FakeVaultStore {
           },
         };
       },
-      // The two index reads getManifest() walks. Storage only - no ordering
-      // guarantees are implied, because getManifest does not depend on any.
       orderBy(field) {
         return {
           async eachKey(callback) {
@@ -251,8 +150,6 @@ class FakeVaultStore {
     return this.table('vaultMeta');
   }
 
-  // Dexie serialises writes here; in memory there is nothing to serialise, so the
-  // body simply runs. applyBackupMerge's re-check inside it is what is under test.
   async transaction(mode, tables, body) {
     return body();
   }
@@ -264,19 +161,12 @@ for (const method of [
   'planBackupMerge',
   'applyBackupMerge',
   'restoreVaultIdentity',
-  // The write paths, so the sections that reason about what an ordinary write
-  // produces drive the real implementations rather than a restatement of them.
   'putEncrypted',
   'putEncryptedMany',
   'softDelete',
-  // Stamps the `_del` index mirror. bulkPut does not fire Dexie's tombstone
-  // hooks and encryptRecord strips the field, so every write site calls this
-  // explicitly - which makes it a real dependency of applyBackupMerge.
   '_withDelIndex',
-  // Read paths, so the sealed-table check on reads is driven for real.
   'getDecrypted',
   'listDecrypted',
-  // What the mailbox publishes and diffs against, including its tombstone pass.
   'getManifest',
 ]) {
   if (typeof SweetheartDatabase.prototype[method] !== 'function') {
@@ -285,15 +175,12 @@ for (const method of [
   FakeVaultStore.prototype[method] = SweetheartDatabase.prototype[method];
 }
 
-/* ------------------------------------------------------------------- suite */
-
 async function run() {
   console.log('=== Our Space — crypto verification suite ===');
 
   const passphrase = 'my-super-secret-couple-passphrase-2026';
   const salt = generateSalt();
 
-  /* --------------------------------------------------- 1. primitives */
   section('1. Primitives');
 
   check('generateSalt() produces a valid 16-byte salt', isValidSalt(salt));
@@ -322,17 +209,10 @@ async function run() {
   check('isValidSalt rejects a 32-byte value', !isValidSalt(bufferToBase64(new Uint8Array(32))));
   check('isValidBase64 rejects non-base64 characters', !isValidBase64('not base64!!'));
 
-  /* ----------------------------------------------- 2. KDF derivation */
   section('2. KDF derivation (X8)');
 
-  // ONE COUNT. A vault still records the number it derives at, because a future
-  // bump needs something to compare against and because unlock should be one
-  // PBKDF2 run rather than a search - but nothing chooses between two counts any
-  // more, and nothing a stranger sends gets to choose at all.
   check('every vault derives at 600,000 iterations', PBKDF2_ITERATIONS_CURRENT === 600000);
 
-  // A vault whose recorded count is not the default. Cheap on purpose: what is
-  // under test is that the RECORDED number is the one used, not the number.
   const countedSalt = generateSalt();
   const countedKey = await deriveKeyFromPassphrase(passphrase, countedSalt, { iterations: 2000 });
   const countedMeta = {
@@ -348,7 +228,6 @@ async function run() {
   );
   check("a vault's recorded count is the one unlock derives at", countedOpen.iterations === 2000);
 
-  // The bug the whole mechanism exists to prevent.
   await checkThrows(
     'and a derive that ignores the recorded count produces the WRONG key',
     async () => {
@@ -360,8 +239,6 @@ async function run() {
     (err) => err.message.includes('as expected')
   );
 
-  // VaultContext.unlockVault passes `meta.kdfIterations` straight through, so a
-  // row that never recorded one has to land on the count every vault uses.
   const uncountedSalt = generateSalt();
   const uncountedKey = await deriveKeyFromPassphrase(passphrase, uncountedSalt, {
     iterations: PBKDF2_ITERATIONS_CURRENT,
@@ -381,7 +258,6 @@ async function run() {
     uncountedOpen.iterations === PBKDF2_ITERATIONS_CURRENT
   );
 
-  /* ------------------------------------------ 3. passphrase handling */
   section('3. Passphrase handling');
 
   await checkThrows(
@@ -417,7 +293,6 @@ async function run() {
     (err) => /Incorrect passphrase/.test(err.message)
   );
 
-  /* -------------------------------------------------------- 4. canary */
   section('4. Canary (D3 — backup and pairing passphrase proof)');
 
   const key = await fastKey(passphrase, salt);
@@ -433,10 +308,6 @@ async function run() {
 
   const wrongKey = await fastKey('a-completely-different-passphrase', salt);
   check('readCanary returns null for the wrong key', (await readCanary(wrongKey, meta)) === null);
-  // verifyPassphraseAgainstMeta derives at the one count there is, so its
-  // fixture is built at that count rather than the fast one every other section
-  // uses. This is the check that stops a typo producing a .vault file nobody can
-  // ever open, so it is worth the real PBKDF2 runs.
   check(
     'verifyPassphraseAgainstMeta accepts the real passphrase',
     (await verifyPassphraseAgainstMeta(passphrase, uncountedMeta)) === true
@@ -446,7 +317,6 @@ async function run() {
     (await verifyPassphraseAgainstMeta(passphrase + 'x', uncountedMeta)) === false
   );
 
-  /* ---------------------------------------------------------- 5. AEAD */
   section('5. AES-GCM and associated data');
 
   const secret = 'I love you to the moon and back 💕';
@@ -482,7 +352,6 @@ async function run() {
   const roundTripped = new Uint8Array(await (await decryptBlob(packed, key)).arrayBuffer());
   check('binary blob round-trips byte for byte', eq(Array.from(roundTripped), Array.from(imageBytes)));
 
-  /* ----------------------------------------- 6. record envelopes (v2) */
   section('6. Record envelopes — schema v2 encrypted metadata');
 
   const blobBytes = new Uint8Array([1, 2, 3, 4, 5]);
@@ -519,7 +388,6 @@ async function run() {
   check('an untouched row is not flagged as tampered', back._headerTampered === false);
   check('recordHasAuthenticatedHeader accepts a genuine envelope', recordHasAuthenticatedHeader(row) === true);
 
-  // A hostile peer rewriting the plaintext header it can see without a key.
   const forged = { ...row, updatedAt: 9999999999999 };
   const forgedBack = await decryptRecord(forged, key);
   check(
@@ -539,21 +407,13 @@ async function run() {
   );
   await checkThrows('encryptRecord demands a string id', async () => encryptRecord({ caption: 'x' }, key));
 
-  /* ------------------------------ 6b. the photo bytes are bound too */
   section('6b. Photo bytes are bound into the envelope');
 
-  // The hole this closes: the envelope authenticates the JSON payload, and the
-  // photo is NOT in that payload - `imageBlob` rides at the top level so
-  // IndexedDB stores real bytes. So one valid envelope for a memory id was
-  // enough to destroy the photo under it: keep the envelope, swap the bytes, and
-  // the row decrypted, reported an untampered header, and passed every gate.
-  // Binding the header (0fa7116) did not touch this, because nothing about the
-  // header changes when only the bytes do.
   check('an untouched row reports its binary as verified', back._binaryTampered === false);
   check('and not as merely unverified', back._binaryUnverified === false);
   check('the digest is not readable at rest', row._bin === undefined && row.imageBlob === blobBytes);
 
-  const swappedBytes = new Uint8Array([9, 9, 9, 9, 9]); // same length, different content
+  const swappedBytes = new Uint8Array([9, 9, 9, 9, 9]);
   const swappedPhoto = await decryptRecord({ ...row, imageBlob: swappedBytes }, key);
   check('swapping the photo bytes is DETECTED (_binaryTampered)', swappedPhoto._binaryTampered === true);
   check(
@@ -567,9 +427,6 @@ async function run() {
   );
   check('stripping the photo out of a row that had one is DETECTED', strippedPhoto._binaryTampered === true);
 
-  // A tombstone is sealed with no binary at all, so its digest map is EMPTY -
-  // which is why bolting a photo onto one is detectable. An absent map means
-  // something entirely different (see the pre-digest case below).
   const tombstone = await encryptRecord({ id: 'mem-abc123', updatedAt: 1750000000001, deleted: true }, key);
   const bolted = await decryptRecord({ ...tombstone, imageBlob: blobBytes }, key);
   check(
@@ -577,8 +434,6 @@ async function run() {
     bolted._binaryTampered === true
   );
 
-  // A caller cannot pre-supply the digest map: `_bin` is an internal field, so
-  // encryptRecord drops it and hashes the real bytes itself.
   const forgedDigest = await encryptRecord(
     { id: 'mem-forged-digest', updatedAt: 1750000000002, deleted: false, imageBlob: blobBytes, _bin: { imageBlob: 'not-a-real-digest' } },
     key
@@ -593,10 +448,6 @@ async function run() {
     (await decryptRecord({ ...forgedDigest, imageBlob: swappedBytes }, key))._binaryTampered === true
   );
 
-  // BACKWARD COMPATIBILITY. Every v2 row already in a live vault was sealed
-  // before this field existed and carries no digest map. Those must keep
-  // opening, photo attached: a missing map is old, not forged. Only a WRONG map
-  // is forged. Hand-built here because encryptRecord can no longer produce one.
   const preDigestPayload = {
     id: 'mem-pre-digest',
     updatedAt: 1750000000003,
@@ -624,9 +475,6 @@ async function run() {
     recordHasAuthenticatedHeader(preDigestRow) === true
   );
 
-  // A row with a photo bolted onto no envelope at all has nowhere to put a
-  // digest, exactly as it has nowhere to put a bound header. It is not a
-  // half-verified record - it is not a record (see section 7).
   await checkThrows(
     'and a photo bolted onto a row with no envelope is not a record at all',
     async () =>
@@ -637,19 +485,8 @@ async function run() {
     (err) => /not a sealed record/.test(err.message)
   );
 
-  /* --------------------------------- 7. there is one record shape */
   section('7. There is exactly one record shape');
 
-  // The app briefly carried a second, older shape: metadata in PLAINTEXT and
-  // indexed, each text field in its own `<name>Cipher` / `<name>Iv` pair. Its
-  // plaintext id / updatedAt / deleted header was bound to nothing, so one
-  // ciphertext made under the vault key could be aimed at any id at all - and
-  // every forgery the sections below used to have to catch downstream started
-  // exactly there.
-  //
-  // This is what "deleted" means, and it is the invariant the rest of this suite
-  // now rests on: decryptRecord refuses anything that is not a complete
-  // envelope, so such a row never becomes a record on any path at all.
   const oldShapeCipher = await encryptText('Read me on our anniversary', key);
   const oldShaped = {
     id: 'let-old-001',
@@ -672,9 +509,6 @@ async function run() {
     async () => decryptRecord({ ...oldShaped, v: 2 }, key),
     (err) => /not a sealed record/.test(err.message)
   );
-  // An empty-string envelope trips the AES-GCM open rather than the shape check,
-  // so the message differs - but the predicate every gate consults says no, and
-  // that is what decides whether the row may be written.
   await checkThrows('nor does an empty-string envelope open', async () =>
     decryptRecord({ id: 'x', updatedAt: 0, deleted: false, v: 2, ciphertext: '', iv: '' }, key)
   );
@@ -688,7 +522,6 @@ async function run() {
     recordHasAuthenticatedHeader(oldShaped) === false
   );
 
-  // The one shape, on the record that used to leak the most at rest.
   const v2Row = await encryptRecord(
     {
       id: 'let-legacy-001',
@@ -722,7 +555,6 @@ async function run() {
     decryptRecord(v2Row, wrongKey)
   );
 
-  // A photo: bytes at the top level, everything describing them inside.
   const memRow = await encryptRecord(
     {
       id: 'mem-legacy-002',
@@ -742,7 +574,6 @@ async function run() {
     eq(Array.from(memBack.imageBlob), Array.from(blobBytes))
   );
 
-  /* ------------------------------------------------- 8. time locks */
   section('8. Time-locked letters (DECISION 3)');
 
   const DAY = 24 * 60 * 60 * 1000;
@@ -772,7 +603,6 @@ async function run() {
     (await unsealTimeLocked(openable, key, { context: letterId })) === body
   );
 
-  // The point of DECISION 3: the date is not a check that can be skipped.
   await checkThrows(
     'DECISION 3: editing the stored unlockDate makes decryption FAIL, not unlock',
     async () =>
@@ -791,8 +621,6 @@ async function run() {
     unsealTimeLocked({ ...openable, wrappedKey: undefined }, key, { context: letterId })
   );
 
-  // Honest limit, stated in the README and the JSDoc: the vault owner can move
-  // the clock. `now` is the same input a moved system clock supplies.
   const cheated = await unsealTimeLocked(sealed, key, {
     context: letterId,
     now: getTimeLockBoundary(future) + 1,
@@ -818,7 +646,6 @@ async function run() {
     sealTimeLocked(body, '', key)
   );
 
-  /* --------------------------------------------------- 9. backups */
   section('9. Encrypted backup containers');
 
   const backupPassphrase = 'a-different-backup-passphrase-2026';
@@ -846,10 +673,6 @@ async function run() {
     decryptBackupContainer({ ...container, ciphertext: container.ciphertext.slice(0, -8) + 'AAAAAAAA' }, backupPassphrase)
   );
 
-  // A .vault whose header does not say which count it used. The container
-  // format has carried one since it existed, but a file is a file: nothing stops
-  // a truncated or hand-edited one arriving without it, and falling back to the
-  // one count there is beats refusing to open a backup that is perfectly good.
   const uncountedBody = await encryptText(JSON.stringify(rawVault), uncountedKey);
   const uncountedContainer = {
     magic: container.magic,
@@ -874,10 +697,8 @@ async function run() {
     (err) => /unrecognized container header/.test(err.message)
   );
 
-  /* --------------------------------------------------- 10. invites */
   section('10. Invite parsing (a stranger must not choose our PBKDF2 salt)');
 
-  // Exactly what SyncHubModal builds: peer id, salt, display config.
   const inviteUrl = buildInviteUrl('love-A1B2C3D4E5F6G7H8', salt, {
     baseUrl: 'https://our-space.example/',
     startDate: '2021-06-14',
@@ -897,7 +718,6 @@ async function run() {
     invite.canary === null && !inviteUrl.includes('canary=')
   );
 
-  // The parameter is still supported for a channel that is already authenticated.
   const proofInvite = parseInvite(
     buildInviteUrl('love-A1B2C3D4E5F6G7H8', salt, {
       baseUrl: 'https://our-space.example/',
@@ -919,10 +739,6 @@ async function run() {
   );
   check('a bare peer id is still a valid invite', parseInvite('love-abcdefgh').partnerPeerId === 'love-abcdefgh');
   check('junk is rejected', parseInvite('!!!') === null && parseInvite('') === null);
-  // A link asking the joining phone to derive at 12 iterations is a link asking
-  // for a weak key. The parameter is not validated any more because it is not
-  // read any more - the joiner derives at the one count and nothing in the link
-  // can move it.
   check(
     'a kdf parameter in a hostile link is ignored entirely',
     parseInvite('#connect=love-abcdefgh&kdf=12').kdfIterations === undefined &&
@@ -937,14 +753,11 @@ async function run() {
     parseInvite(`#connect=love-abcdefgh&names=${'x'.repeat(500)}`).coupleNames.length === 120
   );
 
-  /* ------------------------------- 11. foreign backups (stable-id collision) */
   section('11. A foreign vault cannot overwrite a colliding live record');
 
   const NOW = Date.now();
   const MINUTE = 60 * 1000;
 
-  // The two ids every vault built by this app shares, because they are derived
-  // rather than random. They are the exact rows a blind bulkPut would destroy.
   const liveBucket = await encryptRecord(
     {
       id: 'bkt-default-1',
@@ -967,9 +780,6 @@ async function run() {
     kdfIterations: 2000,
     ...(await createCanary(foreignKey, { coupleNames: 'Someone Else', startDate: '2020-01-01' })),
   };
-  // Stamped NEWER than the live rows on purpose: if precedence were the only
-  // gate, the stranger's copy would win on merit. It has to be refused because
-  // it does not decrypt, not because it happened to be older.
   const foreignBucket = await encryptRecord(
     { id: 'bkt-default-1', updatedAt: NOW, deleted: false, text: 'Not your list', completed: true },
     foreignKey
@@ -1031,24 +841,11 @@ async function run() {
     'the live bkt-default-1 is untouched and still readable',
     survivingPlain.text === 'Watch the sunrise from the roof' && survivingPlain.completed === false
   );
-  /* ------------------ 11b. unauthenticated rows (the real RISK-1 hole) ------ */
   section('11b. A row carrying NO ciphertext cannot get into a table at all');
 
-  // The adversarial review's finding, and the reason it is now structural.
-  //
-  // A row with no encrypted fields never exercises the key. The older record
-  // shape had no envelope to demand, so such a row resolved without the key
-  // being touched at all and the gate read that as "decrypted fine under our
-  // key". Nobody needs a key to build one, and the seeded ids are identical in
-  // every vault by construction, so this was a hand-writable overwrite of live
-  // photos and letters.
-  //
-  // It used to be allowed to CREATE - unsealed rows had to be let in or an old
-  // backup could not restore. That reason is gone, so it is refused outright now
-  // whether or not anything already sits at the id.
   const bareTombstone = {
     id: 'bkt-default-1',
-    updatedAt: NOW + MINUTE, // newer, so precedence alone would let it win
+    updatedAt: NOW + MINUTE,
     deleted: true,
     v: 2,
   };
@@ -1063,7 +860,6 @@ async function run() {
   );
   check('a genuine envelope IS one', recordHasAuthenticatedHeader(liveBucket) === true);
 
-  // Now prove it end-to-end through the SHIPPED merge methods.
   const barePlan = await liveStore.planBackupMerge(
     { bucketList: [bareTombstone], dateIdeas: [{ ...bareTombstone, id: 'roulette-current' }] },
     key
@@ -1084,8 +880,6 @@ async function run() {
     afterBare.text === 'Watch the sunrise from the roof' && afterBare.deleted === false
   );
 
-  // THE NEW RULE, and the whole point of deleting the older shape: an unsealed
-  // row cannot even CREATE, at an id nothing has ever held.
   const bareCreate = { id: 'bkt-never-seen', updatedAt: NOW, deleted: false, v: 2 };
   const bareCreatePlan = await liveStore.planBackupMerge({ bucketList: [bareCreate] }, key);
   check(
@@ -1100,7 +894,6 @@ async function run() {
     (await liveStore.table('bucketList').get('bkt-never-seen')) === undefined
   );
 
-  // applyBackupMerge must not trust a hand-built plan on the create path either.
   const bareSmuggle = await liveStore.applyBackupMerge({
     writes: [{ table: 'bucketList', row: bareCreate }],
     incomingWins: () => true,
@@ -1110,9 +903,6 @@ async function run() {
     (bareSmuggle.written.bucketList || 0) === 0 && bareSmuggle.refusedSincePreview === 1
   );
 
-  // Same hole existed on the wire path; same guard closes it. Lend peerSync the
-  // key so the check under test is actually reached - without one it short
-  // circuits on 'locked' and would pass for the wrong reason.
   const priorKey = peerSync.cryptoKey;
   peerSync.cryptoKey = key;
   try {
@@ -1127,7 +917,6 @@ async function run() {
     peerSync.cryptoKey = priorKey;
   }
 
-  // And the wire header check refuses the old version number before any of that.
   check(
     'the wire gate refuses a version-1 header outright',
     peerSync._validateWireRecord({ id: 'x', updatedAt: NOW, deleted: false, v: 1 }).code ===
@@ -1149,28 +938,8 @@ async function run() {
   );
   check('the live roulette-current is untouched', survivingRoulette.idea === 'Pizza and a bad film');
 
-  /* ------------- 11bis. decoy-ciphertext forgery (the old header hole) ----- */
   section('11bis. A decoy cipher pair is not a record');
 
-  // The bypass an adversarial reviewer built against the first version of this
-  // guard, kept as a permanent regression test.
-  //
-  // The old payload check only asked whether SOME ciphertext was present, and
-  // the older record shape decrypted each `<base>Cipher` field on its own and
-  // stamped `_headerTampered: false` unconditionally - it had no authenticated
-  // copy of the header to disagree with. So ONE ciphertext made under the vault
-  // key, and every backup ships one in its own vaultMeta canary, could be pasted
-  // into a hand-built row as a decoy pair. The row decrypted, looked untampered,
-  // and carried whatever id and `deleted: true` the forger chose. The attacker
-  // needed the backup FILE passphrase and never the vault passphrase; it was
-  // destroy-only, but that was quite enough.
-  //
-  // There is nothing left for a decoy to imitate. The gates ask for an envelope,
-  // and a genuine ciphertext wearing a made-up field name is not one.
-  //
-  // The photo is sealed INTO the envelope (its digest is inside the payload),
-  // exactly as db.putEncrypted writes it. Attaching the bytes to the row after
-  // the fact would build a fixture the integrity check correctly rejects.
   const livePhotoBytes = new Uint8Array([1, 2, 3, 4]);
   const liveMemory = await encryptRecord(
     {
@@ -1184,12 +953,11 @@ async function run() {
   );
   await liveStore.table('memories').put(liveMemory);
 
-  // A real ciphertext under the vault key, standing in for the lifted canary.
   const decoy = await encryptText('anything at all', key);
 
   const forgedTombstone = {
     id: 'mem-1',
-    updatedAt: NOW + MINUTE, // newer, so precedence would let it win
+    updatedAt: NOW + MINUTE,
     deleted: true,
     v: 1,
     captionCipher: decoy.ciphertext,
@@ -1221,7 +989,6 @@ async function run() {
     survivedForgery.deleted !== true && survivedForgery.imageBlob?.length === 4
   );
 
-  // applyBackupMerge must not trust a hand-built plan either.
   const smuggled = await liveStore.applyBackupMerge({
     writes: [{ table: 'memories', row: forgedTombstone }],
     incomingWins: () => true,
@@ -1236,9 +1003,6 @@ async function run() {
     survivedSmuggle.deleted !== true && survivedSmuggle.imageBlob?.length === 4
   );
 
-  // THE CHANGE THIS SECTION EXISTS TO RECORD: the same forgery aimed at an id
-  // nothing holds used to be allowed to create, and that creation was the first
-  // move of a longer chain (see 11sexies). It is refused now.
   const forgedNew = {
     id: 'mem-never-seen',
     updatedAt: NOW,
@@ -1253,15 +1017,8 @@ async function run() {
     createPlan.totals.added === 0 && createPlan.writes.length === 0
   );
 
-  /* -------- 11d. the photo-swap forgery, end to end on the import path ----- */
   section('11d. A swapped photo cannot ride in on a valid envelope');
 
-  // The attacker here holds ONE genuine envelope for a memory id - lifted from
-  // an old .vault file whose own file passphrase they know, or replayed by a
-  // paired partner. They cannot edit it (AES-GCM), so they keep it verbatim and
-  // replace only the bytes beside it. Before the digest binding, that row
-  // decrypted, reported a clean header, passed sanitising and integrity, and
-  // overwrote the only copy of the photo with garbage.
   const pierBytes = new Uint8Array(64).map((_, i) => (i * 13) % 256);
   const pierRow = await encryptRecord(
     {
@@ -1275,7 +1032,6 @@ async function run() {
   );
   const photoStore = new FakeVaultStore({ memories: [pierRow] });
 
-  /** The shape a row actually has inside a container: bytes as base64. */
   const asContainerRow = (storedRow) => {
     const { imageBlob, ...rest } = storedRow;
     return imageBlob ? { ...rest, imageBlobBase64: bufferToBase64(imageBlob) } : rest;
@@ -1293,11 +1049,6 @@ async function run() {
       swapPlan.totals.added === 0 &&
       swapPlan.totals.updated === 0
   );
-  // The counter it lands in is load-bearing, not cosmetic: the preview renders
-  // `undecryptable` as "could not be decrypted by this vault", which is what a
-  // FOREIGN file looks like. This row decrypted perfectly under the live key and
-  // was refused for a swapped photo, and reporting that as "wrong key" told the
-  // user the reassuring story instead of the true one.
   check(
     'and it is NOT reported as undecryptable - it opened under this very key',
     swapPlan.totals.undecryptable === 0
@@ -1310,9 +1061,6 @@ async function run() {
     eq(Array.from(survivingPhoto.imageBlob), Array.from(pierBytes))
   );
 
-  // The wire path runs the same gate. _commitStagedRecords itself needs real
-  // Dexie and cannot run here, but _verifyRecordIntegrity is pure and is what
-  // decides whether a record is ever staged at all.
   const savedPeerKey = peerSync.cryptoKey;
   peerSync.cryptoKey = key;
   try {
@@ -1333,9 +1081,6 @@ async function run() {
     peerSync.cryptoKey = savedPeerKey;
   }
 
-  // An honest restore of the very same rows still works - including a row
-  // sealed before digest binding existed, which is the case that would brick
-  // real photos if a missing digest were treated as a failure.
   const freshPhotoDevice = new FakeVaultStore({});
   const honestPlan = await freshPhotoDevice.planBackupMerge(
     { memories: [asContainerRow(pierRow), asContainerRow(preDigestRow)] },
@@ -1356,25 +1101,13 @@ async function run() {
       restoredPier._binaryTampered === false
   );
 
-  /* ------------- 11ter. blob-length tie-break replay (no forgery needed) --- */
   section('11ter. A replayed envelope with a swapped photo cannot win the tie-break');
 
-  // The third working exploit an adversarial reviewer built, kept as a guard.
-  //
-  // This one needed NO forgery at all. _fingerprint used to append
-  // `blob:${imageBlob.byteLength}` and _incomingWins tie-break 2 compares
-  // fingerprints lexicographically. So an attacker could replay a harvested
-  // envelope byte for byte - same ciphertext, same iv, same updatedAt, nothing
-  // re-encrypted, no vault passphrase - attach a garbage photo whose length in
-  // decimal sorts high ('900' > '64'), and win the tie. The real photo was
-  // overwritten and it landed in the `updated` counter, so every deletion
-  // warning in the preview was bypassed too.
   const tieReplayBase = await encryptRecord(
     { id: 'mem-replay', updatedAt: NOW, deleted: false, caption: 'Real photo' },
     key
   );
   const tieRealPhoto = { ...tieReplayBase, imageBlob: new Uint8Array(64) };
-  // Byte-for-byte identical envelope; only the unauthenticated blob differs.
   const tieSwappedPhoto = { ...tieReplayBase, imageBlob: new Uint8Array(900) };
 
   check(
@@ -1396,7 +1129,6 @@ async function run() {
     peerSync._fingerprint(tieRealPhoto) === peerSync._fingerprint(tieSwappedPhoto)
   );
 
-  // End to end through the shipped merge.
   await liveStore.table('memories').put(tieRealPhoto);
   const tieReplayPlan = await liveStore.planBackupMerge({ memories: [tieSwappedPhoto] }, key);
   check(
@@ -1410,7 +1142,6 @@ async function run() {
     tieSurvived.imageBlob?.length === 64
   );
 
-  // A genuinely newer edit must still win - the fix must not freeze records.
   const tieGenuineEdit = await encryptRecord(
     { id: 'mem-replay', updatedAt: NOW + MINUTE, deleted: false, caption: 'Edited' },
     key
@@ -1420,17 +1151,8 @@ async function run() {
     peerSync._incomingWins(tieRealPhoto, tieGenuineEdit) === true
   );
 
-  /* ------------- 11quater. hostile rows must not create or crash ----------- */
   section('11quater. A hostile row cannot insert an invisible delete or abort the import');
 
-  // Both from adversarial probes A4 and A6.
-  //
-  // A PERFECTLY SEALED tombstone on purpose. This rule is not about forgery: an
-  // insert-a-delete at an id nothing holds destroys nothing, so no integrity
-  // check has a reason to refuse it. It is refused because such a row is
-  // INVISIBLE - every list filters on `deleted` - so the user can neither see
-  // nor remove it, and it sits on a primary key that is identical in every
-  // vault by construction.
   const forgedNewTombstone = await encryptRecord(
     { id: 'bkt-default-3', updatedAt: NOW, deleted: true },
     key,
@@ -1445,8 +1167,6 @@ async function run() {
   const noGhost = await liveStore.table('bucketList').get('bkt-default-3');
   check('so no invisible row is left to suppress the starter seed', !noGhost);
 
-  // A huge number as imageBlob used to throw RangeError OUTSIDE the try, which
-  // aborted the whole restore; a merely large one allocated first, then failed.
   const hugeAlloc = await encryptRecord(
     { id: 'mem-huge', updatedAt: NOW, deleted: false, caption: 'x' },
     key
@@ -1471,20 +1191,8 @@ async function run() {
     hostilePlan && hostilePlan.totals.invalid === 1 && hostilePlan.totals.added === 1
   );
 
-  /* ------------- 11e. an envelope may not change tables -------------------- */
   section('11e. An envelope sealed for one table cannot be replayed into another');
 
-  // The envelope binds id, updatedAt, deleted, and (since the digest map) the
-  // attached bytes. It did NOT bind WHICH TABLE the row belongs to, and neither
-  // import boundary supplied one: planBackupMerge iterates the container's own
-  // keys, and _stageIncomingRecords trusts `item.table` off the wire. So a
-  // genuine bucketList tombstone - correctly sealed, nothing rewritten, opening
-  // perfectly under the vault key - could be moved into the `letters` array of a
-  // container and was classified as a delete against a LIVE letter on that id.
-  //
-  // Only uuid arithmetic stood in the way: the fixed seed ids happen to live in
-  // different tables. That is a property of today's seed data, not an invariant
-  // anything enforces, which is why it is enforced here now.
   const crossLetter = await encryptRecord(
     {
       id: 'shared-id-1',
@@ -1518,8 +1226,6 @@ async function run() {
   const readableLetter = await decryptRecord(survivingLetter, key, { table: 'letters' });
   check('and it still reads correctly in its own table', readableLetter.content === 'Still here.');
 
-  // The fix must not break the honest case: the SAME tombstone, in the table it
-  // was actually sealed for, still deletes.
   await crossStore.table('bucketList').put(
     await encryptRecord(
       { id: 'shared-id-1', updatedAt: NOW - MINUTE, deleted: false, text: 'A real bucket item' },
@@ -1533,7 +1239,6 @@ async function run() {
     honestTombPlan.totals.deleted === 1 && honestTombPlan.totals.tampered === 0
   );
 
-  // The sync path enforces it at the same point, against the peer's own claim.
   const savedCrossKey = peerSync.cryptoKey;
   peerSync.cryptoKey = key;
   try {
@@ -1548,10 +1253,6 @@ async function run() {
     peerSync.cryptoKey = savedCrossKey;
   }
 
-  // COMPATIBILITY, and its price. An envelope sealed before the binding existed
-  // carries none, and is reported `_tableUnverified` rather than tampered - the
-  // same shape the binary digest uses, for the same reason: refusing them would
-  // make every row already in a live vault unrestorable.
   const unboundRow = await encryptRecord(
     { id: 'pre-binding-1', updatedAt: NOW, deleted: false, text: 'Sealed before the binding' },
     key
@@ -1569,12 +1270,6 @@ async function run() {
     compatPlan.totals.added === 1 && compatPlan.totals.tampered === 0
   );
 
-  // The gap this section used to document is now CLOSED, and re-sealing rows at
-  // unlock was never going to close it - that only touches rows this device
-  // HOLDS, while every gate decrypts the row ARRIVING. An envelope harvested
-  // before binding existed would have stayed a permanent capability against that
-  // id on every device however often either side re-sealed. So an absent binding
-  // is its own verdict: `unverified` may CREATE, but never overwrite or delete.
   const unboundTombstone = await encryptRecord(
     { id: 'shared-id-2', updatedAt: NOW, deleted: true },
     key
@@ -1597,7 +1292,6 @@ async function run() {
   const gapSurvivor = await gapStore.table('letters').get('shared-id-2');
   check('the live letter survived the unbound tombstone', gapSurvivor.deleted !== true);
 
-  // An unbound row may still CREATE, so an older vault still restores.
   const unboundCreate = await encryptRecord(
     { id: 'let-from-old-vault', updatedAt: NOW, deleted: false, content: 'Old but honest' },
     key
@@ -1608,11 +1302,6 @@ async function run() {
     createGapPlan.totals.added === 1 && createGapPlan.totals.unauthenticated === 0
   );
 
-  // AND IT STAYS THAT WAY, on this device and on the partner's. There is no
-  // sweep re-sealing rows behind the user's back any more, so an envelope that
-  // predates a binding keeps its create-only standing until the row is genuinely
-  // edited - at which point putEncrypted seals it with the table, like every
-  // other write.
   const editedUnbound = await gapStore.putEncrypted(
     'letters',
     { id: 'let-from-old-vault', updatedAt: NOW + MINUTE, deleted: false, content: 'Edited' },
@@ -1629,15 +1318,8 @@ async function run() {
     editedAway._tableTampered === true && editedAway._headerTampered === true
   );
 
-  /* ------- 11quinquies. a HELD envelope is a capability against its id ----- */
   section('11quinquies. An unverified binding may create but never overwrite');
 
-  // The structural point an adversarial reviewer made, and the reason re-sealing
-  // rows at unlock was never the fix: a sweep re-seals the rows a device HOLDS,
-  // while every gate decrypts the row ARRIVING. An envelope harvested before the
-  // photo digest or the table binding existed is a permanent capability against
-  // that id however often either side re-seals, so the verdict has to be carried
-  // to the gate instead.
   const qSweptStore = new FakeVaultStore({
     memories: [
       {
@@ -1651,8 +1333,6 @@ async function run() {
     ],
   });
 
-  // A pre-binding envelope: no table option, no digest map. Newer, so it would
-  // win on timestamp alone.
   const qHeldEnvelope = await encryptRecord(
     { id: 'mem-swept', updatedAt: NOW + MINUTE, deleted: false, caption: 'Bound and swept' },
     key
@@ -1668,7 +1348,6 @@ async function run() {
       qSwapPlan.totals.unauthenticated + qSwapPlan.totals.tampered === 1
   );
 
-  // The same envelope with the photo simply OMITTED erased it just as well.
   const qStripPlan = await qSweptStore.planBackupMerge({ memories: [qHeldEnvelope] }, key);
   check(
     'and it cannot erase the photo by omitting the bytes either',
@@ -1683,8 +1362,6 @@ async function run() {
     qSweptSurvivor.imageBlob?.length === 64 && qSweptSurvivor.deleted !== true
   );
 
-  // But an unverified row must still be able to CREATE, or restoring a backup
-  // taken before binding existed would be impossible.
   const qOldCreate = await encryptRecord(
     { id: 'mem-from-old-backup', updatedAt: NOW, deleted: false, caption: 'Honest and old' },
     key
@@ -1695,10 +1372,6 @@ async function run() {
     qOldCreatePlan.totals.added === 1 && qOldCreatePlan.totals.unauthenticated === 0
   );
 
-  // And a fully bound, genuinely newer row must still win, or records freeze.
-  // The blob goes THROUGH encryptRecord so it lands in the digest map. Spreading
-  // one on afterwards leaves an attached blob the envelope never sealed, which
-  // is correctly reported as tampering.
   const qBoundNewer = await encryptRecord(
     {
       id: 'mem-swept',
@@ -1716,51 +1389,22 @@ async function run() {
     qBoundPlan.totals.updated === 1 && qBoundPlan.totals.unauthenticated === 0
   );
 
-  /* -------- 11sexies. the kill chain has no first move any more ----------- */
   section('11sexies. An attacker-authored row cannot be created, so there is nothing to launder');
 
-  // The full kill chain an adversarial reviewer executed end to end, kept here
-  // as the record of what the older shape actually cost.
-  //
-  // Attacker holds a harvested .vault FILE and its FILE passphrase. Never the
-  // vault passphrase; they cannot read a single record. Destroy-only.
-  //  1. Any row in the file yields a ciphertext/iv pair made under the vault
-  //     key. Renamed to <base>Cipher/<base>Iv it satisfied the old payload
-  //     check, because the older shape simply decryptText()d it.
-  //  2. They aimed such a row at a real id with a chosen updatedAt and garbage
-  //     bytes. Every tamper flag was stamped false by construction: there was no
-  //     sealed header to disagree with.
-  //  3. On a device that LACKS that id - a rescue restore onto a replacement
-  //     phone, the app's own advertised flow - the create path accepted it. The
-  //     preview read "Added: 1" with no warning anywhere.
-  //  4. The unlock-time re-seal sweep then rebuilt it as a fully bound envelope
-  //     over the attacker's id, timestamp, delete flag and bytes. THAT was the
-  //     escalation, and patching it is the only reason provenance ever existed.
-  //  5. It synced to the partner and destroyed the real photo, with no
-  //     confirmation UI anywhere on that path.
-  //
-  // Steps 3 and 4 are both gone, and they are gone structurally rather than by
-  // being guarded: nothing unsealed can be created, and no code path re-seals a
-  // row behind the user's back.
   const sxDonor = await encryptRecord(
     { id: 'sxDonor', updatedAt: NOW, deleted: false, note: 'any row from the file' },
     key,
     { table: 'letters' }
   );
-  // NOT a tombstone: those are refused at create on their own account (see
-  // 11quater). This is the variant that mattered - an overwrite, which replaces
-  // the letter body (and for a memory, the photo bytes) just as destructively.
   const sxForged = {
     id: 'let-victim',
     updatedAt: NOW + 60 * MINUTE,
     deleted: false,
     v: 1,
-    // The decoy: a genuine ciphertext under the vault key, wearing an old name.
     contentCipher: sxDonor.ciphertext,
     contentIv: sxDonor.iv,
   };
 
-  // STEP 2, control: straight at a device that HAS the id.
   const sxVictimStore = new FakeVaultStore({
     letters: [
       await encryptRecord(
@@ -1776,7 +1420,6 @@ async function run() {
     sxDirectPlan.totals.updated === 0 && sxDirectPlan.writes.length === 0
   );
 
-  // STEP 3 IS GONE. This is the assertion the whole deletion buys.
   const sxLaunderStore = new FakeVaultStore({});
   const sxCreatedPlan = await sxLaunderStore.planBackupMerge({ letters: [sxForged] }, key);
   check(
@@ -1789,7 +1432,6 @@ async function run() {
     (await sxLaunderStore.table('letters').get('let-victim')) === undefined
   );
 
-  // STEP 4 IS GONE. Guarded structurally so it cannot be reintroduced quietly.
   check(
     'and the database has no re-seal sweep left to promote anything with',
     typeof SweetheartDatabase.prototype.migrateLegacyRecords !== 'function' &&
@@ -1806,12 +1448,6 @@ async function run() {
 
     section('11septies. A refusal we cannot verify is NOT staleness and must not read as "up to date"');
 
-  // HOW THE WIRE PATH RUNS IN PLAIN NODE, stated so nobody mistakes it for a
-  // mock: _stageIncomingRecords, _verifyRecordIntegrity and _commitStagedRecords
-  // below are the SHIPPED methods on the shipped singleton. Only their storage
-  // moves - _commitStagedRecords reaches the `db` singleton, so that singleton's
-  // `table` and `transaction` are pointed at a FakeVaultStore for the duration
-  // and put back afterwards. The gate, the counters and the merge rule are real.
   const withFakeDb = async (store, fn) => {
     const hadTable = Object.prototype.hasOwnProperty.call(db, 'table');
     const hadTransaction = Object.prototype.hasOwnProperty.call(db, 'transaction');
@@ -1834,9 +1470,6 @@ async function run() {
   peerSync.cryptoKey = key;
   peerSync.isAuthorized = true;
 
-  // The victim device is fully swept: its own letter is bound on every
-  // dimension. The partner is on the PREVIOUS build, so everything it sends is
-  // sealed without a table binding - `unverified`, not tampered.
   const spLive = await encryptRecord(
     { id: 'let-sp', updatedAt: NOW, deleted: false, content: 'Local copy' },
     key,
@@ -1865,7 +1498,6 @@ async function run() {
     { table: 'letters' }
   );
 
-  /** Runs the real staging + commit for one wire record against a fresh store. */
   const spCommit = async (wireRow) => {
     const store = new FakeVaultStore({ letters: [spLive] });
     const { staged, rejected } = await peerSync._stageIncomingRecords([
@@ -1891,7 +1523,6 @@ async function run() {
     spDelete.applied === 0 && spDelete.unverifiable === 1 && spDelete.stale === 0
   );
 
-  // The distinction has to cut both ways or it is just a rename.
   const spStale = await spCommit(spBoundOlder);
   check(
     'a genuinely older BOUND row is still `stale`, and not `unverifiable`',
@@ -1908,9 +1539,6 @@ async function run() {
     spCreate.applied === 1 && spCreate.unverifiable === 0
   );
 
-  // The whole point of the split is what the user is told. `status.warning` is
-  // rendered verbatim by Header.jsx and SyncHubModal.jsx with no allowlist of
-  // codes, so emitting one is enough to put it on screen.
   const spStatuses = [];
   const spCapture = (status) => spStatuses.push(status);
   peerSync.on('status', spCapture);
@@ -1931,8 +1559,6 @@ async function run() {
       spWarned.warning.includes('1 change') &&
       spWarned.warning.includes('did not come through') &&
       spWarned.warning.includes('up to date on both phones') &&
-      // This copy is read by a couple, not an auditor. Guard the tone too, or it
-      // drifts back the next time someone edits the message.
       !/verif|authenticat|integrity|unverifiable/i.test(spWarned.warning)
   );
   check(
@@ -1946,11 +1572,6 @@ async function run() {
   );
   check('the local copy is untouched by the refused broadcast', spSurvivor.content === 'Local copy');
 
-  /* ---- the tie-break must not be decided by an unauthenticated field ------ */
-
-  // Same bug class as the blob byteLength d00b7c1 removed: a v2 envelope does
-  // not seal the leftover `<base>Cipher` fields, so appending one used to hand
-  // an attacker the tie-break on a byte-for-byte replay.
   const spTieBase = await encryptRecord(
     { id: 'let-tie', updatedAt: NOW, deleted: false, content: 'Mine' },
     key,
@@ -1964,9 +1585,6 @@ async function run() {
     'and the fingerprint of a v2 row ignores it entirely',
     peerSync._fingerprint(spTieBase) === peerSync._fingerprint({ ...spTieBase, contentCipher: 'zzzz' })
   );
-  // Two genuinely different envelopes at the same id and stamp must still be
-  // broken deterministically, and both ways round, or the two devices keep
-  // their own copy forever.
   const spTieOther = await encryptRecord(
     { id: 'let-tie', updatedAt: NOW, deleted: false, content: 'Theirs' },
     key,
@@ -1986,9 +1604,6 @@ async function run() {
 
   section('11octies. Refusals on the RESTORE path are legible, and the re-check is real');
 
-  // R2: restoring a backup taken before the binding shipped can only add rows.
-  // The refusal is right; landing it in one counter labelled "not sealed to the
-  // record it targets" told a user restoring their own rescue file nothing.
   const soLive = await encryptRecord(
     { id: 'let-so', updatedAt: NOW, deleted: false, content: 'On the device' },
     key,
@@ -2030,10 +1645,6 @@ async function run() {
     soOlderPlan.totals.unauthenticated === 1
   );
 
-  // R4: applyBackupMerge's in-transaction re-check tested only
-  // recordHasAuthenticatedHeader, which passes ANY well-formed v2 envelope -
-  // including one sealed for a different table. A hand-built plan wrote a
-  // bucketList envelope straight over a live letter.
   const soCrossTable = await encryptRecord(
     { id: 'let-so', updatedAt: NOW + 120 * MINUTE, deleted: false, text: 'Sealed for bucketList' },
     key,
@@ -2067,8 +1678,6 @@ async function run() {
   });
   check('the live letter survived both hand-built plans', soIntact.content === 'On the device');
 
-  // The honest path must still work end to end, or this is just a lock on the
-  // front door of an empty house.
   const soHonestStore = new FakeVaultStore({ letters: [soLive] });
   const soHonestNewer = await encryptRecord(
     { id: 'let-so', updatedAt: NOW + 60 * MINUTE, deleted: false, content: 'A real newer copy' },
@@ -2085,15 +1694,6 @@ async function run() {
 
   section('11nonies. A swapped photo under a bound envelope is flagged on READ');
 
-  // R6: the sweep's "already bound on both dimensions, skip" continue used to
-  // fire BEFORE its tampering counter, so the one row shape that proves somebody
-  // went at the database directly - fully bound, photo bytes swapped underneath
-  // - was skipped and counted as nothing at all.
-  //
-  // There is no sweep to count anything now, so the guarantee has to come from
-  // the read itself, which is where it always mattered: all five screens that
-  // render records test `_headerTampered` before displaying, and db.getDecrypted
-  // is what sets it.
   const snBytes = new Uint8Array(32).map((_, i) => (i * 7) % 256);
   const snBound = await encryptRecord(
     { id: 'mem-sn', updatedAt: NOW, deleted: false, caption: 'Bound on every dimension', imageBlob: snBytes },
@@ -2127,7 +1727,6 @@ async function run() {
   );
   check('the import gate calls it tampered, not stale', snSwapPlan.totals.tampered === 1);
 
-  // And no false positive on the clean row, or every photo would read as damaged.
   const snCleanStore = new FakeVaultStore({ memories: [snBound] });
   const snClean = await snCleanStore.getDecrypted('memories', 'mem-sn', key);
   check(
@@ -2137,25 +1736,8 @@ async function run() {
       snClean._binaryUnverified === false
   );
 
-  /* ---- 11nonies. no id can come to hold attacker-authored content --------- */
   section('11nonies. An id never comes to hold content this vault did not author');
 
-  // Four chains an adversarial reviewer executed against the first provenance
-  // fix. That fix marked ONE re-encrypt path (the sweep) while five others
-  // re-authored freely, so the marker evaporated on the next ordinary write:
-  //  A1  SecretCapsule's time-lock seal pass - a useEffect, no user gesture
-  //      whatsoever - called putEncrypted and cleared it.
-  //  A2  One tap on an unread letter (isOpened: true) did the same.
-  //  A4  One checkbox tap on a bucket-list item, likewise.
-  //  A3  Worst: a hostile peer creates a junk row, the user sees an
-  //      unrecognisable card, taps Delete and confirms - and softDelete minted a
-  //      fully AUTHENTICATED tombstone at that id, which replicated and erased
-  //      the partner's real photo. The user's own caution was the weapon.
-  //
-  // Every one of those chains starts with a hostile row being CREATED at an id,
-  // and that is what no longer happens. So "what standing does this row have?"
-  // stops being a question the app has to carry per id, and the ordinary write
-  // paths can author freely again - which is what makes a delete replicate.
   const spDonor = await encryptRecord(
     { id: 'sp-donor', updatedAt: NOW, deleted: false, note: 'harvested' },
     key,
@@ -2177,8 +1759,6 @@ async function run() {
     spPlan.totals.added === 0 && (await spStore.table('letters').get('sp-victim')) === undefined
   );
 
-  // A1/A2/A4: the ordinary write paths, which used to have to inherit a reduced
-  // standing from whatever sat at the id.
   const spFresh = await spStore.putEncrypted(
     'letters',
     { id: 'sp-mine', updatedAt: NOW, deleted: false, content: 'Mine' },
@@ -2191,7 +1771,6 @@ async function run() {
     spFreshPlain._tableUnverified === false && spFreshPlain._headerTampered === false
   );
 
-  // A3: and the one that cost the most - a delete the partner actually applies.
   const spTomb = await spStore.softDelete('letters', 'sp-mine', key);
   check('a delete mints a sealed tombstone', recordHasAuthenticatedHeader(spTomb) === true);
   const spTombPlain = await decryptRecord(spTomb, key, { table: 'letters' });
@@ -2215,20 +1794,11 @@ async function run() {
     spTombPlan.totals.deleted === 1
   );
 
-  /* ------- 11decies. equal-timestamp delete vs edit must still reconcile ---- */
   section('11decies. A same-instant delete is pulled instead of diverging forever');
 
-  // Reported by the project owner. _diffManifest skipped equal timestamps
-  // outright to avoid two devices requesting from each other forever - but
-  // _incomingWins has a tie-break saying a deletion beats a same-instant edit,
-  // and that rule never got the chance to run. Phone A edits an item, phone B
-  // deletes it in the same millisecond, neither asks for the other's copy, and
-  // the two stay out of step on that record permanently.
   const dmLocal = [{ id: 'x1', updatedAt: NOW, deleted: false }];
   const dmRemoteDeleted = [{ id: 'x1', updatedAt: NOW, deleted: true }];
 
-  // _diffManifest is the SHIPPED method; only the local manifest it reads is
-  // supplied here, the same way withFakeDb swaps db.table for the write tests.
   const dmDiff = async (localRows, remoteRows) => {
     const saved = db.getManifest;
     db.getManifest = async () => ({ letters: localRows });
@@ -2245,7 +1815,6 @@ async function run() {
     dmPull.length === 1 && dmPull[0].id === 'x1'
   );
 
-  // The mirror case must NOT request, or the two devices ping-pong forever.
   const dmNoPull = await dmDiff(
     [{ id: 'x1', updatedAt: NOW, deleted: true }],
     [{ id: 'x1', updatedAt: NOW, deleted: false }]
@@ -2255,26 +1824,14 @@ async function run() {
     dmNoPull.length === 0
   );
 
-  // Two same-instant edits still must not request, for the same reason.
   const dmBothLive = await dmDiff(dmLocal, [{ id: 'x1', updatedAt: NOW, deleted: false }]);
   check('two same-instant edits still do not loop', dmBothLive.length === 0);
 
-  // And genuinely newer still wins, as before.
   const dmNewer = await dmDiff(dmLocal, [{ id: 'x1', updatedAt: NOW + 1000, deleted: false }]);
   check('a genuinely newer remote row is still requested', dmNewer.length === 1);
 
-  /* -------- 11undecies. tombstones must survive a bulk write ---------------- */
   section('11undecies. A tombstone written in bulk keeps its `_del` index mirror');
 
-  // Reported by the project owner. Dexie's `creating`/`updating` hooks keep
-  // `_del` in step with `deleted`, but they DO NOT FIRE for bulkPut/bulkAdd -
-  // and encryptRecord strips `_del`, because it is local bookkeeping that must
-  // never be sealed into an envelope or put on the wire.
-  //
-  // So every row written in bulk landed with `_del` undefined. getManifest()
-  // reads tombstones off `where('_del').equals(1)`, so a restored tombstone was
-  // advertised to the partner as deleted:false - and a deleted memory came back
-  // from the dead on the next sync.
   const tsTomb = await encryptRecord(
     { id: 'ts-gone', updatedAt: NOW, deleted: true },
     key,
@@ -2301,7 +1858,6 @@ async function run() {
     tsStore._withDelIndex({ ...tsLive })._del === 0
   );
 
-  // End to end through the shipped restore path, which writes with bulkPut.
   const tsTarget = new FakeVaultStore({
     letters: [
       await encryptRecord(
@@ -2319,24 +1875,12 @@ async function run() {
     tsWritten.deleted === true && tsWritten._del === 1
   );
 
-  /* ------- 11duodecies. a rolled-back clock must not poison sync forever --- */
   section('11duodecies. A future clock does not permanently future-date this phone');
 
-  // Reported by the project owner. The sync clock floor is monotonic on purpose,
-  // which made a clock change permanent: set the phone's date to next year -
-  // exactly what someone does to peek at a time-locked letter - save anything,
-  // and the floor is stamped a year ahead. Put the clock back and the floor
-  // stays, because it only moves forward. Every record written from then on is
-  // dated in the future and the partner refuses all of them until real time
-  // catches up.
-  const clkKey = 'sweetheart_sync_clock'; // must match SYNC_CLOCK_KEY in peerSync.js
+  const clkKey = 'sweetheart_sync_clock';
   const clkSavedRemote = peerSync._observedRemoteMax;
   const clkSavedIssued = peerSync._lastIssuedStamp;
 
-  // getSyncSafeTimestamp guards every storage access on
-  // `typeof localStorage !== 'undefined'`, so under plain node the floor is
-  // always 0 and the branch under test never runs. A minimal shim makes the
-  // real code path live; it is removed again in the finally below.
   const clkHadLS = typeof globalThis.localStorage !== 'undefined';
   if (!clkHadLS) {
     const store = new Map();
@@ -2352,11 +1896,8 @@ async function run() {
 
   const YEAR_MS = 365 * 24 * 60 * 60 * 1000;
   try {
-    // Simulate the poisoned floor a future-dated save leaves behind.
     localStorage.setItem(clkKey, String(Date.now() + YEAR_MS));
     peerSync._observedRemoteMax = 0;
-    // Earlier sections drive the same singleton, so isolate the in-session
-    // high-water mark too or their stamps leak into this one.
     peerSync._lastIssuedStamp = 0;
 
     const clkNow = Date.now();
@@ -2370,10 +1911,6 @@ async function run() {
       Number(localStorage.getItem(clkKey)) < clkNow + 60 * 1000
     );
 
-    // A partner with a wild clock must not be able to push us arbitrarily far
-    // forward either. It is clamped to the same ceiling the wire enforces
-    // (now + 24h), NOT to now: a partner legitimately a few hours ahead should
-    // still win a merge, which is the whole point of the high-water mark.
     const DAY_MS = 24 * 60 * 60 * 1000;
     peerSync._observedRemoteMax = Date.now() + YEAR_MS;
     const clkStamp2 = peerSync.getSyncSafeTimestamp();
@@ -2382,11 +1919,6 @@ async function run() {
       clkStamp2 <= Date.now() + DAY_MS + 1000 && clkStamp2 < Date.now() + 2 * DAY_MS
     );
 
-    // Normal operation is unchanged: still monotonic, still ahead of the last.
-    // This used to be flaky roughly one run in five, and the flake was a real
-    // bug: after the remote high-water mark pushed a stamp near the ceiling, the
-    // next call clamped back to now and issued an EARLIER stamp than the one
-    // before it. _lastIssuedStamp is what makes it a guarantee.
     peerSync._observedRemoteMax = 0;
     const a = peerSync.getSyncSafeTimestamp();
     const b = peerSync.getSyncSafeTimestamp();
@@ -2401,21 +1933,13 @@ async function run() {
     if (!clkHadLS) delete globalThis.localStorage;
   }
 
-  /* ------- 11terdecies. reads must check the sealed table binding too ------ */
   section('11terdecies. A cross-table row is spotted on read, not just on write');
 
-  // Reported by the project owner. decryptRecord can flag `_tableTampered`, but
-  // only when it is told which table it is reading - and getDecrypted and
-  // listDecrypted never passed one. The write gates refuse a cross-table row an
-  // overwrite, but the create path is deliberately permissive, so such a row CAN
-  // be sitting in a table. Every screen would have rendered it as ordinary
-  // content, because a read that does not ask cannot notice.
   const xtRow = await encryptRecord(
     { id: 'xt-1', updatedAt: NOW, deleted: false, content: 'sealed for letters' },
     key,
     { table: 'letters' }
   );
-  // Same row, filed under bucketList - what the permissive create path allows.
   const xtStore = new FakeVaultStore({ bucketList: [xtRow], letters: [xtRow] });
 
   const xtHonest = await xtStore.getDecrypted('letters', 'xt-1', key);
@@ -2437,8 +1961,6 @@ async function run() {
     xtListed && xtListed._headerTampered === true
   );
 
-  // A row sealed before the table binding existed must still read cleanly, or
-  // every pre-binding record would vanish from the UI.
   const xtUnbound = await encryptRecord(
     { id: 'xt-old', updatedAt: NOW, deleted: false, content: 'from an older build' },
     key
@@ -2450,16 +1972,8 @@ async function run() {
     xtOld._tableUnverified === true && xtOld._headerTampered !== true
   );
 
-  /* ------- 11quaterdecies. every decryptRecord call must name its table ---- */
   section('11quaterdecies. No read path may skip the sealed-table check');
 
-  // This drifted twice. First getDecrypted/listDecrypted were fixed while the
-  // five screens still called decryptRecord directly - and that commit message
-  // claimed no component changes were needed, which was wrong, because the
-  // screens never go through those helpers at all. A source check is the only
-  // thing that actually holds the invariant: `{ table }` is optional in the
-  // signature (pre-binding rows legitimately have none), so no type or runtime
-  // check can catch a caller that simply forgets it.
   const { readdirSync, readFileSync, statSync } = await import('node:fs');
   const { join } = await import('node:path');
 
@@ -2473,11 +1987,9 @@ async function run() {
     return out;
   };
 
-  /** Strips comments so prose mentions of decryptRecord() are not read as calls. */
   const stripComments = (src) =>
     src.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/(^|[^:])\/\/[^\n]*/g, '$1 ');
 
-  /** Returns the argument text of every decryptRecord( ... ) call. */
   const callArgs = (src) => {
     const out = [];
     const needle = 'decryptRecord(';
@@ -2498,15 +2010,12 @@ async function run() {
     return out;
   };
 
-  // crypto.js DEFINES decryptRecord, so it has no caller-supplied table to pass
-  // on.
   const TABLE_CHECK_SKIP = new Set([join('src', 'services', 'crypto.js')]);
 
   const offenders = [];
   for (const file of walkSrc('src')) {
     if (TABLE_CHECK_SKIP.has(file)) continue;
     for (const args of callArgs(stripComments(readFileSync(file, 'utf8')))) {
-      // Accepts `{ table: x }` and the `{ table }` shorthand alike.
       if (!/\btable\b/.test(args)) {
         offenders.push(`${file} -> decryptRecord(${args.replace(/\s+/g, ' ').trim()})`);
       }
@@ -2521,12 +2030,6 @@ async function run() {
 
   section('11c. A backup whose origin cannot be established is `unknown`, not `same`');
 
-  // ImportPreview had branches for 'foreign' and 'no-local-vault' and none for
-  // 'unknown', so a file carrying no readable vault identity rendered exactly
-  // like the user's own backup: counts, no banner, a live Merge button. These
-  // assertions pin the classification that branch keys off, and the reason the
-  // branch is a WARNING rather than an extra confirmation gate: identity is a
-  // label, the per-row key check is the actual gate.
   const healthyLocalRead = { ok: true, meta: { salt } };
 
   check(
@@ -2545,9 +2048,6 @@ async function run() {
     compareVaultIdentity(null, healthyLocalRead) !== 'same'
   );
 
-  // The justification for leaving Merge live on an unknown-origin file: a row is
-  // written only when it authenticates under THIS vault's key, whatever the
-  // file's (missing) vaultMeta says. Mixed file, no identity at all.
   const unknownOriginStore = new FakeVaultStore();
   const mineButUnlabelled = await encryptRecord(
     { id: 'bkt-unknown-origin', updatedAt: NOW, deleted: false, text: 'Actually mine' },
@@ -2570,7 +2070,6 @@ async function run() {
     unknownPlan.writes.length === 1 && unknownPlan.writes[0].row.id === 'bkt-unknown-origin'
   );
 
-  /* --------------------------------- 12. merge precedence is peerSync's rule */
   section("12. An older backup does not revert newer local work (peerSync's own rule)");
 
   const liveLetterA = await encryptRecord(
@@ -2602,8 +2101,6 @@ async function run() {
   const mergeStore = new FakeVaultStore({ letters: [liveLetterA, liveLetterB] });
   const olderBackup = { letters: [backupLetterA, backupLetterB, backupLetterC] };
 
-  // Proof it is not a second rule: swap peerSync's method for a spy and watch
-  // the merge call it. A local copy of the comparison would not touch this.
   const realIncomingWins = peerSync._incomingWins;
   let ruleCalls = 0;
   let mergePlan;
@@ -2641,8 +2138,6 @@ async function run() {
   check('a genuinely newer backup copy does replace the local one', afterB.title === 'Newer backup copy');
   check('a letter only in the backup is restored', afterC.title === 'Only in the backup');
 
-  // The rule the plan carries must agree with the sync rule everywhere, not just
-  // on the easy "newer wins" case - including both documented tie-breaks.
   const agrees = (existing, incoming) =>
     mergePlan.incomingWins(existing, incoming) === realIncomingWins.call(peerSync, existing, incoming);
   const tiedDeletion = { ...backupLetterA, updatedAt: liveLetterA.updatedAt, deleted: true };
@@ -2660,8 +2155,6 @@ async function run() {
       mergePlan.incomingWins(liveLetterA, tiedEdit) !== mergePlan.incomingWins(tiedEdit, liveLetterA)
   );
 
-  // Fail closed: no rule, no merge. A home-grown fallback is exactly what would
-  // let a merge and a sync disagree about which copy of a letter is newer.
   try {
     peerSync._incomingWins = undefined;
     await checkThrows(
@@ -2678,7 +2171,6 @@ async function run() {
     (err) => /locked/.test(err.message)
   );
 
-  // A live sync landing a newer copy between the preview and the confirmation.
   const raceStore = new FakeVaultStore();
   const racePlan = await raceStore.planBackupMerge({ letters: [backupLetterC] }, key);
   const arrivedMidPreview = await encryptRecord(
@@ -2696,15 +2188,11 @@ async function run() {
     raceRow.title === 'Landed from the partner mid-preview'
   );
 
-  /* ------------------------------------------------ 13. rescue restore */
   section('13. Rescue restore — adopt an identity, unlock with the ORIGINAL passphrase');
 
   const rescuePassphrase = 'the-passphrase-she-actually-remembers-2026';
   const filePassphrase = 'a-different-file-passphrase-entirely';
   const rescueSalt = generateSalt();
-  // Deliberately NOT the fast key every other section uses: this section drives
-  // verifyPassphraseAgainstMeta, which derives at the one count there is, so the
-  // fixture has to be a vault a real device could have written.
   const rescueKey = await deriveKeyFromPassphrase(rescuePassphrase, rescueSalt, {
     iterations: PBKDF2_ITERATIONS_CURRENT,
   });
@@ -2817,7 +2305,6 @@ async function run() {
     adopted.kdfIterations === PBKDF2_ITERATIONS_CURRENT
   );
 
-  // The whole promise of the rescue file: a cold unlock from the stored row alone.
   const coldUnlock = await deriveKeyWithVerification(
     rescuePassphrase,
     adopted.salt,
@@ -2864,15 +2351,9 @@ async function run() {
   );
   check('a rescued letter is readable again', restoredLetter.content === 'Still yours.');
 
-  // The same rescue, from a file whose vaultMeta never recorded a count at all.
-  // Nothing this app writes looks like that, but a file is a file: a truncated
-  // or hand-edited container must still open rather than reporting a wrong
-  // passphrase forever. (The salt and key are section 2's, so this costs no
-  // extra PBKDF2 runs.)
   const uncountedRescueRow = {
     id: 'config',
     salt: uncountedSalt,
-    // No kdfIterations at all.
     canary: uncountedMeta.canary,
     canaryIv: uncountedMeta.canaryIv,
   };
@@ -2893,13 +2374,8 @@ async function run() {
     (await readCanary(uncountedKey, uncountedAdopted)) !== null
   );
 
-  /* ------------------------------------------------ 14. import sanitising */
   section('14. Import sanitising — a restored clock artefact must not win forever');
 
-  // The import ceiling (db MAX_BACKUP_CLOCK_SKEW_MS) and the wire ceiling
-  // (peerSync MAX_CLOCK_SKEW_MS) must be the SAME number. They were 48h and 24h
-  // while a comment claimed they matched, and the gap was not cosmetic - see the
-  // +30h case at the end of this section.
   const SKEW_LIMIT = 24 * 60 * 60 * 1000;
   const clockOk = await encryptRecord(
     { id: 'bkt-clock-ok', updatedAt: NOW + 60 * MINUTE, deleted: false, text: 'Written on a slightly fast phone' },
@@ -2927,7 +2403,6 @@ async function run() {
     id: '',
   };
 
-  /** Plans one record against an empty device and returns just the counters. */
   const planOne = async (record) =>
     (await new FakeVaultStore().planBackupMerge({ bucketList: [record] }, key)).totals;
 
@@ -2967,11 +2442,6 @@ async function run() {
     clockPlan.writes.length === 1 && clockPlan.writes[0].row.id === 'bkt-clock-ok'
   );
 
-  // THE TWO CEILINGS MUST AGREE. At 48h import / 24h wire, a row stamped +30h
-  // was accepted by planBackupMerge and then refused by _validateWireRecord as
-  // `future_timestamp` - so a row the user had just restored from their own
-  // rescue backup sat on their device unable to reach their partner until the
-  // clock caught up, with nothing anywhere saying why.
   const clockThirtyHours = await encryptRecord(
     {
       id: 'bkt-clock-30h',
@@ -2994,7 +2464,6 @@ async function run() {
     (await planOne(clockOk)).added === 1 && peerSync._validateWireRecord(clockOk).ok === true
   );
 
-  /* ---------------------------------------------- 15. tamper isolation */
   section('15. One tampered record does not poison the rest of the restore');
 
   const goodOne = await encryptRecord(
@@ -3013,7 +2482,6 @@ async function run() {
     { id: 'mem-tampered', updatedAt: NOW - 4 * MINUTE, deleted: false, caption: 'Header rewritten' },
     key
   );
-  // A peer that cannot decrypt can still edit the plaintext header it can see.
   const headerTampered = { ...victim, updatedAt: victim.updatedAt + 5000 };
   const corrupted = {
     ...(await encryptRecord({ id: 'mem-corrupt', updatedAt: NOW - 5 * MINUTE, deleted: false, caption: 'Bit rot' }, key)),
@@ -3059,10 +2527,6 @@ async function run() {
   const survivor = await decryptRecord(await tamperStore.table('memories').get('mem-intact-2'), key);
   check('and the intact ones landed, readable', survivor.caption === 'Intact two');
 
-  /* ------------------------------------------------- 15b. finding a route */
-  //
-  // A malformed iceServers list does not fail loudly - it just means the two
-  // phones never connect, which looks identical to bad luck with the network.
   section('15b. ICE servers: somewhere to fall back to');
 
   const ice = await import('./src/services/iceServers.js');
@@ -3101,20 +2565,12 @@ async function run() {
       iceOwn.username === 'me'
   );
 
-  // Half a configuration is worse than none: a relay with the wrong
-  // credentials does not complain, it just never connects.
   const iceHalf = ice.resolveTurnConfig({ VITE_TURN_URLS: 'turn:my.relay:3478' });
   check(
     'a half-configured relay is ignored rather than half-applied',
     iceHalf.username === 'openrelayproject'
   );
 
-  /* ------------------------------------------- 16. love bursts, as records */
-  //
-  // These used to be a fire-and-forget wire message, so one sent to a phone
-  // that was not listening simply never happened. They are records now, which
-  // is what makes the offline case work at all - and the offline case is the
-  // whole point, so it is what most of this section is about.
   section('16. Love bursts survive a partner who is not listening');
 
   const burstStore = new FakeVaultStore();
@@ -3132,8 +2588,6 @@ async function run() {
   const bursts = await import('./src/services/loveBursts.js');
   let burstClock = 1700000000000;
   const burstOpts = { store: burstStore, timestamp: () => (burstClock += 1000) };
-
-  /* -- sending, with nobody on the other end ------------------------------ */
 
   const burstRow1 = await bursts.sendLoveBurst(key, burstOpts);
   check(
@@ -3167,15 +2621,9 @@ async function run() {
     (await burstStore.table(bursts.LOVE_BURST_TABLE).toArray()).length === 1
   );
 
-  /* -- and the sender is never told about their own ----------------------- */
-
   const burstOwn = await bursts.collectUnseenBursts(key, { store: burstStore });
   check('a device never celebrates its own tally', burstOwn.total === 0);
 
-  /* -- the partner side --------------------------------------------------- */
-
-  // The module caches its owner id, so the test drives the partner side by
-  // writing her tally straight in rather than pretending to be her device.
   const HER_ID = 'burst-her-device-tag';
   const putHerTally = async (count, lastSentAt) => {
     const row = await encryptRecord(
@@ -3189,18 +2637,12 @@ async function run() {
 
   await putHerTally(3, burstClock);
 
-  // A device looking for the FIRST time at a tally that is already at three:
-  // a phone that just restored a backup, or had its storage cleared. Greeting
-  // her with "3 love bursts" she has in fact already seen would be a bug
-  // wearing a nice hat, so the absence of any memory means start from today.
   burstLocal.delete('sweetheart_burst_seen_v1');
   const burstFirstLook = await bursts.collectUnseenBursts(key, { store: burstStore });
   check(
     'a first look adopts the tally where it stands instead of replaying history',
     burstFirstLook.total === 0
   );
-
-  /* -- THE POINT: bursts sent while he was away ---------------------------- */
 
   await putHerTally(6, burstClock);
   const burstAway = await bursts.collectUnseenBursts(key, { store: burstStore });
@@ -3217,12 +2659,6 @@ async function run() {
     'while a live one reads as happening now',
     bursts.describeBursts(1, true) === 'Your partner sent you a love burst! 💕'
   );
-
-  /* -- and say WHO, once the vault knows their name ----------------------- */
-  //
-  // "Noor sent you a love burst" is a person. "Your partner sent you a love
-  // burst" is a product. The fallback has to keep working though, because a
-  // vault where nobody has entered names has no name to use.
 
   check(
     'a burst says who it came from',
@@ -3243,8 +2679,6 @@ async function run() {
   );
   check('no bursts is still no sentence', bursts.describeBursts(0, true, 'Noor') === '');
 
-  /* -- and are not replayed on the next launch ---------------------------- */
-
   bursts.markBurstsSeen(burstAway.records);
   const burstAgain = await bursts.collectUnseenBursts(key, { store: burstStore });
   check('once shown, the same bursts are not counted again', burstAgain.total === 0);
@@ -3254,16 +2688,12 @@ async function run() {
   check('but the next one still lands', burstOneMore.total === 1);
   bursts.markBurstsSeen(burstOneMore.records);
 
-  /* -- a tally that goes backwards is not a negative burst ---------------- */
-
   await putHerTally(2, burstClock);
   const burstBackwards = await bursts.collectUnseenBursts(key, { store: burstStore });
   check(
     'a tally that somehow went backwards is ignored, not counted as negative',
     burstBackwards.total === 0
   );
-
-  /* -- a rewritten record is not evidence of anything --------------------- */
 
   await putHerTally(50, burstClock);
   const burstHonest = await burstStore.table(bursts.LOVE_BURST_TABLE).get(HER_ID);
@@ -3276,22 +2706,10 @@ async function run() {
     burstTampered.total === 0
   );
 
-  /* ============================================================== 17
-   * QUICK UNLOCK (fingerprint / face)
-   *
-   * The real biometricUnlock.js runs here. Only two things are faked, and
-   * both are storage-shaped: localStorage, and the authenticator itself.
-   *
-   * The fake authenticator behaves like a real one where it matters - the
-   * same credential and the same salt produce the same 32 bytes, a different
-   * credential produces different bytes, and a dismissed prompt throws
-   * NotAllowedError. Everything the module does with those bytes is its own.
-   */
   section('17. Quick unlock: sealing the vault key behind the phone sensor');
 
   const bioB64 = (bytes) => Buffer.from(bytes).toString('base64');
 
-  /** Decrypts, or resolves null. A wrong key must fail a check, not crash the run. */
   const bioOpens = async (sealed, key) => {
     try {
       return await decryptText(sealed.ciphertext, sealed.iv, key);
@@ -3325,13 +2743,9 @@ async function run() {
       dismissNext(v) {
         dismiss = v;
       },
-      // A provider that says up front it will not do PRF. Believing it saves a
-      // second fingerprint prompt that could only ever fail.
       denyPrfAtCreateNext(v) {
         denyPrfAtCreate = v;
       },
-      // The Android symptom: the fingerprint check passes, and the passkey
-      // store simply does not do PRF.
       withholdPrfNext(v) {
         withholdPrf = v;
       },
@@ -3354,8 +2768,6 @@ async function run() {
           return {
             rawId: rawId.buffer,
             response: { getTransports: () => ['internal'] },
-            // Like Chrome: PRF is enabled on create but returns no results,
-            // which forces the module down its second-ceremony path.
             getClientExtensionResults: () => ({ prf: { enabled: true } }),
           };
         },
@@ -3376,15 +2788,12 @@ async function run() {
   }
 
   const bioStore = new Map();
-  /** Everything the app has asked the passkey provider to forget. */
   const retired = [];
   const fakeAuth = makeFakeAuthenticator();
 
   const define = (name, value) =>
     Object.defineProperty(globalThis, name, { value, configurable: true, writable: true });
 
-  // window must carry the real crypto/btoa/atob: crypto.js reaches for
-  // window.* the moment one exists, and every other section still needs it.
   define('window', {
     isSecureContext: true,
     crypto: globalThis.crypto,
@@ -3411,8 +2820,6 @@ async function run() {
   const bioSalt = generateSalt();
   const bioIters = 2000;
 
-  /* -- the two new crypto primitives agree with the old derivation ------- */
-
   const bioBits = await deriveVaultKeyBits(bioPass, bioSalt, { iterations: bioIters });
   const bioFromBits = await importVaultKeyFromBits(bioBits);
   const bioFromPass = await deriveKeyFromPassphrase(bioPass, bioSalt, { iterations: bioIters });
@@ -3427,8 +2834,6 @@ async function run() {
     'importVaultKeyFromBits rejects key material of the wrong size',
     () => importVaultKeyFromBits(new Uint8Array(16))
   );
-
-  /* -- enrol, then unlock ------------------------------------------------ */
 
   await bio.enableBiometricUnlock({
     passphrase: bioPass,
@@ -3454,8 +2859,6 @@ async function run() {
   check('the vault iteration count survives the round trip', bioOpened.iterations === bioIters);
   check('isBiometricEnrolled agrees for this salt', bio.isBiometricEnrolled(bioSalt) === true);
 
-  /* -- a dismissed prompt must NOT destroy the enrolment ------------------ */
-
   fakeAuth.dismissNext(true);
   await checkThrows(
     'a dismissed prompt reports cancelled, not failure',
@@ -3468,8 +2871,6 @@ async function run() {
     bio.isBiometricEnrolled(bioSalt) === true && bioStore.size === 1
   );
 
-  /* -- a sealed key is bound to ITS vault --------------------------------- */
-
   const bioOtherSalt = generateSalt();
   await checkThrows(
     'a sealed key refuses a different vault salt',
@@ -3480,8 +2881,6 @@ async function run() {
     'and clears itself, because it can never be useful again',
     bioStore.size === 0 && bio.isBiometricEnrolled(bioSalt) === false
   );
-
-  /* -- tampering with the sealed blob ------------------------------------- */
 
   await bio.enableBiometricUnlock({
     passphrase: bioPass,
@@ -3502,16 +2901,12 @@ async function run() {
   );
   check('a tampered record is cleared rather than retried forever', bioStore.size === 0);
 
-  /* -- another phone cannot open it --------------------------------------- */
-
   await bio.enableBiometricUnlock({
     passphrase: bioPass,
     vaultSalt: bioSalt,
     iterations: bioIters,
     normalize: true,
   });
-  // Same stored blob, different authenticator secret: exactly what copying
-  // localStorage to another device would look like.
   for (const id of fakeAuth.secrets.keys()) {
     fakeAuth.secrets.set(id, crypto.getRandomValues(new Uint8Array(32)));
   }
@@ -3521,11 +2916,6 @@ async function run() {
     (err) => err.code === 'stale'
   );
 
-  /* -- the normalize flag is honoured, not assumed ------------------------ */
-
-  // A vault keyed on the RAW string, trailing space and all - what a phone
-  // keyboard produced before normalizePassphrase existed. Sealing the
-  // normalised bits here would unseal perfectly and then decrypt nothing.
   const bioRawPass = 'trailing-space-passphrase ';
   const bioRawSalt = generateSalt();
   const bioRawKey = await deriveKeyFromPassphrase(bioRawPass, bioRawSalt, {
@@ -3550,11 +2940,6 @@ async function run() {
     (await bioOpens(bioRawSecret, bioRawOpened.key)) === 'keyed on the raw string'
   );
 
-  /* -- a store that verifies but will not do PRF -------------------------- */
-
-  // This is precisely what a passkey store without PRF looks like from here:
-  // the fingerprint check passes, and no key material comes back. It has to be
-  // its own answer - 'cancelled' would be a lie, and silence was the bug.
   bio.forgetBiometricUnlock();
   fakeAuth.withholdPrfNext(true);
   await checkThrows(
@@ -3574,8 +2959,6 @@ async function run() {
   );
   fakeAuth.withholdPrfNext(false);
 
-  /* -- transports are remembered for the next ceremony -------------------- */
-
   await bio.enableBiometricUnlock({
     passphrase: bioPass,
     vaultSalt: bioSalt,
@@ -3587,8 +2970,6 @@ async function run() {
     'the credential transports are stored, so unlock can skip the chooser',
     eq(bioStored.transports, ['internal'])
   );
-
-  /* -- a provider that declines PRF up front is believed the first time ---- */
 
   bio.forgetBiometricUnlock();
   retired.length = 0;
@@ -3617,8 +2998,6 @@ async function run() {
   );
   fakeAuth.denyPrfAtCreateNext(false);
 
-  /* -- retired ids are base64url, which is what the Signal API reads -------- */
-
   check(
     'the retired credential id carries no +, / or = padding',
     retired.length === 1 && !/[+/=]/.test(retired[0].credentialId)
@@ -3627,8 +3006,6 @@ async function run() {
     'and it names the right relying party',
     retired.length === 1 && retired[0].rpId === 'localhost'
   );
-
-  /* -- a half-written record is "not set up", not a permanent failure ------ */
 
   await bio.enableBiometricUnlock({
     passphrase: bioPass,
@@ -3652,8 +3029,6 @@ async function run() {
     (err) => err.code === 'stale'
   );
 
-  /* -- only an auth-tag failure may destroy a working enrolment ------------ */
-
   bio.forgetBiometricUnlock();
   await bio.enableBiometricUnlock({
     passphrase: bioPass,
@@ -3662,9 +3037,6 @@ async function run() {
     normalize: true,
   });
 
-  // A transient failure that is NOT AES-GCM rejecting the tag. Wiping on this
-  // would throw away a perfectly good setup and quietly demote her to typing
-  // the passphrase forever.
   const bioRealCrypto = globalThis.crypto;
   globalThis.window.crypto = {
     getRandomValues: (a) => bioRealCrypto.getRandomValues(a),
@@ -3691,11 +3063,6 @@ async function run() {
     bio.isBiometricEnrolled(bioSalt) === true
   );
 
-  /* -- re-enrolling for a NEW vault does not orphan the old passkey --------- */
-
-  // Starting a new space mints a new salt, which strands the sealed key. The UI
-  // offers "Set it up" in that state and never "Turn off", so if this path could
-  // not clear the old record by itself she would have no way through at all.
   bio.forgetBiometricUnlock();
   await bio.enableBiometricUnlock({
     passphrase: bioPass,
@@ -3730,8 +3097,6 @@ async function run() {
     bioStore.size === 1
   );
 
-  /* -- turning it off retires the passkey too ------------------------------ */
-
   retired.length = 0;
   const bioLiveId = JSON.parse(Array.from(bioStore.values())[0]).credentialId;
   bio.forgetBiometricUnlock();
@@ -3740,8 +3105,6 @@ async function run() {
     retired.length === 1 &&
       retired[0].credentialId === bioLiveId.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
   );
-
-  /* -- forgetting it ------------------------------------------------------ */
 
   bio.forgetBiometricUnlock();
   check(
@@ -3755,20 +3118,10 @@ async function run() {
   );
 
 
-  /* =============================================================== 18
-   * THE DAILY QUESTION
-   *
-   * The whole feature rests on one claim: two phones that have not spoken
-   * all week still land on the same question. Nothing coordinates that - it
-   * falls out of both holding the same key - so it is what most of this
-   * section is about.
-   */
   section('18. The daily question: same question, both phones, no server');
 
   const dq = await import('./src/services/dailyQuestion.js');
   const bank = await import('./src/data/dailyQuestions.js');
-
-  /* -- the bank itself ----------------------------------------------------- */
 
   const dqIds = bank.ALL_QUESTIONS.map((x) => x.id);
   check('every question has a unique id', new Set(dqIds).size === dqIds.length);
@@ -3776,8 +3129,6 @@ async function run() {
     'and no two questions are the same text',
     new Set(bank.ALL_QUESTIONS.map((x) => x.text)).size === bank.ALL_QUESTIONS.length
   );
-  // A handful end in a full stop on purpose - the ones whose tail is an
-  // instruction ("and be honest.") read wrong with a question mark on the end.
   check(
     'every question is a real prompt, not a placeholder',
     bank.ALL_QUESTIONS.every(
@@ -3785,10 +3136,6 @@ async function run() {
     )
   );
 
-  /* -- THE POINT: both phones agree, having never spoken -------------------- */
-
-  // Her phone. Same passphrase and salt, so the same key - derived separately,
-  // exactly as it would be on a device that has never connected to his.
   const dqHerKey = await fastKey(passphrase, salt);
   const dqDay = new Date('2026-09-10T09:00:00Z');
 
@@ -3817,8 +3164,6 @@ async function run() {
   );
   void dqOther;
 
-  /* -- no repeats, which plain modulo could not manage ---------------------- */
-
   const dqSeen = new Set();
   const dqStart = dq.dayIndex(dqDay);
   for (let i = 0; i < dqOrderMine.length; i++) {
@@ -3829,8 +3174,6 @@ async function run() {
     'walking a full cycle asks every question exactly once - no repeats at all',
     dqSeen.size === dqOrderMine.length
   );
-
-  /* -- appending a batch does not disturb the one already in progress ------- */
 
   const dqBatchTwo = {
     id: 'b2',
@@ -3850,8 +3193,6 @@ async function run() {
     'and the new questions land after it, never in the middle',
     dqAfter.slice(dqBefore.length).every((x) => x.id.startsWith('b2-'))
   );
-
-  /* -- answers: one record per person per MONTH ----------------------------- */
 
   const dqStore = new FakeVaultStore();
   const HIM = 'him-device';
@@ -3892,8 +3233,6 @@ async function run() {
     'three days of answers are ONE row, not three - this is what keeps sync small',
     (await dqStore.table(dq.ANSWER_TABLE).toArray()).length === 1
   );
-
-  /* -- THE GATE: her answer is not readable until yours exists -------------- */
 
   const dqFreshDay = new Date('2026-09-20T09:00:00Z');
   const dqQ = await dq.getQuestionForDay(key, dqFreshDay);
@@ -3946,10 +3285,6 @@ async function run() {
     dqAfterMine.mine.text === 'His own answer, written blind.'
   );
 
-  /* -- the archive honours the same gate ------------------------------------ */
-
-  // A day only she answered. It must not appear in his archive either, or the
-  // gate would just be a different door into the same room.
   await dq.saveAnswer({
     cryptoKey: key,
     ownerId: HER,
@@ -3973,8 +3308,6 @@ async function run() {
     dqArchive.every((entry) => entry.question === null || typeof entry.question.text === 'string')
   );
 
-  /* -- a rewritten answer record is not evidence of anything ---------------- */
-
   const dqHerId = dq.answerRecordId('2026-09', HER);
   const dqHonest = await dqStore.table(dq.ANSWER_TABLE).get(dqHerId);
   await dqStore
@@ -3991,12 +3324,6 @@ async function run() {
     dqTampered.partnerAnswer === null && dqTampered.partnerHasAnswered === false
   );
 
-  /* -- one person, several ids --------------------------------------------- */
-  //
-  // A person is not a device. They answered on a laptop last month, on a phone
-  // this month, and under a bare device tag before people existed at all. Every
-  // one of those rows is theirs, and the month must not split.
-
   const dqMulti = new FakeVaultStore();
   const dqOldTag = 'his-old-device-tag';
   const dqPersonId = 'his-person-id-01';
@@ -4004,7 +3331,6 @@ async function run() {
   const dqMultiStamp = () => (dqMultiClock += 1000);
   const dqMineIds = new Set([dqPersonId, dqOldTag]);
 
-  // Last month, written under the device tag, before people existed.
   await dq.saveAnswer({
     cryptoKey: key,
     ownerId: dqOldTag,
@@ -4014,7 +3340,6 @@ async function run() {
     store: dqMulti,
     timestamp: dqMultiStamp,
   });
-  // The same month, on the laptop, still under the old tag.
   await dq.saveAnswer({
     cryptoKey: key,
     ownerId: dqOldTag,
@@ -4024,7 +3349,6 @@ async function run() {
     store: dqMulti,
     timestamp: dqMultiStamp,
   });
-  // Now, under the person id.
   await dq.saveAnswer({
     cryptoKey: key,
     ownerId: dqPersonId,
@@ -4065,8 +3389,6 @@ async function run() {
   check('and a day from the old id reads back as MINE', dqFoldedDay.mine !== null);
   check('not as my partner\'s', dqFoldedDay.partnerHasAnswered === false);
 
-  // Without the id set, the old rows are somebody else's - which is precisely
-  // the bug people records exist to end.
   const dqUnbridged = await dq.readDay({
     cryptoKey: key,
     ownerId: dqPersonId,
@@ -4077,13 +3399,6 @@ async function run() {
     'and with no bridge, an old row WOULD read as the partner (the bug)',
     dqUnbridged.partnerHasAnswered === true
   );
-
-  /* -- a day you missed is not a permanent hole ---------------------------- */
-  //
-  // Whoever starts using the app second has a backlog of days their partner
-  // answered and they did not. listAnswered drops those entirely, so that
-  // person saw almost nothing and could never close the gap - nothing let you
-  // answer a day that had already gone.
 
   const dqLate = new FakeVaultStore();
   const EARLY = 'him-early-starter';
@@ -4120,8 +3435,6 @@ async function run() {
     herFullBefore[0].question.id === bank.ALL_QUESTIONS[0].id
   );
 
-  /* -- she answers it late, and it opens ----------------------------------- */
-
   check(
     'a day key converts back to a date on the same day',
     dq.dayKey(dq.dateFromDayKey('2026-07-02')) === '2026-07-02'
@@ -4150,12 +3463,6 @@ async function run() {
   check('and it reaches him as well, on the same day', hisFullAfter[0].theirs !== null);
   check('with nothing marked missed on his side', hisFullAfter[0].missed === false);
 
-  /* -- the gate is still the gate ------------------------------------------ */
-  //
-  // listArchive must not become a way to read around a day you have not
-  // answered. A second untouched day proves the withholding is per-day rather
-  // than a one-off.
-
   await dq.saveAnswer({
     cryptoKey: key,
     ownerId: EARLY,
@@ -4172,9 +3479,6 @@ async function run() {
   check('while the opened day stays open', herTwoDays.find((e) => e.day === '2026-07-02').theirs !== null);
   check('newest first, as before', herTwoDays[0].day === '2026-07-03');
 
-  // A question can leave the bank - an id that no longer resolves must not
-  // become an un-answerable row with a blank prompt above it. The screen
-  // disables the catch-up button in exactly this case.
   await dq.saveAnswer({
     cryptoKey: key,
     ownerId: EARLY,
@@ -4189,13 +3493,6 @@ async function run() {
   );
   check('a question that left the bank leaves the day listed', dqRetired !== undefined);
   check('with no question attached, rather than a blank one', dqRetired.question === null);
-
-  /* -- readDay and listAnswered cannot disagree ---------------------------- */
-  //
-  // They used to decide "mine" two different ways: one compared the record id,
-  // the other read `ownerId` out of the sealed body. Both are inside the
-  // envelope, so neither was forgeable - but they were two sources of truth for
-  // one question, and a row where they disagree had no defined owner.
 
   const dqSplitId = dq.answerRecordId('2026-08', dqOldTag);
   const dqSplitRow = await dqMulti.getDecrypted(dq.ANSWER_TABLE, dqSplitId, key);
@@ -4228,16 +3525,9 @@ async function run() {
   );
 
 
-  /* =============================================================== 19
-   * ANNIVERSARIES
-   *
-   * A brand-new space defaults its start date to today, so day zero is the
-   * FIRST screen anyone sees - and it used to throw a party for it.
-   */
   section('19. Anniversaries: day zero is not one');
 
   const { calculateNextMilestone } = await import('./src/utils/dateHelpers.js');
-  // Local noon, so neither a timezone nor a DST boundary can move the day.
   const annNoon = (y, m, d) => new Date(y, m - 1, d, 12, 0, 0, 0);
 
   const annZero = calculateNextMilestone('2026-09-11', annNoon(2026, 9, 11));
@@ -4253,7 +3543,6 @@ async function run() {
     annNext.anniversary.year === 1 && annNext.anniversary.daysLeft === 364
   );
 
-  // The guard must not swallow a REAL anniversary.
   const annReal = calculateNextMilestone('2025-09-11', annNoon(2026, 9, 11));
   check('on a real first anniversary it is still today', annReal.anniversary.daysLeft === 0);
   check('and it is year 1', annReal.anniversary.year === 1);
@@ -4265,12 +3554,6 @@ async function run() {
   check('a start date set in the future never reports year 0', annFuture.anniversary.year >= 1);
 
 
-  /* ------------------------------------------- 20. the two of you, as people */
-  //
-  // Before people existed, identity WAS the device tag in localStorage. Safari
-  // discards localStorage after about seven idle days, so the most important
-  // thing proved here is not that people can be created - it is that losing
-  // that storage costs at most one tap, and never costs an archive.
   section('20. People: the vault knows which of you is holding the phone');
 
   const peopleStore = new FakeVaultStore();
@@ -4293,12 +3576,6 @@ async function run() {
   const HIS_LAPTOP = 'his-laptop-tag-1';
   const HER_PHONE = 'her-phone-tag-01';
 
-  /* -- the two slots, agreed without speaking ------------------------------ */
-  //
-  // Both phones can reach the setup screen before they have ever synced. If the
-  // ids were random, each would mint its own pair and the vault would hold four
-  // people, two of them phantoms.
-
   const slotsHis = await ppl.derivePersonSlots(key);
   const slotsHers = await ppl.derivePersonSlots(await fastKey(passphrase, salt));
   check('the two slots are agreed with no sync at all', eq(slotsHis, slotsHers));
@@ -4314,16 +3591,12 @@ async function run() {
     ppl.personRecordId(slotsHis[0]) === `person-${slotsHis[0]}`
   );
 
-  /* -- nothing set up yet ------------------------------------------------- */
-
   const pplEmpty = await ppl.resolveIdentity({
     cryptoKey: key,
     store: peopleStore,
     deviceId: HIS_PHONE,
   });
   check('an empty vault reports `empty` rather than guessing', pplEmpty.status === 'empty');
-
-  /* -- he sets both of you up on his phone -------------------------------- */
 
   const couple = await ppl.createCouple({
     cryptoKey: key,
@@ -4345,11 +3618,6 @@ async function run() {
   const herId = couple.partner.personId;
   check('the two people are not the same person', hisId !== herId);
 
-  /* -- the eviction case, which is the whole reason this file exists ------ */
-  //
-  // Safari wipes localStorage; the hint is gone. The device tag is still on the
-  // person record, so this must resolve WITHOUT asking the user anything.
-
   peopleLocal.clear();
   ppl.clearLocalPersonId();
 
@@ -4363,8 +3631,6 @@ async function run() {
   check('and the partner still resolves', afterWipe.partner.personId === herId);
   check('the recovered hint is written back', ppl.getLocalPersonId() === hisId);
 
-  /* -- a device nobody has claimed: ask, do not guess ---------------------- */
-
   peopleLocal.clear();
   ppl.clearLocalPersonId();
 
@@ -4376,8 +3642,6 @@ async function run() {
   check('an unknown device asks instead of guessing', unclaimed.status === 'unclaimed');
   check('and it offers both of you to choose from', unclaimed.people.length === 2);
   check('it does not pick a "me" on a hunch', unclaimed.me === null);
-
-  /* -- she taps her own name once ----------------------------------------- */
 
   await ppl.claimPerson({
     cryptoKey: key,
@@ -4398,12 +3662,6 @@ async function run() {
   check('her device tag is now on her record', hers.me.deviceIds.includes(HER_PHONE));
   check('claiming a person initializes lastActiveAt', Number.isFinite(hers.me.lastActiveAt));
 
-  /* -- claiming did not damage his side ------------------------------------ */
-  //
-  // One real device has one localStorage, but this harness has one for ALL the
-  // simulated devices - so switching device here means dropping the hint too,
-  // which is also exactly the state his phone would be in after an eviction.
-
   peopleLocal.clear();
   ppl.clearLocalPersonId();
 
@@ -4413,13 +3671,6 @@ async function run() {
     deviceId: HIS_PHONE,
   });
   check('claiming one person leaves the other one alone', stillHis.me.personId === hisId);
-
-  /* -- tapping the wrong name is a mistake you can take back --------------- */
-  //
-  // A device belongs to exactly ONE person. If the tag could sit on both
-  // records, both people would answer to it - and because a device tag is how
-  // pre-people rows are attributed, the same answers would read as written by
-  // each of them.
 
   await ppl.claimPerson({
     cryptoKey: key,
@@ -4459,11 +3710,6 @@ async function run() {
     corrected.find((p) => p.personId === herId).deviceIds.includes(HER_PHONE)
   );
 
-  /* -- one human, two devices --------------------------------------------- */
-  //
-  // This is the bug that made a laptop show its owner's own answers as their
-  // partner's: two tags, one person, and nothing joining them up.
-
   await ppl.claimPerson({
     cryptoKey: key,
     store: peopleStore,
@@ -4481,19 +3727,12 @@ async function run() {
   check('his phone is still on the record too', twoDevices.me.deviceIds.includes(HIS_PHONE));
   check('and so is his laptop', twoDevices.me.deviceIds.includes(HIS_LAPTOP));
 
-  /* -- the migration bridge ------------------------------------------------ */
-  //
-  // Rows written before people existed carry a DEVICE tag in `ownerId`. They
-  // have to keep belonging to the right human without being rewritten.
-
   const hisOwnerIds = ppl.ownerIdsFor(twoDevices.me);
   check('a person answers to their person id', hisOwnerIds.has(hisId));
   check('and to every device tag they have ever used', hisOwnerIds.has(HIS_PHONE));
   check('including the second one', hisOwnerIds.has(HIS_LAPTOP));
   check('but not to the other person\'s device', hisOwnerIds.has(HER_PHONE) === false);
   check('an absent person owns nothing', ppl.ownerIdsFor(null).size === 0);
-
-  /* -- renaming must not cost the device tags ------------------------------ */
 
   await ppl.savePerson({
     cryptoKey: key,
@@ -4511,12 +3750,6 @@ async function run() {
   check('and does NOT drop the device tags', renamed.me.deviceIds.length === 2);
   check('nor the pronoun that was not edited', renamed.me.pronoun === 'he');
 
-  /* -- a sync that drops our tag heals itself ------------------------------ */
-  //
-  // Person records merge last-write-wins on the whole record, so two devices
-  // that both claim while apart can knock each other's tag off. Re-adding on
-  // open is the difference between self-healing and a support conversation.
-
   await ppl.savePerson({
     cryptoKey: key,
     store: peopleStore,
@@ -4524,7 +3757,6 @@ async function run() {
     addDeviceId: HIS_LAPTOP,
     timestamp: pplStamp,
   });
-  // Simulate the losing write landing: a record for him with only the laptop.
   await peopleStore.putEncrypted(
     'people',
     {
@@ -4564,8 +3796,6 @@ async function run() {
     })) === null
   );
 
-  /* -- names and pronouns arrive over sync, so they are not trusted -------- */
-
   check('a name is trimmed', ppl.sanitizeName('  Noor  ') === 'Noor');
   check('a pasted newline cannot break a line of copy', ppl.sanitizeName('No\nor') === 'No or');
   check(
@@ -4576,12 +3806,6 @@ async function run() {
   check('an unknown pronoun falls back to they', ppl.sanitizePronoun('xyzzy') === 'they');
   check('a known one is kept', ppl.sanitizePronoun('she') === 'she');
 
-  /* -- the verb-agreement trap -------------------------------------------- */
-  //
-  // "they has answered" is the bug every neutral-copy app ships. The grammar
-  // lives beside the pronoun so a sentence cannot be right for one person and
-  // wrong for the other.
-
   check('they take a plural verb', ppl.grammarOf({ pronoun: 'they' }).has === 'have');
   check('she takes a singular one', ppl.grammarOf({ pronoun: 'she' }).has === 'has');
   check('and so does he', ppl.grammarOf({ pronoun: 'he' }).is === 'is');
@@ -4591,11 +3815,6 @@ async function run() {
   check('a name ending in s is not mangled', ppl.possessiveOf({ name: 'Iris' }) === "Iris'");
   check('a nameless partner still has a possessive', ppl.possessiveOf(null) === "your partner's");
   check('and a usable name', ppl.nameOf(null) === 'your partner');
-
-  /* -- a forged person record --------------------------------------------- */
-  //
-  // These rows arrive over sync like any other. An id that does not match the
-  // personId inside it is the shape a replay would take, so it is refused.
 
   check(
     'a person whose id does not match its own personId is refused',
@@ -4618,14 +3837,6 @@ async function run() {
     }) === null
   );
   check('and so is a person with no id at all', ppl.toPerson({ name: 'X' }) === null);
-
-  /* -- last active tracking: when each of you opened the app last ----------- */
-  //
-  // Sealed like every other record, so neither relay nor server ever learns it
-  // in the clear. Throttled so opening the app repeatedly does not thrash writes
-  // or mailbox quota. And kept in a presence record of its OWN: person records
-  // merge last-write-wins on the whole record, so a heartbeat written into one
-  // would carry that phone's stale copy of the name and device tags with it.
 
   const personWithActive = ppl.toPerson({
     id: ppl.personRecordId('bbbbbbbbbbbb'),
@@ -4656,7 +3867,6 @@ async function run() {
     ppl.toPresence({ id: ppl.presenceRecordId(hisId), personId: hisId, lastActiveAt: 'soon' }) === null
   );
 
-  // Touching activity writes presence
   const hisRowBeforeTouch = await peopleStore.getDecrypted('people', ppl.personRecordId(hisId), key);
   const touched1 = await ppl.touchPersonActive({
     cryptoKey: key,
@@ -4686,7 +3896,6 @@ async function run() {
     peopleWithPresence.find((p) => p.personId === hisId).lastActiveAt === hisPresence.lastActiveAt
   );
 
-  // Immediately touching again should be throttled (returns null)
   const touchedThrottled = await ppl.touchPersonActive({
     cryptoKey: key,
     store: peopleStore,
@@ -4696,8 +3905,6 @@ async function run() {
   });
   check('touchPersonActive throttles when called again within minIntervalMs', touchedThrottled === null);
 
-  // A phone still running the build that kept the time inside the person
-  // record keeps counting until it updates: the newer of the two wins.
   const legacyStore = new FakeVaultStore();
   await legacyStore.putEncrypted(
     'people',
@@ -4715,8 +3922,6 @@ async function run() {
     legacyPeople.length === 1 && legacyPeople[0].lastActiveAt === 1700000900000
   );
 
-  /* -- relative date formatting for presence and connection ---------------- */
-
   const { formatLastSeen, formatLastConnected } = await import('./src/utils/dateHelpers.js');
   const now = 1700000100000;
 
@@ -4732,16 +3937,9 @@ async function run() {
   check('formatLastConnected reports "Just now" for fresh connection', formatLastConnected(now - 10 * 1000, now) === 'Just now');
 
 
-  /* --------------------------------------- 21. the mailbox: sync while apart */
-  //
-  // The point of this section is that a record written on one phone reaches the
-  // other WITHOUT the two ever being connected, and that the relay carrying it
-  // is given no trust it could abuse.
   section('21. The mailbox: neither of you has to be awake');
 
   const mbx = await import('./src/services/mailbox.js');
-
-  /* -- the address is the access control ----------------------------------- */
 
   const mbxId = await mbx.deriveMailboxId(key);
   const mbxIdAgain = await mbx.deriveMailboxId(await fastKey(passphrase, salt));
@@ -4752,19 +3950,11 @@ async function run() {
   );
   check('another couple cannot land on the same mailbox', mbxStranger !== mbxId);
 
-  // The record id charset is not constrained anywhere in the app, so the path
-  // segment has to survive whatever an id turns out to be.
   check(
     'a record key is URL-safe whatever the id contains',
     /^[A-Za-z0-9_-]+$/.test(mbx.recordKey('ans-2026-09-a/b+c=d'))
   );
   check('and two different ids never collide', mbx.recordKey('a') !== mbx.recordKey('b'));
-
-  /* -- a Worker, in memory ------------------------------------------------- */
-  //
-  // Stands in for storage and for the HTTP shape only. It deliberately does NOT
-  // re-implement any validation, so nothing below can pass because the fake was
-  // helpful.
 
   const mbxBucket = new Map();
   const mbxCalls = [];
@@ -4794,8 +3984,6 @@ async function run() {
   const HER_BOX = 'her-person-mailbox';
 
   try {
-    /* -- nothing configured is not an error, it is "off" ------------------- */
-
     check('with no mailbox configured the feature reports disabled', mbx.isMailboxEnabled() === false);
     const mbxOff = await mbx.publish({ cryptoKey: key, ownerId: HIS_BOX });
     check('and publishing is a no-op rather than a crash', mbxOff.reason === 'disabled');
@@ -4805,8 +3993,6 @@ async function run() {
       'half a config counts as none of it',
       mbx.isMailboxEnabled({ url: 'https://x.dev' }) === false
     );
-
-    /* -- his phone writes a letter and publishes --------------------------- */
 
     const hisPhone = new FakeVaultStore();
     let mbxClock = 1700000000000;
@@ -4836,8 +4022,6 @@ async function run() {
       mbxCalls[mbxCalls.length - 1] === `PUT /m/${mbxId}/${HIS_BOX}/manifest`
     );
 
-    /* -- the relay cannot read a word of it -------------------------------- */
-
     const storedManifest = mbxBucket.get(`/m/${mbxId}/${HIS_BOX}/manifest`);
     check('the manifest itself is encrypted, not plaintext ids', !storedManifest.includes('letter-apart-1'));
     const storedLetter = mbxBucket.get(
@@ -4847,10 +4031,6 @@ async function run() {
     check('nor its title', !storedLetter.includes('While you were asleep'));
     check('it is the sealed envelope, unchanged', JSON.parse(storedLetter).ciphertext !== undefined);
 
-    // Only what her phone needs to decide "do I want this one" without opening
-    // it. `_del` is the local 0/1 mirror of `deleted` that exists because
-    // IndexedDB refuses boolean index keys - peerSync strips it, the receiver
-    // recomputes it, and it has no business on a relay.
     check(
       'and carries nothing beyond what addressing and last-write-wins need',
       eq(Object.keys(JSON.parse(storedLetter)).sort(), [
@@ -4864,14 +4044,10 @@ async function run() {
     );
     check('specifically, local index bookkeeping stays local', !storedLetter.includes('_del'));
 
-    /* -- her phone collects, having never connected to his ----------------- */
-
     const herPhone = new FakeVaultStore();
     const realDbManifest = db.getManifest;
     const realPlan = db.planBackupMerge;
     const realApply = db.applyBackupMerge;
-    // peerSync.diffAgainstLocal reads the REAL db singleton, so point that one
-    // read at her phone for the duration. Everything else still runs for real.
     db.getManifest = () => FakeVaultStore.prototype.getManifest.call(herPhone);
 
     const got = await mbx.collect({
@@ -4890,11 +4066,6 @@ async function run() {
     check('with the title intact', herLetter.title === 'While you were asleep');
     check('and the other table came too', (await herPhone.getDecrypted('bucketList', 'bucket-apart-1', key)) !== null);
 
-    /* -- collecting twice downloads nothing -------------------------------- */
-    //
-    // This is what makes deletion-on-delivery unnecessary. If re-reading were
-    // not free, the mailbox would need acknowledgements.
-
     mbxCalls.length = 0;
     const again = await mbx.collect({
       cryptoKey: key,
@@ -4908,8 +4079,6 @@ async function run() {
       'it costs exactly one manifest read',
       mbxCalls.length === 1 && mbxCalls[0].endsWith('/manifest')
     );
-
-    /* -- publishing again only uploads what changed ------------------------ */
 
     mbxCalls.length = 0;
     const republish = await mbx.publish({
@@ -4957,12 +4126,6 @@ async function run() {
       (await herPhone.getDecrypted('letters', 'letter-apart-1', key)).body === 'Edited it in the morning.'
     );
 
-    /* -- A DELETION IS A WRITE, NOT A DISAPPEARANCE ------------------------ */
-    //
-    // The single most important behaviour here. If a delete removed the object
-    // instead of publishing a tombstone, her phone would never learn the letter
-    // died and it would come back from the dead on the next collect.
-
     await hisPhone.softDelete('letters', 'letter-apart-1', key);
     const deletePub = await mbx.publish({
       cryptoKey: key,
@@ -4991,9 +4154,6 @@ async function run() {
     check('the deletion reaches her', gotDelete.applied === 1);
     const herDeleted = await herPhone.table('letters').get('letter-apart-1');
     check('her copy is a tombstone now', herDeleted.deleted === true);
-    // A tombstone is still a sealed record - that is what lets it travel and be
-    // trusted - but what it seals is only the header. The words are gone from
-    // inside the envelope, not merely hidden by the flag on the outside.
     const herDeletedPlain = await herPhone.getDecrypted('letters', 'letter-apart-1', key);
     check('and the words are actually gone from inside it', herDeletedPlain.body === undefined);
     check('title too', herDeletedPlain.title === undefined);
@@ -5007,12 +4167,6 @@ async function run() {
     });
     check('and it does not rise from the dead on the next sync', afterDelete.applied === 0);
 
-    /* -- a hostile relay gets nothing for its trouble ---------------------- */
-    //
-    // The mailbox applies through planBackupMerge, so every rule that protects
-    // the vault from a live peer protects it from the relay too. These prove it
-    // rather than assuming it.
-
     const evilKey = await deriveKeyFromPassphrase('not our passphrase at all', generateSalt(), {
       iterations: 2000,
     });
@@ -5025,7 +4179,6 @@ async function run() {
       `/m/${mbxId}/${HIS_BOX}/rec/letters/${mbx.recordKey('letter-forged')}`,
       JSON.stringify(evilRow)
     );
-    // Announce it in his manifest, exactly as a compromised relay would.
     const hisManifestNow = await hisPhone.getManifest();
     hisManifestNow.letters.push({ id: 'letter-forged', updatedAt: Date.now(), deleted: false });
     const forgedManifest = await encryptJSON(hisManifestNow, key);
@@ -5043,8 +4196,6 @@ async function run() {
       (await herPhone.table('letters').get('letter-forged')) === undefined
     );
 
-    // A manifest promising a record that is not in the bucket - the shape a
-    // half-finished publish would leave if the order were wrong.
     const brokenManifest = await hisPhone.getManifest();
     brokenManifest.letters.push({ id: 'letter-missing', updatedAt: Date.now(), deleted: false });
     mbxBucket.set(
@@ -5060,8 +4211,6 @@ async function run() {
     check('a manifest promising a missing record does not throw', dangling.ok === true);
     check('it simply applies nothing', dangling.applied === 0);
 
-    /* -- a mailbox nobody has published to --------------------------------- */
-
     const empty = await mbx.collect({
       cryptoKey: key,
       partnerId: HER_BOX,
@@ -5070,8 +4219,6 @@ async function run() {
     });
     check('an empty mailbox is not an error', empty.ok === true);
     check('there is simply nothing published', empty.reason === 'nothing-published');
-
-    /* -- the wrong token is refused ---------------------------------------- */
 
     const badToken = await mbx.publish({
       cryptoKey: key,
@@ -5090,11 +4237,6 @@ async function run() {
   }
 
 
-  /* ------------------------------------------ 22. the Worker itself refuses */
-  //
-  // Section 21 drove the client against a fake HTTP server. This drives the
-  // REAL Worker source, so the rules it enforces are tested rather than assumed
-  // - including the ones that only matter when someone is poking at it.
   section('22. The mailbox Worker: what it will not do');
 
   const worker = (await import('./worker/src/index.js')).default;
@@ -5103,9 +4245,6 @@ async function run() {
   const WK_ID = 'a'.repeat(64);
   const WK_KEY = `/m/${WK_ID}/person-slot-aaaa/manifest`;
 
-  // The two bindings the Worker supports. KV is the default because it is on
-  // the Workers free plan with no payment method; R2 needs a card even for its
-  // free tier. Both are exercised so switching one for the other stays safe.
   const wkKv = new Map();
   const kvBinding = {
     async get(k) {
@@ -5179,10 +4318,6 @@ async function run() {
     ).status === 204
   );
 
-  // DELETE is absent on purpose: a deletion in this app travels as a tombstone
-  // that is WRITTEN. If the object could disappear, the other phone would never
-  // learn the record died and the deleted letter would come back on the next
-  // sync. This is the assertion that stops someone "tidying up" by adding it.
   check(
     'DELETE is refused - a deletion is a write, never a disappearance',
     (await worker.fetch(wkReq('DELETE', WK_KEY), wkEnv)).status === 405
@@ -5207,16 +4342,11 @@ async function run() {
       .status === 404
   );
 
-  // Measured after reading the body, not from Content-Length, because a chunked
-  // upload arrives with no declared length at all.
   check(
     'an object over the size ceiling is refused',
     (await worker.fetch(wkReq('PUT', WK_KEY, { body: 'x'.repeat(17 * 1024 * 1024) }), wkEnv))
       .status === 413
   );
-  // The STORAGE key is the URL path without its `/m/` route prefix, and the
-  // value is an ArrayBuffer: the Worker reads the body as bytes rather than
-  // text, so a photo record never goes through a string decode.
   const wkStored = wkKv.get(WK_KEY.replace(/^\/m\//, ''));
   check(
     'and the oversized body did not overwrite what was there',
@@ -5233,9 +4363,6 @@ async function run() {
 
   const { requestPersistentStorage } = await import('./src/services/persistentStorage.js');
 
-  /* -- keeping the vault from being evicted -------------------------------- */
-
-  /** A stand-in for navigator.storage that counts how often it was asked. */
   const fakeStorage = ({ persisted, persist }) => {
     const calls = { persist: 0 };
     return {
@@ -5290,12 +4417,9 @@ async function run() {
       (await requestPersistentStorage({ storage: {} })) === 'unsupported'
   );
 
-  /* -- an installed app that comes up empty -------------------------------- */
-
   const { isInstalledApp } = await import('./src/utils/appEnvironment.js');
   const { defaultLockScreenMode } = await import('./src/utils/lockScreenMode.js');
 
-  /** A window whose display-mode media query answers `mode` and nothing else. */
   const fakeWindow = (mode) => ({
     matchMedia: (query) => ({ matches: query === `(display-mode: ${mode})` }),
     navigator: {},
@@ -5331,8 +4455,6 @@ async function run() {
     'and nothing is chosen while we cannot tell',
     mode('checking', false, true) === null && mode('unreadable', true, true) === null
   );
-
-  /* -- a link opened inside another app ------------------------------------ */
 
   const { detectInAppBrowser } = await import('./src/utils/appEnvironment.js');
 
@@ -5379,12 +4501,10 @@ async function run() {
 
   section('24. Swapped: when the two of you trade places by accident');
 
-  // The people module from section 20, with its in-memory localStorage.
   const [SLOT_A, SLOT_B] = await ppl.derivePersonSlots(key);
   let swClock = 1760000000000;
   const swStamp = () => (swClock += 60 * 1000);
 
-  /** Writes a person record exactly as given - the shape a sync delivers. */
   const putPerson = async (store, personId, name, deviceIds, createdAt = 1) =>
     store.putEncrypted(
       ppl.PEOPLE_TABLE,
@@ -5400,15 +4520,12 @@ async function run() {
       key
     );
 
-  /** Resolves identity as the phone with this tag and hint would. */
   const whoAmI = async (store, deviceId, hint) => {
     ppl.clearLocalPersonId();
     if (hint) ppl.setLocalPersonId(hint);
     const out = await ppl.resolveIdentity({ cryptoKey: key, store, deviceId });
     return { ...out, hintAfter: ppl.getLocalPersonId() };
   };
-
-  /* -- the records can overrule a stale hint, but only clearly ------------- */
 
   const prec = new FakeVaultStore();
   await putPerson(prec, SLOT_A, 'Harshit', ['his-phone-tag-01']);
@@ -5444,15 +4561,6 @@ async function run() {
     noHint.me && noHint.me.personId === SLOT_B && noHint.hintAfter === SLOT_B
   );
 
-  /* -- the accident, replayed --------------------------------------------- */
-  //
-  // He set the two of you up on his phone, so he is slot A. Her phone is wiped,
-  // rejoins, and shows "what should we call you two?" before his records
-  // arrive. "You" is always slot A, so her name lands on HIS id. On his phone
-  // the names now look swapped, he taps "I'm this one" on his own name - slot
-  // B - and from then on answers as B. Everything he wrote before still sits
-  // under A, which is now her.
-
   const daily = await import('./src/services/dailyQuestion.js');
   const repair = await import('./src/services/peopleRepair.js');
 
@@ -5485,7 +4593,6 @@ async function run() {
       key
     );
 
-  /** Copies every people and answer row across, as a sync that the newer side wins would. */
   const syncInto = async (from, to) => {
     for (const table of [ppl.PEOPLE_TABLE, daily.ANSWER_TABLE]) {
       for (const row of await from.table(table).toArray()) await to.table(table).put(row);
@@ -5494,8 +4601,6 @@ async function run() {
 
   const hisPhone = new FakeVaultStore();
 
-  // Before people existed: answers under device tags, his and hers interleaved.
-  // His first install's answers all come before his current phone's.
   await putAnswers(hisPhone, '2026-08', HIS_FIRST_INSTALL, {
     '2026-08-20': utc('2026-08-20'),
     '2026-08-25': utc('2026-08-25'),
@@ -5511,7 +4616,6 @@ async function run() {
     '2026-09-19': utc('2026-09-19'),
   });
 
-  // People arrive. He is slot A, she is slot B.
   clockAt(utc('2026-09-21'));
   await putPerson(hisPhone, SLOT_A, 'Harshit', [HIS], utc('2026-09-21'));
   await putPerson(hisPhone, SLOT_B, 'Noor', [HER_OLD], utc('2026-09-21'));
@@ -5524,7 +4628,6 @@ async function run() {
     '2026-10-03': utc('2026-10-03'),
   });
 
-  // Sunday, 5:10pm: her wiped phone sets up names before anything has synced.
   const herPhone = new FakeVaultStore();
   clockAt(utc('2026-10-04', '11:40'));
   await ppl.createCouple({
@@ -5543,7 +4646,6 @@ async function run() {
     looksSwapped.me && looksSwapped.me.name === 'Noor'
   );
 
-  // He fixes the name the only way the screen offers: "I'm this one" on his own.
   await ppl.claimPerson({ cryptoKey: key, store: hisPhone, personId: SLOT_B, deviceId: HIS, timestamp: incidentStamp });
   await putAnswers(hisPhone, '2026-10', SLOT_B, { '2026-10-04': utc('2026-10-04', '15:21') });
 
@@ -5568,14 +4670,11 @@ async function run() {
     broken.byDay['2026-09-05'].mine !== null && broken.byDay['2026-10-04'].mine !== null
   );
 
-  /* -- swap us back --------------------------------------------------------- */
-
   clockAt(utc('2026-10-05', '10:00'));
   const seenBefore = Object.fromEntries(
     (await ppl.listPeople({ cryptoKey: key, store: hisPhone })).map((p) => [p.personId, p.lastActiveAt])
   );
 
-  // Every write has to go through the one transaction.
   const writes = { single: 0, many: 0 };
   hisPhone.putEncrypted = async function (...rest) {
     writes.single++;
@@ -5635,7 +4734,6 @@ async function run() {
     personA.lastActiveAt === seenBefore[SLOT_B] && personB.lastActiveAt === seenBefore[SLOT_A]
   );
 
-  // Her phone still remembers being slot A. It only has to sync.
   await syncInto(hisPhone, herPhone);
   const herSide = await archiveOf(herPhone, HER_NEW, SLOT_A);
   check(
@@ -5652,8 +4750,6 @@ async function run() {
       herSide.byDay['2026-09-21'].partnerHasAnswered === true &&
       herSide.byDay['2026-09-06'].mine !== null
   );
-
-  /* -- the guards ---------------------------------------------------------- */
 
   check(
     'answers written before the swap never move twice',
@@ -5702,7 +4798,6 @@ async function run() {
   );
 
 
-  /* ------------------------------------------------------- verdict */
   console.log('\n' + '='.repeat(64));
   if (failures.length > 0) {
     console.log(`FAILED: ${failures.length} of ${passed + failures.length} assertions`);
