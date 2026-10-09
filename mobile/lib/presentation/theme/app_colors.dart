@@ -5,6 +5,7 @@ abstract final class AppColors {
   static const Color black = Color(0xFF000000);
   static const Color transparent = Color(0x00000000);
   static const Color letterPaper = Color(0xFFFEFCF8);
+  static const Color placeholder = Color(0xFF9CA3AF);
 
   static const Color blush50 = Color(0xFFFFF5F7);
   static const Color blush100 = Color(0xFFFFE8ED);
