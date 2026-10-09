@@ -252,6 +252,100 @@ export async function listArchive(args) {
   return typeof args.limit === 'number' ? out.slice(0, args.limit) : out;
 }
 
+export async function swapAnswersSince(args) {
+  const store = (args && args.store) || db;
+  const { rows } = await planAnswerSwap(args);
+  if (rows.length === 0) return [];
+  const sealed = await store.putEncryptedMany(
+    rows.map((fields) => ({ table: ANSWER_TABLE, fields })),
+    args.cryptoKey
+  );
+  return sealed.map((entry) => entry.row);
+}
+
+export async function planAnswerSwap(args) {
+  const { cryptoKey, personA, personB, since } = args || {};
+  if (!cryptoKey) throw new Error('swapAnswersSince: vault is locked');
+  if (!personA || !personB || personA === personB) {
+    throw new Error('swapAnswersSince: needs two different people');
+  }
+  if (!Number.isFinite(since)) throw new Error('swapAnswersSince: needs the moment to split at');
+
+  const store = args.store || db;
+  const stamp = args.timestamp || (async () => Date.now());
+  const otherOf = { [personA]: personB, [personB]: personA };
+  const before = await readAllRows(store, cryptoKey);
+
+  const months = new Map();
+  for (const row of before) {
+    const owner = ownerOf(row);
+    if (owner !== personA && owner !== personB) continue;
+    if (!row.answers || typeof row.answers !== 'object') continue;
+
+    const kept = {};
+    const moved = {};
+    for (const [day, entry] of Object.entries(row.answers)) {
+      if (!isAnswer(entry)) continue;
+      if ((entry.answeredAt || 0) >= since) moved[day] = entry;
+      else kept[day] = entry;
+    }
+    if (!months.has(row.month)) months.set(row.month, {});
+    months.get(row.month)[owner] = { kept, moved };
+  }
+
+  const rows = [];
+  for (const [month, owners] of months) {
+    const anythingMoves = Object.values(owners).some((o) => Object.keys(o.moved).length > 0);
+    if (!anythingMoves) continue;
+
+    for (const owner of [personA, personB]) {
+      const own = owners[owner] || { kept: {}, moved: {} };
+      const arriving = (owners[otherOf[owner]] || { moved: {} }).moved;
+
+      const answers = { ...own.kept };
+      for (const [day, entry] of Object.entries(arriving)) {
+        const prev = answers[day];
+        if (!prev || (entry.answeredAt || 0) >= (prev.answeredAt || 0)) answers[day] = entry;
+      }
+
+      rows.push({
+        id: answerRecordId(month, owner),
+        ownerId: owner,
+        month,
+        answers,
+        updatedAt: await stamp(),
+      });
+    }
+  }
+
+  const replaced = new Set(rows.map((row) => row.id));
+  const after = [...before.filter((row) => !replaced.has(row && row.id)), ...rows];
+  return { rows, after };
+}
+
+export async function answerSpans(args) {
+  const { cryptoKey } = args || {};
+  const spans = new Map();
+  if (!cryptoKey && !Array.isArray(args && args.rows)) return spans;
+
+  const rows = Array.isArray(args.rows) ? args.rows : await readAllRows(args.store || db, cryptoKey);
+  for (const row of rows) {
+    const owner = ownerOf(row);
+    if (!owner || !row.answers || typeof row.answers !== 'object') continue;
+    for (const [day, entry] of Object.entries(row.answers)) {
+      if (!isAnswer(entry)) continue;
+      const span = spans.get(owner);
+      if (!span) {
+        spans.set(owner, { first: day, last: day });
+        continue;
+      }
+      if (day < span.first) span.first = day;
+      if (day > span.last) span.last = day;
+    }
+  }
+  return spans;
+}
+
 export default {
   ANSWER_TABLE,
   MAX_ANSWER_LENGTH,
@@ -266,5 +360,8 @@ export default {
   saveAnswer,
   readDay,
   listAnswered,
+  swapAnswersSince,
+  planAnswerSwap,
+  answerSpans,
   totalQuestions: ALL_QUESTIONS.length,
 };

@@ -215,10 +215,22 @@ export async function resolveIdentity(args) {
 
   const hinted = getLocalPersonId();
   let me = hinted ? people.find((p) => p.personId === hinted) || null : null;
+  const listing = people.filter((p) => (p.deviceIds || []).includes(deviceId));
 
   if (!me) {
-    me = people.find((p) => (p.deviceIds || []).includes(deviceId)) || null;
+    me = listing[0] || null;
     if (me) setLocalPersonId(me.personId);
+  }
+
+  if (
+    me &&
+    listing.length === 1 &&
+    listing[0].personId !== me.personId &&
+    (me.deviceIds || []).length > 0 &&
+    !(me.deviceIds || []).includes(deviceId)
+  ) {
+    me = listing[0];
+    setLocalPersonId(me.personId);
   }
 
   if (!me) {

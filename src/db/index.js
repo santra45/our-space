@@ -149,6 +149,27 @@ export class SweetheartDatabase extends Dexie {
     return row;
   }
 
+  async putEncryptedMany(entries, key) {
+    if (!key) throw new Error('putEncryptedMany: vault is locked');
+
+    const sealed = [];
+    for (const { table, fields } of entries || []) {
+      if (!SYNCED_TABLES.includes(table)) {
+        throw new Error(`putEncryptedMany: unknown table "${table}"`);
+      }
+      sealed.push({ table, row: await encryptRecord(fields, key, { table }) });
+    }
+    if (sealed.length === 0) return sealed;
+
+    const tables = [...new Set(sealed.map((entry) => entry.table))].map((name) => this.table(name));
+    await this.transaction('rw', tables, async () => {
+      for (const { table, row } of sealed) {
+        await this.table(table).put(this._withDelIndex(row));
+      }
+    });
+    return sealed;
+  }
+
   async getDecrypted(tableName, id, key) {
     if (!key) throw new Error('getDecrypted: vault is locked');
     const row = await this.table(tableName).get(id);

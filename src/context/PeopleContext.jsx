@@ -22,14 +22,16 @@ import {
   savePerson as savePersonRecord,
   touchPersonActive,
 } from '../services/people';
+import { swapUsBack as swapUsBackRecords } from '../services/peopleRepair';
+import { ANSWER_TABLE } from '../services/dailyQuestion';
 
 const PeopleContext = createContext(null);
 
-function broadcast(rows) {
+function broadcast(rows, table = PEOPLE_TABLE) {
   for (const row of Array.isArray(rows) ? rows : [rows]) {
     if (!row) continue;
     try {
-      peerSync.broadcastLiveRecord(PEOPLE_TABLE, row);
+      peerSync.broadcastLiveRecord(table, row);
     } catch {
     }
   }
@@ -132,6 +134,22 @@ export function PeopleProvider({ children }) {
     [cryptoKey, busy, refresh, stamp]
   );
 
+  const swapUsBack = useCallback(async () => {
+    if (!cryptoKey || busy) return false;
+    setBusy(true);
+    try {
+      const result = await swapUsBackRecords({ cryptoKey, timestamp: stamp });
+      broadcast(result.answers, ANSWER_TABLE);
+      broadcast(result.people);
+      await refresh();
+      return true;
+    } catch {
+      return false;
+    } finally {
+      setBusy(false);
+    }
+  }, [cryptoKey, busy, refresh, stamp]);
+
   const myPersonIdRef = useRef(null);
   myPersonIdRef.current = state.me ? state.me.personId : null;
 
@@ -199,9 +217,10 @@ export function PeopleProvider({ children }) {
       createCouple,
       claimPerson,
       savePerson,
+      swapUsBack,
       touchLastActive,
     };
-  }, [state, busy, refresh, createCouple, claimPerson, savePerson, touchLastActive]);
+  }, [state, busy, refresh, createCouple, claimPerson, savePerson, swapUsBack, touchLastActive]);
 
   return <PeopleContext.Provider value={value}>{children}</PeopleContext.Provider>;
 }

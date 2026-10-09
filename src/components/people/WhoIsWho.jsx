@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { UserRound, Check, Pencil } from 'lucide-react';
 import { usePeople } from '../../context/PeopleContext';
 import { MAX_NAME_LENGTH, PRONOUNS } from '../../services/people';
+import { tradedPlacesAt } from '../../services/peopleRepair';
 import { useHaptics } from '../../hooks/useHaptics';
 
 const PRONOUN_LABELS = {
@@ -10,13 +11,30 @@ const PRONOUN_LABELS = {
   they: 'they / them',
 };
 
+function formatMoment(ms) {
+  try {
+    return new Date(ms).toLocaleString(undefined, {
+      weekday: 'short',
+      day: 'numeric',
+      month: 'short',
+      hour: 'numeric',
+      minute: '2-digit',
+    });
+  } catch {
+    return new Date(ms).toString();
+  }
+}
+
 export function WhoIsWho() {
-  const { status, people, me, partner, busy, savePerson, claimPerson } = usePeople();
-  const { tap } = useHaptics();
+  const { status, people, me, partner, busy, savePerson, claimPerson, swapUsBack } = usePeople();
+  const { tap, celebration } = useHaptics();
 
   const [editing, setEditing] = useState(null);
   const [name, setName] = useState('');
   const [pronoun, setPronoun] = useState('they');
+  const [confirmClaim, setConfirmClaim] = useState(null);
+  const [swapOpen, setSwapOpen] = useState(false);
+  const [swapNote, setSwapNote] = useState('');
 
   if (status !== 'ready' || !me) return null;
 
@@ -112,9 +130,10 @@ export function WhoIsWho() {
             <button
               type="button"
               disabled={busy}
-              onClick={async () => {
+              onClick={() => {
                 tap();
-                await claimPerson(person.personId);
+                setSwapOpen(false);
+                setConfirmClaim(person.personId);
               }}
               className="text-[10px] font-bold text-lavender-600 underline disabled:opacity-40"
             >
@@ -144,6 +163,103 @@ export function WhoIsWho() {
         {row(me, true)}
         {partner && row(partner, false)}
       </div>
+
+      {partner && confirmClaim === partner.personId && (
+        <div className="mt-2 p-3 rounded-2xl bg-amber-50 border border-amber-200 text-[11px] text-amber-900 leading-relaxed">
+          <p className="font-bold">Make this phone {partner.name || 'the other one'}?</p>
+          <p className="mt-1">
+            Answers already written on this phone stay with {me.name || 'you'}. If your names just
+            look swapped, use &ldquo;Swap us back&rdquo; below instead.
+          </p>
+          <div className="flex items-center gap-3 mt-2">
+            <button
+              type="button"
+              disabled={busy}
+              onClick={async () => {
+                tap();
+                if (await claimPerson(confirmClaim)) setConfirmClaim(null);
+              }}
+              className="text-[11px] font-bold text-amber-800 underline disabled:opacity-40"
+            >
+              Yes, I&apos;m {partner.name || 'this one'}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                tap();
+                setConfirmClaim(null);
+              }}
+              className="text-[11px] font-bold text-slate-400"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {partner && people.length === 2 && !swapOpen && (
+        <button
+          type="button"
+          onClick={() => {
+            tap();
+            setConfirmClaim(null);
+            setSwapNote('');
+            setSwapOpen(true);
+          }}
+          className="mt-2 text-[10px] font-bold text-slate-400 underline"
+        >
+          Names or answers look swapped?
+        </button>
+      )}
+
+      {partner && people.length === 2 && swapOpen && (
+        <div className="mt-2 p-3 rounded-2xl bg-lavender-50 border border-lavender-200 text-[11px] text-slate-700 leading-relaxed">
+          <p className="font-bold text-lavender-700">Swap us back?</p>
+          <p className="mt-1">
+            {me.name || 'You'} and {partner.name || 'your partner'} trade places, along with which
+            phone is whose.
+            {tradedPlacesAt(people)
+              ? ` Answers written since ${formatMoment(tradedPlacesAt(people))} move with them.`
+              : ''}{' '}
+            Do this on one phone only. The other one follows by itself the next time it syncs.
+          </p>
+          <div className="flex items-center gap-3 mt-2">
+            <button
+              type="button"
+              disabled={busy}
+              onClick={async () => {
+                tap();
+                if (await swapUsBack()) {
+                  celebration();
+                  setSwapOpen(false);
+                  setSwapNote('Swapped back. Your answers are where they belong again 💕');
+                } else {
+                  setSwapNote('That did not work, and nothing was changed. Try again in a moment.');
+                }
+              }}
+              className="text-[11px] font-bold text-lavender-700 underline disabled:opacity-40"
+            >
+              Swap us back
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                tap();
+                setSwapOpen(false);
+              }}
+              className="text-[11px] font-bold text-slate-400"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {swapNote && (
+        <p role="status" className="mt-2 text-[11px] font-semibold text-slate-600">
+          {swapNote}
+        </p>
+      )}
 
       <p className="text-[10px] text-slate-400 leading-relaxed mt-2">
         {people.length > 2

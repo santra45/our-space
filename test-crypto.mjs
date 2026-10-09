@@ -162,6 +162,7 @@ for (const method of [
   'applyBackupMerge',
   'restoreVaultIdentity',
   'putEncrypted',
+  'putEncryptedMany',
   'softDelete',
   '_withDelIndex',
   'getDecrypted',
@@ -4497,6 +4498,304 @@ async function run() {
     eq(detectInAppBrowser(ANDROID_WEBVIEW), { app: null })
   );
   check('and an empty user agent is no reason to warn', detectInAppBrowser('') === null);
+
+  section('24. Swapped: when the two of you trade places by accident');
+
+  const [SLOT_A, SLOT_B] = await ppl.derivePersonSlots(key);
+  let swClock = 1760000000000;
+  const swStamp = () => (swClock += 60 * 1000);
+
+  const putPerson = async (store, personId, name, deviceIds, createdAt = 1) =>
+    store.putEncrypted(
+      ppl.PEOPLE_TABLE,
+      {
+        id: ppl.personRecordId(personId),
+        personId,
+        name,
+        pronoun: 'they',
+        deviceIds,
+        createdAt,
+        updatedAt: swStamp(),
+      },
+      key
+    );
+
+  const whoAmI = async (store, deviceId, hint) => {
+    ppl.clearLocalPersonId();
+    if (hint) ppl.setLocalPersonId(hint);
+    const out = await ppl.resolveIdentity({ cryptoKey: key, store, deviceId });
+    return { ...out, hintAfter: ppl.getLocalPersonId() };
+  };
+
+  const prec = new FakeVaultStore();
+  await putPerson(prec, SLOT_A, 'Harshit', ['his-phone-tag-01']);
+  await putPerson(prec, SLOT_B, 'Noor', ['her-phone-tag-01']);
+
+  const followed = await whoAmI(prec, 'her-phone-tag-01', SLOT_A);
+  check(
+    'a hint pointing at a person who now belongs to another phone gives way to the records',
+    followed.me && followed.me.personId === SLOT_B && followed.hintAfter === SLOT_B
+  );
+
+  const prec2 = new FakeVaultStore();
+  await putPerson(prec2, SLOT_A, 'Harshit', []);
+  await putPerson(prec2, SLOT_B, 'Noor', ['her-phone-tag-01']);
+  const keptEmpty = await whoAmI(prec2, 'her-phone-tag-01', SLOT_A);
+  check(
+    'but a hinted person who lists no phone at all keeps the hint, because that is a dropped tag',
+    keptEmpty.me && keptEmpty.me.personId === SLOT_A
+  );
+
+  const prec3 = new FakeVaultStore();
+  await putPerson(prec3, SLOT_A, 'Harshit', ['his-phone-tag-01', 'her-phone-tag-01']);
+  await putPerson(prec3, SLOT_B, 'Noor', ['her-phone-tag-01']);
+  const keptListed = await whoAmI(prec3, 'her-phone-tag-01', SLOT_A);
+  check(
+    'and a hinted person who still lists this phone is never overruled',
+    keptListed.me && keptListed.me.personId === SLOT_A
+  );
+
+  const noHint = await whoAmI(prec, 'her-phone-tag-01', null);
+  check(
+    'with no hint at all the records decide, as before',
+    noHint.me && noHint.me.personId === SLOT_B && noHint.hintAfter === SLOT_B
+  );
+
+  const daily = await import('./src/services/dailyQuestion.js');
+  const repair = await import('./src/services/peopleRepair.js');
+
+  const HIS = 'his-phone-tag-01';
+  const HIS_FIRST_INSTALL = 'his-first-install';
+  const HER_OLD = 'her-old-phone-01';
+  const HER_NEW = 'her-new-phone-01';
+  const utc = (day, hhmm = '12:00') => Date.parse(`${day}T${hhmm}:00Z`);
+  let incidentClock = utc('2026-09-21');
+  const clockAt = (ms) => {
+    incidentClock = ms;
+  };
+  const incidentStamp = () => (incidentClock += 1000);
+
+  const putAnswers = (store, month, ownerId, days) =>
+    store.putEncrypted(
+      daily.ANSWER_TABLE,
+      {
+        id: daily.answerRecordId(month, ownerId),
+        ownerId,
+        month,
+        answers: Object.fromEntries(
+          Object.entries(days).map(([day, at]) => [
+            day,
+            { questionId: 'q-1', text: `${ownerId} on ${day}`, answeredAt: at },
+          ])
+        ),
+        updatedAt: incidentStamp(),
+      },
+      key
+    );
+
+  const syncInto = async (from, to) => {
+    for (const table of [ppl.PEOPLE_TABLE, daily.ANSWER_TABLE]) {
+      for (const row of await from.table(table).toArray()) await to.table(table).put(row);
+    }
+  };
+
+  const hisPhone = new FakeVaultStore();
+
+  await putAnswers(hisPhone, '2026-08', HIS_FIRST_INSTALL, {
+    '2026-08-20': utc('2026-08-20'),
+    '2026-08-25': utc('2026-08-25'),
+  });
+  await putAnswers(hisPhone, '2026-09', HIS, {
+    '2026-09-05': utc('2026-09-05'),
+    '2026-09-12': utc('2026-09-12'),
+    '2026-09-20': utc('2026-09-20'),
+  });
+  await putAnswers(hisPhone, '2026-09', HER_OLD, {
+    '2026-09-06': utc('2026-09-06'),
+    '2026-09-12': utc('2026-09-12', '18:00'),
+    '2026-09-19': utc('2026-09-19'),
+  });
+
+  clockAt(utc('2026-09-21'));
+  await putPerson(hisPhone, SLOT_A, 'Harshit', [HIS], utc('2026-09-21'));
+  await putPerson(hisPhone, SLOT_B, 'Noor', [HER_OLD], utc('2026-09-21'));
+  await putAnswers(hisPhone, '2026-09', SLOT_A, {
+    '2026-09-21': utc('2026-09-21', '15:00'),
+    '2026-09-30': utc('2026-09-30'),
+  });
+  await putAnswers(hisPhone, '2026-10', SLOT_A, {
+    '2026-10-01': utc('2026-10-01'),
+    '2026-10-03': utc('2026-10-03'),
+  });
+
+  const herPhone = new FakeVaultStore();
+  clockAt(utc('2026-10-04', '11:40'));
+  await ppl.createCouple({
+    cryptoKey: key,
+    store: herPhone,
+    deviceId: HER_NEW,
+    mine: { name: 'Noor', pronoun: 'she' },
+    theirs: { name: 'Harshit', pronoun: 'he' },
+    timestamp: incidentStamp,
+  });
+  await syncInto(herPhone, hisPhone);
+
+  const looksSwapped = await whoAmI(hisPhone, HIS, SLOT_A);
+  check(
+    'replayed: after her setup syncs, his own phone calls him by her name',
+    looksSwapped.me && looksSwapped.me.name === 'Noor'
+  );
+
+  await ppl.claimPerson({ cryptoKey: key, store: hisPhone, personId: SLOT_B, deviceId: HIS, timestamp: incidentStamp });
+  await putAnswers(hisPhone, '2026-10', SLOT_B, { '2026-10-04': utc('2026-10-04', '15:21') });
+
+  const archiveOf = async (store, deviceId, hint) => {
+    const who = await whoAmI(store, deviceId, hint);
+    const rows = await daily.listArchive({
+      cryptoKey: key,
+      store,
+      ownerId: who.me.personId,
+      ownerIds: ppl.ownerIdsFor(who.me),
+    });
+    return { who, byDay: Object.fromEntries(rows.map((r) => [r.day, r])) };
+  };
+
+  const broken = await archiveOf(hisPhone, HIS, SLOT_B);
+  check(
+    'replayed: his answers from after people existed now read as missed, with hers waiting',
+    broken.byDay['2026-09-21'].missed === true && broken.byDay['2026-10-03'].missed === true
+  );
+  check(
+    'replayed: while the ones under his device tag and Sunday\'s still read as his',
+    broken.byDay['2026-09-05'].mine !== null && broken.byDay['2026-10-04'].mine !== null
+  );
+
+  clockAt(utc('2026-10-05', '10:00'));
+  const seenBefore = Object.fromEntries(
+    (await ppl.listPeople({ cryptoKey: key, store: hisPhone })).map((p) => [p.personId, p.lastActiveAt])
+  );
+
+  const writes = { single: 0, many: 0 };
+  hisPhone.putEncrypted = async function (...rest) {
+    writes.single++;
+    return FakeVaultStore.prototype.putEncrypted.apply(this, rest);
+  };
+  hisPhone.putEncryptedMany = async function (...rest) {
+    writes.many++;
+    return FakeVaultStore.prototype.putEncryptedMany.apply(this, rest);
+  };
+  const fixed = await repair.swapUsBack({
+    cryptoKey: key,
+    store: hisPhone,
+    deviceId: HIS,
+    timestamp: incidentStamp,
+  });
+  delete hisPhone.putEncrypted;
+  delete hisPhone.putEncryptedMany;
+  check(
+    'the whole swap lands in one transaction, with no write on its own',
+    writes.many === 1 && writes.single === 0
+  );
+
+  const repaired = await archiveOf(hisPhone, HIS, ppl.getLocalPersonId());
+  check(
+    'his phone is slot A again, under his own name',
+    repaired.who.me.personId === SLOT_A && repaired.who.me.name === 'Harshit' && fixed.holderId === SLOT_A
+  );
+  const hisDays = ['2026-09-05', '2026-09-12', '2026-09-20', '2026-09-21', '2026-09-30', '2026-10-01', '2026-10-03', '2026-10-04'];
+  check(
+    'every day he answered is his again, Sunday included',
+    hisDays.every((day) => repaired.byDay[day] && repaired.byDay[day].mine && !repaired.byDay[day].missed)
+  );
+  check(
+    'Sunday\'s answer moved under his id, and her row kept nothing of his',
+    repaired.byDay['2026-10-04'].mine.text === `${SLOT_B} on 2026-10-04` &&
+      fixed.answers.length === 2
+  );
+  check(
+    'a day you both answered opens on both sides, the way it did before',
+    repaired.byDay['2026-09-12'].theirs && repaired.byDay['2026-09-12'].theirs.text === `${HER_OLD} on 2026-09-12`
+  );
+
+  const fixedPeople = await ppl.listPeople({ cryptoKey: key, store: hisPhone });
+  const personA = fixedPeople.find((p) => p.personId === SLOT_A);
+  const personB = fixedPeople.find((p) => p.personId === SLOT_B);
+  check('his record lists his phone and nothing of hers', eq(personA.deviceIds, [HIS]));
+  check(
+    'hers lists her new phone, and her old install comes home because it answered alongside his',
+    personB.name === 'Noor' && personB.deviceIds.includes(HER_NEW) && personB.deviceIds.includes(HER_OLD)
+  );
+  check(
+    'but his own first install, which answered only before his phone did, is left alone',
+    !personB.deviceIds.includes(HIS_FIRST_INSTALL) && eq(fixed.adopted, [HER_OLD])
+  );
+  check(
+    'and each of you keeps your own last-online time',
+    personA.lastActiveAt === seenBefore[SLOT_B] && personB.lastActiveAt === seenBefore[SLOT_A]
+  );
+
+  await syncInto(hisPhone, herPhone);
+  const herSide = await archiveOf(herPhone, HER_NEW, SLOT_A);
+  check(
+    'her phone follows on its own: slot B, her name, nobody touched it',
+    herSide.who.me.personId === SLOT_B && herSide.who.me.name === 'Noor' && herSide.who.hintAfter === SLOT_B
+  );
+  check(
+    'and it does not put her tag back on his record',
+    (await ppl.ensureDeviceClaimed({ cryptoKey: key, store: herPhone, deviceId: HER_NEW })) === null
+  );
+  check(
+    'on her phone his answers are his, and her old ones are hers',
+    herSide.byDay['2026-09-21'].mine === null &&
+      herSide.byDay['2026-09-21'].partnerHasAnswered === true &&
+      herSide.byDay['2026-09-06'].mine !== null
+  );
+
+  check(
+    'answers written before the swap never move twice',
+    (await daily.swapAnswersSince({
+      cryptoKey: key,
+      store: hisPhone,
+      personA: SLOT_A,
+      personB: SLOT_B,
+      since: utc('2026-10-05', '11:00'),
+      timestamp: incidentStamp,
+    })).length === 0
+  );
+  check(
+    'a tag that only touches your span at one end is not adopted',
+    repair.orphansAnsweringAlongside(
+      new Map([
+        ['mine', { first: '2026-09-10', last: '2026-09-20' }],
+        ['edge', { first: '2026-09-01', last: '2026-09-10' }],
+        ['inside', { first: '2026-09-11', last: '2026-09-12' }],
+      ]),
+      { holderIds: ['mine'], claimed: new Set(['mine']) }
+    ).join() === 'inside'
+  );
+  await checkThrows(
+    'and it refuses a vault that does not hold exactly two people',
+    () => repair.swapUsBack({ cryptoKey: key, store: new FakeVaultStore(), deviceId: HIS }),
+    (err) => /exactly two people/.test(err.message)
+  );
+
+  const allOrNothing = new FakeVaultStore();
+  await checkThrows(
+    'a batch that cannot all be sealed writes nothing at all',
+    () =>
+      allOrNothing.putEncryptedMany(
+        [
+          { table: ppl.PEOPLE_TABLE, fields: { id: ppl.personRecordId(SLOT_A), personId: SLOT_A, name: 'x', updatedAt: 1 } },
+          { table: 'notATable', fields: { id: 'nope', updatedAt: 1 } },
+        ],
+        key
+      ),
+    (err) => /unknown table/.test(err.message)
+  );
+  check(
+    'not even the rows before the bad one',
+    (await allOrNothing.table(ppl.PEOPLE_TABLE).toArray()).length === 0
+  );
 
 
   console.log('\n' + '='.repeat(64));

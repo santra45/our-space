@@ -1,10 +1,15 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Heart } from 'lucide-react';
 import { usePeople } from '../../context/PeopleContext';
+import { useSync } from '../../context/SyncContext';
 import { MAX_NAME_LENGTH, PRONOUNS } from '../../services/people';
 import BouncyButton from '../common/BouncyButton';
 import { useHaptics } from '../../hooks/useHaptics';
+
+const NAMES_WAIT_MS = 12000;
+
+const STILL_SYNCING = new Set(['connecting', 'handshaking', 'authorized', 'syncing']);
 
 const PRONOUN_LABELS = {
   she: 'she / her',
@@ -50,7 +55,8 @@ function Shell({ children }) {
 }
 
 export function PeopleSetup() {
-  const { status, people, busy, createCouple, claimPerson } = usePeople();
+  const { status, people, busy, createCouple, claimPerson, refresh } = usePeople();
+  const { mailboxEnabled, mailboxState, syncStatus } = useSync();
   const { tap, celebration } = useHaptics();
 
   const [myName, setMyName] = useState('');
@@ -59,6 +65,25 @@ export function PeopleSetup() {
   const [theirPronoun, setTheirPronoun] = useState('they');
   const [dismissed, setDismissed] = useState(false);
   const [error, setError] = useState('');
+  const [waitedOut, setWaitedOut] = useState(false);
+
+  useEffect(() => {
+    if (status !== 'empty') {
+      setWaitedOut(false);
+      return undefined;
+    }
+    const timer = setTimeout(() => setWaitedOut(true), NAMES_WAIT_MS);
+    return () => clearTimeout(timer);
+  }, [status]);
+
+  const mailboxSettled =
+    !mailboxEnabled || mailboxState.state === 'ok' || mailboxState.state === 'failed';
+  const partnerSettling = Boolean(syncStatus && STILL_SYNCING.has(syncStatus.state));
+  const stillLooking = status === 'empty' && !waitedOut && (!mailboxSettled || partnerSettling);
+
+  useEffect(() => {
+    if (status === 'empty' && mailboxSettled) refresh();
+  }, [status, mailboxSettled, refresh]);
 
   if (status === 'loading' || status === 'locked' || status === 'ready') return null;
 
@@ -111,7 +136,7 @@ export function PeopleSetup() {
     );
   }
 
-  if (dismissed) return null;
+  if (dismissed || stillLooking) return null;
 
   const canSave = myName.trim().length > 0 && theirName.trim().length > 0;
 
@@ -126,8 +151,12 @@ export function PeopleSetup() {
       <p className="font-handwriting text-2xl text-slate-800 leading-snug mb-1">
         What should we call you two?
       </p>
-      <p className="text-xs text-slate-500 leading-relaxed mb-5">
+      <p className="text-xs text-slate-500 leading-relaxed mb-2">
         So this place can use your names instead of saying &ldquo;your partner&rdquo; forever.
+      </p>
+      <p className="text-[11px] text-amber-700 leading-relaxed mb-5">
+        Only do this on one phone. If the other phone already has your names, they will arrive
+        here by themselves.
       </p>
 
       <form
