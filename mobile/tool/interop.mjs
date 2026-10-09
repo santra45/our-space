@@ -498,10 +498,13 @@ async function generate() {
 
   const identityCases = [];
   const peopleStore = new FakeVaultStore();
-  await peopleStore.putEncrypted('people', { id: people.personRecordId(slotA), personId: slotA, name: '  Sam   the\tman ', pronoun: 'he', deviceIds: ['dev-aaaaaaaa', 'bad tag', 'dev-aaaaaaaa', 'dev-bbbbbbbb'], createdAt: 100, updatedAt: 1 }, key);
-  await peopleStore.putEncrypted('people', { id: people.personRecordId(slotB), personId: slotB, name: 'Alex', pronoun: 'xe', deviceIds: ['dev-cccccccc'], createdAt: 50, lastActiveAt: 5, updatedAt: 2 }, key);
-  await peopleStore.putEncrypted('people', { id: people.presenceRecordId(slotB), personId: slotB, lastActiveAt: 999, updatedAt: 3 }, key);
-  await peopleStore.putEncrypted('people', { id: 'person-mismatch', personId: slotA, name: 'Imposter', updatedAt: 4 }, key);
+  const peopleRows = [
+    { id: people.personRecordId(slotA), personId: slotA, name: '  Sam   the\tman ', pronoun: 'he', deviceIds: ['dev-aaaaaaaa', 'bad tag', 'dev-aaaaaaaa', 'dev-bbbbbbbb'], createdAt: 100, updatedAt: 1 },
+    { id: people.personRecordId(slotB), personId: slotB, name: 'Alex', pronoun: 'xe', deviceIds: ['dev-cccccccc'], createdAt: 50, lastActiveAt: 5, updatedAt: 2 },
+    { id: people.presenceRecordId(slotB), personId: slotB, lastActiveAt: 999, updatedAt: 3 },
+    { id: 'person-mismatch', personId: slotA, name: 'Imposter', updatedAt: 4 },
+  ];
+  for (const row of peopleRows) await peopleStore.putEncrypted('people', row, key);
   for (const [deviceId, hint] of [
     ['dev-aaaaaaaa', null],
     ['dev-cccccccc', null],
@@ -615,7 +618,7 @@ async function generate() {
     invites: { built, parsed },
     dayVectors,
     dailyDomain: toJsonValue(dailyDomain),
-    identity: { cases: identityCases, people: peopleList, slots: [slotA, slotB] },
+    identity: { rows: peopleRows, cases: identityCases, people: peopleList, slots: [slotA, slotB] },
     sanitizeNames,
     burstVectors,
     dateVectors,
