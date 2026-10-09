@@ -2,6 +2,7 @@ import '../crypto/backup.dart';
 import '../crypto/canary.dart';
 import '../crypto/js_compat.dart';
 import '../crypto/kdf.dart';
+import '../domain/date_helpers.dart';
 import '../storage/tables.dart';
 import '../storage/vault_store.dart';
 import '../vault/vault_service.dart';
@@ -10,11 +11,14 @@ class BackupMessages {
   static const String wrongPassphrase =
       'That is not the passphrase you open Our Space with. The copy has to use the same one, or nothing could ever bring it back.';
   static const String saved = 'Copy saved. Only that passphrase opens it. 💕';
+  static const String rescueSaved = 'Saved. That passphrase opens it. 💕';
+  static String rescueTooShort() => 'Pick a passphrase with at least $minPassphraseLength characters.';
   static const String couldNotSave = 'We could not save that copy. Please try again.';
   static const String notOurFile = 'That does not look like a file Our Space saved.';
   static const String locked = 'Our Space is locked right now. Unlock it and try again.';
   static const String couldNotOpen = 'We could not open that file. Check the passphrase and try again.';
-  static const String unreadableHere = 'We could not read what is already on this phone, so we stopped. Nothing changed.';
+  static const String unreadableHere =
+      'We could not read what is already on this phone, so we stopped. Nothing changed.';
   static int get maxFileMb => (maxBackupFileBytes / (1024 * 1024)).round();
   static String tooBig(int bytes) =>
       'That file is ${(bytes / (1024 * 1024)).round()}MB — a bit big. The most we can take is ${maxFileMb}MB.';
@@ -22,8 +26,7 @@ class BackupMessages {
   static String added(MergeResult result, int plannedDeletes) {
     final written = result.totalWritten;
     final superseded = result.supersededSincePreview;
-    final supersededNote =
-        superseded > 0 ? ' $superseded already had a newer copy here, so we left those alone.' : '';
+    final supersededNote = superseded > 0 ? ' $superseded already had a newer copy here, so we left those alone.' : '';
     final deleteNote = plannedDeletes > 0
         ? (superseded > 0
             ? ' Up to $plannedDeletes of them removed something you had.'
@@ -88,6 +91,20 @@ class BackupService {
       await decryptBackupContainer(container, passphrase);
       final day = toJsIsoString(store.now()).split('T').first;
       return BackupFile(fileName: 'our-space-$day.vault', contents: jsonStringify(container));
+    } catch (_) {
+      throw BackupFailure(BackupMessages.couldNotSave);
+    }
+  }
+
+  Future<BackupFile> exportRescueBackup(String passphrase) async {
+    if (normalizePassphrase(passphrase).length < minPassphraseLength) {
+      throw BackupFailure(BackupMessages.rescueTooShort());
+    }
+    try {
+      final raw = await store.exportRawDataForBackup();
+      final container = await createEncryptedBackup(raw, passphrase);
+      await decryptBackupContainer(container, passphrase);
+      return BackupFile(fileName: 'our-space-rescue-${localDateString()}.vault', contents: jsonStringify(container));
     } catch (_) {
       throw BackupFailure(BackupMessages.couldNotSave);
     }
