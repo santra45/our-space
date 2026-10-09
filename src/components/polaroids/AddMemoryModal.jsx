@@ -1,13 +1,3 @@
-/**
- * src/components/polaroids/AddMemoryModal.jsx
- * Upload modal with camera capture, client-side compression, and AES-GCM encryption.
- *
- * SCHEMA v2: the record is written through db.putEncrypted(), so `date`, `caption`
- * and the blob's `mime` all travel inside the single encrypted envelope. Only
- * `id`, `updatedAt` and `deleted` remain readable without the vault key. The
- * image bytes stay a top-level Uint8Array - they are independently sealed by
- * encryptBlob() and must not be inflated through JSON.
- */
 import React, { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Camera, Image as ImageIcon, Sparkles, AlertTriangle } from 'lucide-react';
@@ -19,12 +9,6 @@ import BouncyButton from '../common/BouncyButton';
 import { fireHeartConfetti } from '../common/ConfettiBurst';
 import { useHaptics } from '../../hooks/useHaptics';
 
-/**
- * Today in the user's OWN timezone.
- * `new Date().toISOString().split('T')[0]` is UTC, so east of Greenwich it
- * returns yesterday for the entire early morning - IST users adding a photo at
- * 2am would have it filed under the previous day.
- */
 function todayLocalISO() {
   const now = new Date();
   const pad = (n) => String(n).padStart(2, '0');
@@ -44,9 +28,6 @@ export function AddMemoryModal({ isOpen, onClose, cryptoKey }) {
 
   const fileInputRef = useRef(null);
   const cameraInputRef = useRef(null);
-  // Single owner of the live preview ObjectURL. Every path that replaces or
-  // clears the preview goes through setPreview(), so a URL can never be
-  // overwritten without first being revoked (P4).
   const previewUrlRef = useRef(null);
   const { tap, celebration } = useHaptics();
 
@@ -58,8 +39,6 @@ export function AddMemoryModal({ isOpen, onClose, cryptoKey }) {
     setPreviewUrl(url);
   };
 
-  // Last line of defence: if this modal is ever unmounted while a preview is
-  // open, the URL still gets released.
   useEffect(() => {
     return () => {
       if (previewUrlRef.current) {
@@ -71,7 +50,6 @@ export function AddMemoryModal({ isOpen, onClose, cryptoKey }) {
 
   const handleFileChange = (e) => {
     const file = e.target.files?.[0];
-    // Clear the input so picking the SAME file twice still fires a change event.
     e.target.value = '';
     if (!file) return;
 
@@ -102,8 +80,6 @@ export function AddMemoryModal({ isOpen, onClose, cryptoKey }) {
       setSaving(true);
       tap();
 
-      // Step 1: shrink on the canvas. Throws (rather than passing the raw
-      // original through) if the browser cannot re-encode it.
       setStatusText('Getting it ready...');
       const { blob, mime } = await compressImage(selectedFile, {
         maxWidth: 1440,
@@ -111,12 +87,9 @@ export function AddMemoryModal({ isOpen, onClose, cryptoKey }) {
         quality: 0.85,
       });
 
-      // Step 2: zero-knowledge AES-GCM 256 on the image bytes.
       setStatusText('Tucking it away safely...');
       const imageBlob = await encryptBlob(blob, cryptoKey);
 
-      // Anything over this is refused by the sync layer on both ends, so catch it
-      // here where we can still tell the user something useful.
       if (imageBlob.byteLength > MAX_IMAGE_BLOB_BYTES) {
         const mb = (imageBlob.byteLength / (1024 * 1024)).toFixed(1);
         throw new Error(
@@ -124,7 +97,6 @@ export function AddMemoryModal({ isOpen, onClose, cryptoKey }) {
         );
       }
 
-      // Step 3: seal the whole record. date/caption/mime go inside the envelope.
       setStatusText('Saving to your scrapbook...');
       const row = await db.putEncrypted(
         'memories',
@@ -134,16 +106,12 @@ export function AddMemoryModal({ isOpen, onClose, cryptoKey }) {
           caption: caption.trim() || 'Precious moment 💕',
           mime,
           imageBlob,
-          // Monotonic, and never behind what the partner has issued - a skewed
-          // device clock otherwise loses (or wins) every merge forever.
           updatedAt: peerSync.getSyncSafeTimestamp(),
           deleted: false,
         },
         cryptoKey
       );
 
-      // Step 4: push to the partner. Never rejects; a failure surfaces as a sync
-      // warning and the record is picked up by the next manifest exchange.
       peerSync.broadcastLiveRecord('memories', row);
 
       celebration();
@@ -179,13 +147,8 @@ export function AddMemoryModal({ isOpen, onClose, cryptoKey }) {
           initial={{ opacity: 0, scale: 0.9, y: 20 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.9, y: 20 }}
-          // max-h + overflow-y-auto, matching SyncHubModal. Without a height cap,
-          // `overflow-hidden` silently clipped everything past the fold on a short
-          // screen - and the Save button lives at the bottom, so on a phone there
-          // was no way to reach it at all.
           className="w-full max-h-[90vh] max-w-sm overflow-y-auto overscroll-contain bg-white rounded-3xl p-5 shadow-2xl border border-blush-100 relative"
         >
-          {/* Close button */}
           <button
             onClick={handleClose}
             disabled={saving}
@@ -205,11 +168,8 @@ export function AddMemoryModal({ isOpen, onClose, cryptoKey }) {
           </div>
 
           <form onSubmit={handleSave} className="space-y-4">
-            {/* Image Picker / Preview */}
             {previewUrl ? (
               <div className="relative aspect-[4/5] rounded-2xl overflow-hidden bg-slate-100 border-2 border-blush-200">
-                {/* object-contain, not cover: this preview is a promise about what
-                    gets saved, so it must not crop what the stored photo keeps. */}
                 <img src={previewUrl} alt="Preview" className="w-full h-full object-contain" />
                 <button
                   type="button"
@@ -262,7 +222,6 @@ export function AddMemoryModal({ isOpen, onClose, cryptoKey }) {
               </div>
             )}
 
-            {/* Handwritten Caption */}
             <div>
               <label className="block text-xs font-semibold text-slate-600 mb-1">
                 Polaroid Caption
@@ -278,7 +237,6 @@ export function AddMemoryModal({ isOpen, onClose, cryptoKey }) {
               />
             </div>
 
-            {/* Date */}
             <div>
               <label className="block text-xs font-semibold text-slate-600 mb-1">
                 Date Taken
@@ -292,7 +250,6 @@ export function AddMemoryModal({ isOpen, onClose, cryptoKey }) {
               />
             </div>
 
-            {/* Failure detail - the old code swallowed this into a bare alert() */}
             {error && (
               <div
                 role="alert"
@@ -303,7 +260,6 @@ export function AddMemoryModal({ isOpen, onClose, cryptoKey }) {
               </div>
             )}
 
-            {/* Submit */}
             <BouncyButton
               type="submit"
               disabled={saving || !selectedFile}

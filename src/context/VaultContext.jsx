@@ -1,35 +1,3 @@
-/**
- * src/context/VaultContext.jsx
- * Vault key lifecycle: unlock, first-time setup, partner pairing, lock.
- *
- * KEY HANDLING (this is the security-critical part)
- * The derived AES-GCM key is NON-EXTRACTABLE and lives in exactly two places:
- * React state (so components can use it) and the module singleton in
- * services/vaultKey.js (so it survives SPA navigation). It is never written to
- * sessionStorage, localStorage, IndexedDB, cookies or the URL, and neither is
- * the passphrase. Earlier builds stashed the PLAINTEXT passphrase in
- * sessionStorage to power auto-unlock; any XSS on the origin could read it.
- * That is gone.
- *
- * The consequence, which the README states plainly: a full page reload wipes
- * the JS heap, so the passphrase must be typed again. Navigating inside the
- * app does not.
- *
- * DESTRUCTIVE PATHS
- * initializeVault(), initializeFromPartnerInvite() and restoreVaultFromBackup()
- * all write a salt to vaultMeta. Doing that over a live vault makes every
- * existing record permanently undecryptable. All three therefore refuse to run
- * against an existing vault unless the caller passes the exact
- * DESTROY_CONFIRMATION_PHRASE, which the UI only obtains by making the user
- * type it.
- *
- * THOSE GATES FAIL CLOSED
- * Each gate depends on reading vaultMeta. A read that FAILS is not evidence that
- * there is nothing to lose - a version upgrade blocked by another open tab looks
- * exactly like a blank device. Every read here goes through db.readVaultIdentity(),
- * which reports "could not tell" as its own outcome, and every caller treats that
- * outcome as a reason to stop.
- */
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
 import { AlertTriangle, X } from 'lucide-react';
 import db, {
@@ -63,25 +31,12 @@ import peerSync from '../services/peerSync';
 
 const VaultContext = createContext(null);
 
-/**
- * The user must type this, exactly, before any code path is allowed to replace
- * the vault salt on a device that already has a vault.
- */
 export const DESTROY_CONFIRMATION_PHRASE = 'ERASE OUR MEMORIES';
 
-/** Longest couple name we will accept from a peer, to bound a hostile payload. */
 const MAX_COUPLE_NAMES_LENGTH = 120;
 
-/** A partner update stamped further ahead than this is a clock-skew artefact. */
 const MAX_CLOCK_SKEW_MS = 48 * 60 * 60 * 1000;
 
-/**
- * Today's date as 'YYYY-MM-DD' in the user's OWN timezone.
- * `new Date().toISOString()` is UTC, which hands back yesterday's date for
- * every local time between midnight and the UTC offset (05:30 in IST).
- * @param {Date} [date]
- * @returns {string}
- */
 export function localDateString(date = new Date()) {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -89,60 +44,22 @@ export function localDateString(date = new Date()) {
   return `${year}-${month}-${day}`;
 }
 
-/** @returns {boolean} True for a well-formed calendar 'YYYY-MM-DD' string. */
 function isValidStartDate(value) {
   if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
   return Number.isFinite(Date.parse(`${value}T00:00:00`));
 }
 
-/** @returns {string} A bounded, trimmed couple name. */
 function sanitizeCoupleNames(value, fallback = 'Us') {
   if (typeof value !== 'string') return fallback;
   const trimmed = value.slice(0, MAX_COUPLE_NAMES_LENGTH).trim();
   return trimmed || fallback;
 }
 
-/**
- * A monotonic timestamp for the VAULT CONFIG last-write-wins channel.
- *
- * coupleNames / startDate merge on `updatedAt` exactly like records do, but on a
- * separate channel that used to stamp raw Date.now(). That handed the merge
- * permanently to whichever device had the faster clock: its edits were always
- * "newer", and the slower device could never win however recently it typed.
- * Borrowing peerSync's clock floor makes this device's stamps monotonic and
- * ahead of anything the partner has issued, and the +1 over the current config
- * guarantees an edit always beats the value it is replacing.
- *
- * EVERY config stamp goes through here now, including the two that create a
- * config (initializeVault and initializeFromPartnerInvite). They used to stamp
- * raw Date.now() while the edit path was careful, which is exactly the
- * inconsistency that lets a first write be un-beatable.
- *
- * DELIBERATELY NOT DONE: feeding an inbound partner config into a clock floor.
- * Two reasons, and the second one is why it would be pointless even if it were
- * safe.
- *   1. peerSync keeps ONE high-water mark, `_observedRemoteMax`, and every
- *      record write consults it. Raising it from the config channel would let a
- *      single settings message from a peer with a broken (or hostile) clock
- *      ratchet the timestamp on every future PHOTO and LETTER this device
- *      writes, permanently and irreversibly. Couple names are cosmetic; records
- *      are the irreplaceable part. Never trade the second for the first.
- *   2. A floor only raises OUR OWN stamps. The failure it would supposedly fix -
- *      a partner's genuinely newer settings losing to our inflated placeholder -
- *      is decided by the receiver comparing the two numbers, so pushing our
- *      number even higher makes the partner lose harder, not less. The real fix
- *      is not to inflate the placeholder in the first place; see
- *      initializeFromPartnerInvite.
- *
- * @param {{ updatedAt?: number }|null} currentConfig
- * @returns {number}
- */
 function nextConfigTimestamp(currentConfig) {
   let base;
   try {
     base = peerSync.getSyncSafeTimestamp();
   } catch {
-    // peerSync is not up yet. Still monotonic against our own config below.
     base = Date.now();
   }
   const localAt =
@@ -151,12 +68,6 @@ function nextConfigTimestamp(currentConfig) {
 }
 
 export function VaultProvider({ children }) {
-  /**
-   * 'checking' | 'present' | 'absent' | 'unreadable'
-   *
-   * 'unreadable' is the important one and is deliberately NOT collapsed into
-   * 'absent'. See the header note about failing closed.
-   */
   const [vaultCheckState, setVaultCheckState] = useState('checking');
   const [vaultCheckBlocked, setVaultCheckBlocked] = useState(false);
   const [isUnlocked, setIsUnlocked] = useState(false);
@@ -166,13 +77,6 @@ export function VaultProvider({ children }) {
   const [error, setError] = useState(null);
   const [warning, setWarning] = useState(null);
 
-  /**
-   * Quick unlock (fingerprint / face) on THIS device.
-   *
-   * 'available' is about the hardware and is asked once. 'enrolled' is about
-   * this particular vault and is re-asked whenever the salt moves, because
-   * starting a new space or restoring a backup strands the old sealed key.
-   */
   const [quickUnlock, setQuickUnlock] = useState({ available: false, enrolled: false });
 
   useEffect(() => {
@@ -190,10 +94,6 @@ export function VaultProvider({ children }) {
   const clearError = useCallback(() => setError(null), []);
   const clearWarning = useCallback(() => setWarning(null), []);
 
-  /**
-   * Adopts a freshly verified key into both React state and the in-memory
-   * singleton. Nothing else in this file calls setVaultKey.
-   */
   const adoptKey = useCallback((key, salt, iterations, config) => {
     setVaultKey(key, { salt, iterations });
     setVaultSalt(salt);
@@ -204,11 +104,6 @@ export function VaultProvider({ children }) {
     setIsUnlocked(true);
   }, []);
 
-  /**
-   * Unlocks an existing vault.
-   * @param {string} passphrase
-   * @returns {Promise<boolean>}
-   */
   const unlockVault = useCallback(
     async (passphrase) => {
       setError(null);
@@ -264,17 +159,6 @@ export function VaultProvider({ children }) {
     [adoptKey]
   );
 
-  /**
-   * Reads vaultMeta for a flow that cannot continue without it.
-   *
-   * `quiet` exists because `error` is only ever painted by the lock screen. A
-   * caller living somewhere else - the sync hub, say - has to report its own
-   * failures, and setting `error` from there would leave a message nobody can
-   * read sitting around to surface at the next lock.
-   *
-   * @param {{ quiet?: boolean }} [options]
-   * @returns {Promise<Object|null>}
-   */
   const readMetaOrExplain = useCallback(async (options = {}) => {
     const quiet = options.quiet === true;
     const fail = (message) => {
@@ -295,15 +179,6 @@ export function VaultProvider({ children }) {
     return meta;
   }, []);
 
-  /**
-   * Opens the vault with this device's fingerprint or face.
-   *
-   * A dismissed prompt is NOT an error - she may simply have changed her mind,
-   * and the passphrase form is sitting right there. It returns false quietly and
-   * says nothing.
-   *
-   * @returns {Promise<boolean>}
-   */
   const unlockWithQuickUnlock = useCallback(async () => {
     setError(null);
 
@@ -327,10 +202,6 @@ export function VaultProvider({ children }) {
       return false;
     }
 
-    // THE KEY IS NOT TRUSTED YET. It unsealed, which only proves the phone's
-    // sensor agreed - not that these bytes still open this vault. Without the
-    // canary a sealed key left over from an older vault would be adopted as
-    // working and then fail on every single record it touched.
     let payload = null;
     try {
       payload = await readCanary(result.key, meta);
@@ -357,21 +228,6 @@ export function VaultProvider({ children }) {
     return true;
   }, [adoptKey, readMetaOrExplain]);
 
-  /**
-   * Sets quick unlock up on this device.
-   *
-   * The passphrase is proved against the vault FIRST. Enrolling on an unverified
-   * passphrase would seal a key that opens nothing, and the only symptom would
-   * be a fingerprint prompt that succeeds and then refuses to let her in.
-   *
-   * Returns the REASON on failure rather than a bare false. This runs from the
-   * sync hub, which paints its own messages - handing back only `false` is what
-   * made a failed setup look like nothing had happened at all.
-   *
-   * @param {string} passphrase
-   * @returns {Promise<{ ok: boolean, code?: 'no-vault'|'wrong-passphrase'|
-   *   'cancelled'|'unsupported'|'no-prf'|'failed' }>}
-   */
   const enableQuickUnlock = useCallback(
     async (passphrase) => {
       setError(null);
@@ -408,7 +264,6 @@ export function VaultProvider({ children }) {
     [readMetaOrExplain]
   );
 
-  /** Forgets the sealed key on this device. The passphrase is unaffected. */
   const disableQuickUnlock = useCallback(() => {
     forgetBiometricUnlock();
     setQuickUnlock((prev) => ({ ...prev, enrolled: false }));
@@ -416,18 +271,6 @@ export function VaultProvider({ children }) {
 
   const checkCancelledRef = useRef(false);
 
-  /**
-   * Finds out whether a vault exists, and restores the session if the key is
-   * still held in memory from before an in-app navigation. A full reload clears
-   * that singleton, which is exactly what we want.
-   *
-   * A FAILED READ RESOLVES TO 'unreadable', NEVER 'absent'. Reporting "no vault"
-   * on a read error is what routed a returning user to the CREATE VAULT form,
-   * one confirmation phrase away from writing a fresh salt over everything they
-   * own. The most likely cause is not a broken device at all: it is another tab
-   * holding the database open at a version this one is trying to move past,
-   * which Dexie tells us about explicitly.
-   */
   const checkVault = useCallback(async () => {
     setVaultCheckState('checking');
 
@@ -455,8 +298,6 @@ export function VaultProvider({ children }) {
     const heldKey = getVaultKey();
     if (!heldKey) return;
 
-    // The held key must still match THIS vault: a re-initialize elsewhere in
-    // the app would have replaced the salt underneath us.
     const payload = await readCanary(heldKey, meta);
     if (checkCancelledRef.current) return;
     if (!payload) {
@@ -481,10 +322,8 @@ export function VaultProvider({ children }) {
     };
   }, [checkVault]);
 
-  /** If the block clears (the other tab closes), stop claiming it is blocked. */
   useEffect(() => subscribeUpgradeBlocked((blocked) => setVaultCheckBlocked(blocked)), []);
 
-  /** If anything else drops the key, the UI must follow it back to locked. */
   useEffect(
     () =>
       subscribeVaultKey((unlocked) => {
@@ -497,24 +336,6 @@ export function VaultProvider({ children }) {
     []
   );
 
-  /**
-   * Refuses a destructive re-initialize unless the caller proved the user typed
-   * the confirmation phrase.
-   *
-   * FAILS CLOSED. The previous version did `catch { existing = null }` and then
-   * returned `blocked: false` - so the gate that exists to protect a live vault
-   * granted permission precisely when it could not see the vault it was
-   * protecting. A blocked schema upgrade (another tab holding an older version
-   * open) makes that read throw, and the same error routes the user to the
-   * create-vault form
-   * in the first place; once the block cleared, a fresh salt landed on a fully
-   * populated vault with no confirmation ever demanded.
-   *
-   * "Could not read" is now its own answer, and its answer is no.
-   *
-   * @param {string|undefined} confirmDestroy
-   * @returns {Promise<{ blocked: boolean, existing: Object|null }>}
-   */
   const guardDestructiveWrite = useCallback(async (confirmDestroy) => {
     const read = await db.readVaultIdentity();
 
@@ -540,7 +361,6 @@ export function VaultProvider({ children }) {
     return { blocked: false, existing: read.meta };
   }, []);
 
-  /** Clears every synced table. Only ever called on a confirmed destroy. */
   const wipeSyncedTables = useCallback(async () => {
     for (const tableName of SYNCED_TABLES) {
       try {
@@ -551,15 +371,6 @@ export function VaultProvider({ children }) {
     }
   }, []);
 
-  /**
-   * First-time setup: creates a brand new vault with a fresh salt.
-   *
-   * @param {string} passphrase
-   * @param {{ coupleNames?: string, startDate?: string }} [initialSettings]
-   * @param {{ confirmDestroy?: string }} [options] - Must carry
-   *   DESTROY_CONFIRMATION_PHRASE when a vault already exists on this device.
-   * @returns {Promise<boolean>}
-   */
   const initializeVault = useCallback(
     async (passphrase, initialSettings = {}, options = {}) => {
       setError(null);
@@ -578,10 +389,6 @@ export function VaultProvider({ children }) {
           iterations: PBKDF2_ITERATIONS_CURRENT,
         });
 
-        // These settings were genuinely typed here, so they are a real authored
-        // write and get a real monotonic stamp - the same helper the edit path
-        // uses, not raw Date.now(). `createdAt` stays wall-clock because it is
-        // descriptive: nothing merges on it.
         const createdAt = Date.now();
         const configAt = nextConfigTimestamp(null);
         const config = {
@@ -589,8 +396,6 @@ export function VaultProvider({ children }) {
           startDate: isValidStartDate(initialSettings.startDate)
             ? initialSettings.startDate
             : localDateString(),
-          // Stamped now, not left undefined: an unstamped config loses every
-          // merge against a partner, however old the partner's copy is.
           updatedAt: configAt,
         };
 
@@ -605,10 +410,6 @@ export function VaultProvider({ children }) {
           updatedAt: configAt,
         });
 
-        // Only after the new salt is committed. The old records are
-        // cryptographically unreachable from this point on, and leaving them
-        // would feed undecryptable rows straight back into sync. Wiping first
-        // would throw away still-readable data if the write above failed.
         if (existing) await wipeSyncedTables();
 
         adoptKey(key, salt, PBKDF2_ITERATIONS_CURRENT, config);
@@ -622,22 +423,6 @@ export function VaultProvider({ children }) {
     [adoptKey, guardDestructiveWrite, wipeSyncedTables]
   );
 
-  /**
-   * Pairing: adopts the partner's salt so both devices derive the same key.
-   *
-   * Three distinct cases, and only one of them is destructive:
-   *  1. No local vault         -> plain setup against the partner's salt.
-   *  2. Local vault, SAME salt -> not destructive at all. This is a re-pair, so
-   *     it is handled as an ordinary unlock and needs no confirmation.
-   *  3. Local vault, DIFFERENT salt -> destroys the local vault. Gated.
-   *
-   * @param {string} passphrase
-   * @param {string} salt - Partner's base64 vault salt.
-   * @param {{ coupleNames?: string, startDate?: string, canary?: string,
-   *           canaryIv?: string }} [initialSettings]
-   * @param {{ confirmDestroy?: string }} [options]
-   * @returns {Promise<boolean>}
-   */
   const initializeFromPartnerInvite = useCallback(
     async (passphrase, salt, initialSettings = {}, options = {}) => {
       setError(null);
@@ -651,11 +436,6 @@ export function VaultProvider({ children }) {
         return false;
       }
 
-      // Same fail-closed read as guardDestructiveWrite. Swallowing this error
-      // used to do double damage: it skipped the confirmation gate AND, because
-      // `existing` was left null, it skipped wipeSyncedTables() below - so the
-      // old rows survived under a salt that could no longer decrypt them and
-      // fed undecryptable garbage straight back into sync.
       const read = await db.readVaultIdentity();
       if (!read.ok) {
         console.error('Pairing blocked: vault metadata unreadable.', read.error);
@@ -667,12 +447,10 @@ export function VaultProvider({ children }) {
       }
       const existing = read.meta;
 
-      // Case 2: re-pairing with the vault we already have. Nothing to destroy.
       if (existing && existing.salt === salt) {
         return await unlockVault(passphrase);
       }
 
-      // Case 3: a different salt replaces the local vault.
       if (existing) {
         const { blocked } = await guardDestructiveWrite(options.confirmDestroy);
         if (blocked) return false;
@@ -688,8 +466,6 @@ export function VaultProvider({ children }) {
         let key;
 
         if (partnerMeta) {
-          // The invite carries the partner's canary, so a typo is caught HERE,
-          // before we write a divergent vault that will never decrypt anything.
           let derived;
           try {
             derived = await deriveKeyWithVerification(
@@ -708,11 +484,6 @@ export function VaultProvider({ children }) {
           key = derived.key;
         } else {
           key = await deriveKeyFromPassphrase(normalized, salt, { iterations });
-          // The normal path: invite links deliberately do NOT carry the canary,
-          // because publishing a ciphertext under the vault key would hand an
-          // offline passphrase-cracking oracle to whoever relays the link (see
-          // utils/invite.js). The mismatch is caught instead by the P2P
-          // handshake, which cannot authenticate under two different keys.
           setWarning(
             'Paired! We will know your passphrases match the moment your phones connect — if they ' +
               'do not, we will tell you instead of syncing.'
@@ -722,19 +493,6 @@ export function VaultProvider({ children }) {
         const startDate = isValidStartDate(initialSettings.startDate)
           ? initialSettings.startDate
           : localDateString();
-        // ALWAYS 0, whether or not the invite carried settings.
-        //
-        // Nothing in this config was authored on this device: it is either a
-        // default, or the INVITER'S OWN names and anniversary echoed back out of
-        // the link they sent. Stamping it Date.now() made a joiner with a fast
-        // clock claim authorship of the inviter's settings at a time the inviter
-        // could not beat, so the inviter's real config lost the
-        // `remoteUpdatedAt <= localUpdatedAt` test on every sync until wall clock
-        // caught up. 0 loses the first merge by construction, which is the
-        // correct outcome for a copy: the device that actually authored the
-        // settings keeps them. The joiner still SEES the right names immediately
-        // - this number decides merges, not what is on screen - and the joiner's
-        // own first edit goes through nextConfigTimestamp and beats 0 easily.
         const updatedAt = 0;
         const config = {
           coupleNames: sanitizeCoupleNames(initialSettings.coupleNames),
@@ -756,7 +514,6 @@ export function VaultProvider({ children }) {
           updatedAt,
         });
 
-        // Only after the new salt is committed - see initializeVault().
         if (existing) await wipeSyncedTables();
 
         adoptKey(key, salt, iterations, config);
@@ -770,38 +527,6 @@ export function VaultProvider({ children }) {
     [adoptKey, guardDestructiveWrite, unlockVault, wipeSyncedTables]
   );
 
-  /**
-   * RESTORE A VAULT IDENTITY FROM A RESCUE BACKUP.
-   *
-   * This is the flow the LockScreen's rescue backup has always promised and the
-   * code never had. A .vault container carries `vaultMeta` (see EXPORTED_TABLES),
-   * so it holds the salt, canary and KDF count that the records inside it were
-   * encrypted under. Every other code path deliberately refuses to write that
-   * back; this one adopts it on purpose, because adopting it is the ONLY way the
-   * ciphertext in the file is ever readable again.
-   *
-   * It is a separate operation from the ordinary merge-import, not a hidden
-   * branch of it: a merge keeps the vault key you already have, a restore
-   * replaces it. Conflating them is how "restore" quietly becomes "destroy".
-   *
-   * SAFETY ORDER, and why each step is where it is:
-   *   1. Prove the passphrase against the BACKUP'S OWN canary first. If the key
-   *      cannot be shown to open this container, adopting its salt would produce
-   *      a vault whose contents nobody can read - the exact trap this replaces.
-   *      Nothing is written before this passes.
-   *   2. Read the live identity with a fail-closed read. "Cannot tell" stops us.
-   *   3. Refuse outright when the backup is for the vault already on this device
-   *      - a merge-import is the right tool there and does not touch the key.
-   *   4. Demand the destroy phrase when a DIFFERENT live vault would be replaced.
-   *   5. Commit the identity, THEN wipe, THEN write the records. Wiping first
-   *      would throw away readable data if the identity write failed.
-   *
-   * @param {Record<string, Object[]>} tables - `tables` from a decrypted container.
-   * @param {string} vaultPassphrase - The passphrase the RECORDS were encrypted
-   *   under, which is not necessarily the passphrase the FILE was encrypted with.
-   * @param {{ confirmDestroy?: string }} [options]
-   * @returns {Promise<{ ok: boolean, code?: string, relation?: string, stats?: Object }>}
-   */
   const restoreVaultFromBackup = useCallback(
     async (tables, vaultPassphrase, options = {}) => {
       setError(null);
@@ -817,7 +542,6 @@ export function VaultProvider({ children }) {
         return { ok: false, code: 'passphrase_too_short' };
       }
 
-      // 1. Prove the key opens this container's own canary.
       let derived;
       try {
         derived = await deriveKeyWithVerification(
@@ -830,7 +554,6 @@ export function VaultProvider({ children }) {
         return { ok: false, code: 'passphrase_mismatch' };
       }
 
-      // 2. Fail-closed read of what is already here.
       const read = await db.readVaultIdentity();
       if (!read.ok) {
         console.error('Restore blocked: vault metadata unreadable.', read.error);
@@ -839,8 +562,6 @@ export function VaultProvider({ children }) {
 
       const relation = compareVaultIdentity(identity, read);
 
-      // 3. Same vault: a restore would be a pointless re-key, and would revert
-      //    the live canary (and with it coupleNames/startDate) to the backup's.
       if (relation === 'same') {
         return { ok: false, code: 'same_vault', relation };
       }
@@ -848,8 +569,6 @@ export function VaultProvider({ children }) {
         return { ok: false, code: 'unreadable', relation };
       }
 
-      // 4. Replacing a different live vault needs the phrase, same as any other
-      //    salt replacement on this device.
       if (relation === 'foreign' && options.confirmDestroy !== DESTROY_CONFIRMATION_PHRASE) {
         return { ok: false, code: 'needs_confirmation', relation };
       }
@@ -857,30 +576,10 @@ export function VaultProvider({ children }) {
       try {
         const canaryPayload = await readCanary(derived.key, identity);
 
-        // 5a. Commit the identity first.
         await db.restoreVaultIdentity({ ...identity, kdfIterations: derived.iterations });
 
-        // 5b. Then clear the tables. Anything still here belongs to the vault we
-        //     just replaced, so it is unreadable from now on either way; leaving
-        //     it would feed undecryptable rows straight back into sync. This runs
-        //     even on a device that reported no vault, because a previous destroy
-        //     can leave orphaned rows behind with no vaultMeta to point at them.
-        //
-        //     UNCONDITIONAL ON PURPOSE, including relation === 'no-local-vault'.
-        //     Making it conditional would need a proof that a device with no
-        //     vaultMeta also has no rows, and there is none: vaultMeta and the
-        //     record tables are separate stores with no foreign key, so a partial
-        //     wipe, an aborted transaction or a hand-cleared vaultMeta leaves
-        //     rows behind whose key no longer exists anywhere in the world. They
-        //     can never be read again, but they CAN be re-broadcast at a partner
-        //     as undecryptable garbage. Safety over convenience: the cost of the
-        //     wipe is zero (nothing readable is lost - by definition), and the
-        //     LockScreen copy for this branch now says the clearing happens
-        //     rather than promising it does not.
         await wipeSyncedTables();
 
-        // 5c. Then write the records, through the same validation and integrity
-        //     checks a merge-import uses - now keyed by the restored key.
         const plan = await db.planBackupMerge(tables, derived.key);
         const applied = await db.applyBackupMerge(plan);
 
@@ -907,17 +606,8 @@ export function VaultProvider({ children }) {
     [adoptKey, wipeSyncedTables]
   );
 
-  /**
-   * Updates couple name / anniversary and pushes them to the paired partner.
-   * @param {{ coupleNames?: string, startDate?: string }} newSettings
-   * @returns {Promise<boolean>} False when the write failed - the caller should
-   *   not assume the new values stuck.
-   */
   const updateVaultSettings = useCallback(
     async (newSettings) => {
-      // This runs while unlocked, where the LockScreen (the only consumer of
-      // `error`) is not mounted. Failures go to `warning`, which has a toast,
-      // rather than into a state nobody renders.
       const key = cryptoKey || getVaultKey();
       if (!key) {
         setWarning('Our Space is locked. Unlock it before changing your settings.');
@@ -934,8 +624,6 @@ export function VaultProvider({ children }) {
         const updatedConfig = {
           coupleNames: sanitizeCoupleNames(merged.coupleNames),
           startDate: isValidStartDate(merged.startDate) ? merged.startDate : '',
-          // Not Date.now(): see nextConfigTimestamp. Raw wall-clock here handed
-          // the coupleNames/startDate merge permanently to the faster clock.
           updatedAt: nextConfigTimestamp(vaultConfig),
         };
 
@@ -974,23 +662,17 @@ export function VaultProvider({ children }) {
     vaultConfigRef.current = vaultConfig;
   }, [vaultConfig]);
 
-  // Every way in - unlock, quick unlock, setup, pairing, restore - ends here, so
-  // this is the one place to ask the browser not to evict the vault. Asked
-  // after the fact rather than before, because by now there is something worth
-  // keeping. See services/persistentStorage.js for what eviction costs.
   useEffect(() => {
     if (!isUnlocked) return;
     requestPersistentStorage();
   }, [isUnlocked]);
 
-  // Live config updates from the paired partner.
   useEffect(() => {
     if (!isUnlocked || !cryptoKey) return undefined;
 
     const handleConfigSynced = async (remoteConfig) => {
       if (!remoteConfig || typeof remoteConfig !== 'object') return;
 
-      // The wire format is attacker-influenced. Validate before it reaches state.
       if (!isValidStartDate(remoteConfig.startDate)) {
         setWarning('We skipped a settings change from your partner — the date did not look right.');
         return;
@@ -1008,9 +690,6 @@ export function VaultProvider({ children }) {
       const currentLocal = vaultConfigRef.current || {};
       const localUpdatedAt = Number.isFinite(currentLocal.updatedAt) ? currentLocal.updatedAt : 0;
 
-      // Strictly newer wins. Ties keep the local copy: restamping the merge with
-      // Date.now() used to make the receiver's copy permanently "newer", which
-      // flipped the direction on every reconnect and ratcheted forever.
       if (remoteUpdatedAt <= localUpdatedAt) return;
 
       try {
@@ -1050,9 +729,6 @@ export function VaultProvider({ children }) {
     };
   }, [isUnlocked, cryptoKey]);
 
-  /**
-   * Locks the vault: drops the in-memory key, tears down P2P, clears state.
-   */
   const lockVault = useCallback(() => {
     clearVaultKey();
     try {
@@ -1067,12 +743,6 @@ export function VaultProvider({ children }) {
     setWarning(null);
   }, []);
 
-  /**
-   * Kept for the screens that only need the three-way answer. `null` now means
-   * "we do not know" for BOTH reasons - still checking, or the read failed - so
-   * anything that could destroy data must consult `vaultCheckState` instead and
-   * treat 'unreadable' as a stop.
-   */
   const isVaultInitialized =
     vaultCheckState === 'present' ? true : vaultCheckState === 'absent' ? false : null;
 
@@ -1106,8 +776,6 @@ export function VaultProvider({ children }) {
     >
       {children}
 
-      {/* Decryption problems used to go to console.error and nowhere else.
-          They get a face now. */}
       {warning && (
         <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[100] w-[calc(100%-2rem)] max-w-md">
           <div className="flex items-start gap-2.5 p-3 rounded-2xl bg-amber-50 border border-amber-200 shadow-lg shadow-amber-200/40">

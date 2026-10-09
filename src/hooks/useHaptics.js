@@ -1,7 +1,3 @@
-/**
- * src/hooks/useHaptics.js
- * Tactile feedback for mobile Android devices using the Vibration API
- */
 import { useCallback } from 'react';
 
 export function useHaptics() {
@@ -10,7 +6,6 @@ export function useHaptics() {
       try {
         navigator.vibrate(pattern);
       } catch (e) {
-        // Safe fail on unsupported browsers
       }
     }
   }, []);

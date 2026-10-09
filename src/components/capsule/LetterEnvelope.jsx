@@ -1,13 +1,3 @@
-/**
- * src/components/capsule/LetterEnvelope.jsx
- * Interactive envelope opening animation with wax seal and handwritten love letter.
- *
- * By the time a letter reaches this component its body has already been
- * unsealed by SecretCapsule (crypto.unsealTimeLocked), which refuses before the
- * unlock date. Nothing here gates access - breaking the wax seal is animation,
- * not security - so the footer states plainly what the time lock did and did not
- * guarantee rather than implying this modal enforced anything.
- */
 import React, { useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Heart, X, Sparkles, Trash2, Lock } from 'lucide-react';
@@ -43,7 +33,6 @@ export function LetterEnvelope({ letter, onClose, onDelete, onOpened }) {
       className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm select-none"
     >
       <div onClick={(e) => e.stopPropagation()} className="w-full max-w-sm relative">
-        {/* Close button */}
         <button
           onClick={onClose}
           className="absolute -top-12 right-0 w-8 h-8 rounded-full bg-white/80 text-slate-600 flex items-center justify-center hover:bg-white transition"
@@ -52,7 +41,6 @@ export function LetterEnvelope({ letter, onClose, onDelete, onOpened }) {
         </button>
 
         {!isOpen ? (
-          /* Sealed Envelope state */
           <motion.div
             initial={{ scale: 0.9, y: 20 }}
             animate={{ scale: 1, y: 0 }}
@@ -61,7 +49,6 @@ export function LetterEnvelope({ letter, onClose, onDelete, onOpened }) {
             onClick={handleOpenEnvelope}
             className="cursor-pointer bg-gradient-to-tr from-cream-100 to-blush-100 rounded-3xl p-6 shadow-2xl border-2 border-blush-200 text-center relative overflow-hidden"
           >
-            {/* Envelope flap line design */}
             <div className="w-24 h-24 mx-auto rounded-full bg-blush-200/50 flex items-center justify-center mb-3">
               <div className="w-14 h-14 rounded-full bg-rose-500 text-white flex items-center justify-center shadow-lg shadow-rose-400/40 border-2 border-white/60">
                 <Heart className="w-7 h-7 fill-white" />
@@ -87,14 +74,12 @@ export function LetterEnvelope({ letter, onClose, onDelete, onOpened }) {
             </div>
           </motion.div>
         ) : (
-          /* Opened Letter Paper */
           <motion.div
             initial={{ opacity: 0, y: 30, scale: 0.9 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             transition={{ type: 'spring', stiffness: 350, damping: 25 }}
             className="bg-[#fefcf8] rounded-3xl p-6 shadow-2xl border border-amber-100 relative max-h-[80vh] overflow-y-auto"
           >
-            {/* Decorative stationary lines */}
             <div className="border-b border-blush-200/70 pb-3 mb-4 flex items-center justify-between">
               <div>
                 <span className="text-[10px] font-bold text-blush-500 uppercase tracking-widest block">
@@ -105,7 +90,6 @@ export function LetterEnvelope({ letter, onClose, onDelete, onOpened }) {
               <Heart className="w-5 h-5 text-blush-400 fill-blush-200" />
             </div>
 
-            {/* Handwritten body text */}
             <div className="font-handwriting text-2xl text-slate-800 leading-relaxed whitespace-pre-wrap py-2">
               {letter.content}
             </div>

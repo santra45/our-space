@@ -1,23 +1,3 @@
-/**
- * src/components/scratchoff/DateRoulette.jsx
- * Interactive digital scratch-off card and roulette for romantic date ideas.
- *
- * P7 decision: the `dateIdeas` table is KEPT and is now actually used, rather than
- * being dropped from the schema and the sync allowlist.
- *
- * What is stored is deliberately not the idea catalogue. The catalogue below is
- * app content - identical in every install, shipped in the bundle - so writing ten
- * copies of it into every vault and replicating them over the wire would buy
- * nothing and would recreate the duplicate-defaults problem that S4 was about.
- * What IS stored is a single record: which idea is currently on the card, which
- * category filter produced it, and whether it has been scratched open. That one
- * row survives a reload (the old component held all of it in component state and
- * lost it on refresh) and replicates, so a roll on one phone shows up on the
- * other - which is the point of a shared date roulette.
- *
- * The row uses a fixed id, so both devices converge on one record instead of
- * accumulating a history of rolls.
- */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Sparkles, RefreshCw, Home, Trees, Utensils, PiggyBank, Heart } from 'lucide-react';
@@ -30,16 +10,12 @@ import BouncyButton from '../common/BouncyButton';
 import { fireHeartConfetti } from '../common/ConfettiBurst';
 import { useHaptics } from '../../hooks/useHaptics';
 
-/** The one and only roulette row. Fixed so both devices write the same record. */
 const ROULETTE_STATE_ID = 'roulette-current';
 
-/** Strokes between two full-canvas progress scans. */
 const STROKES_PER_PROGRESS_CHECK = 24;
 
-/** Strokes between two haptic ticks. */
 const STROKES_PER_TICK = 4;
 
-/** Fraction of the coating that has to be gone before the card pops open. */
 const REVEAL_THRESHOLD = 0.4;
 
 const CATEGORIES = [
@@ -66,7 +42,6 @@ const DEFAULT_IDEAS = [
 const IDEAS_BY_ID = new Map(DEFAULT_IDEAS.map((idea) => [idea.id, idea]));
 const CATEGORY_IDS = new Set(CATEGORIES.map((c) => c.id));
 
-/** Monotonic write stamp, so a skewed device clock cannot permanently win or lose. */
 function nextTimestamp() {
   try {
     return peerSync.getSyncSafeTimestamp();
@@ -75,7 +50,6 @@ function nextTimestamp() {
   }
 }
 
-/** The ideas matching a category filter. */
 function ideasIn(categoryId) {
   if (categoryId === 'all') return DEFAULT_IDEAS;
   return DEFAULT_IDEAS.filter((idea) => idea.category === categoryId);
@@ -91,34 +65,16 @@ export function DateRoulette() {
   const canvasRef = useRef(null);
   const { tap, tick, celebration } = useHaptics();
 
-  /**
-   * `isRevealed` also lives in a ref because the canvas listeners are registered
-   * once per card and would otherwise close over the value from the render that
-   * registered them - which is how the old build ended up running a full
-   * getImageData on every single pointer move for the life of the card.
-   */
   const revealedRef = useRef(false);
 
-  /**
-   * The updatedAt of the roulette row this component has already applied.
-   * It is bumped by our own writes too, so the useLiveQuery echo of a local roll
-   * is ignored instead of resetting the card a second time.
-   */
   const appliedAtRef = useRef(0);
 
   const storedState = useLiveQuery(() => db.dateIdeas.get(ROULETTE_STATE_ID), []);
-
-  /* --------------------------------------------------------------------- *
-   * Persistence
-   * --------------------------------------------------------------------- */
 
   const persist = useCallback(
     async (next) => {
       if (!cryptoKey) return;
 
-      // Claimed BEFORE the write, not after: the live query can fire between the
-      // put resolving and this line, and a late claim would let our own echo
-      // through and reset a card the user has already started scratching.
       const updatedAt = nextTimestamp();
       appliedAtRef.current = updatedAt;
 
@@ -137,16 +93,10 @@ export function DateRoulette() {
         );
         peerSync.broadcastLiveRecord('dateIdeas', row);
       } catch {
-        // Persisting a roll is a nicety, not the feature. The card is already
-        // showing the new idea locally; the next roll will try again.
       }
     },
     [cryptoKey]
   );
-
-  /* --------------------------------------------------------------------- *
-   * Adopt stored / partner state
-   * --------------------------------------------------------------------- */
 
   useEffect(() => {
     let active = true;
@@ -155,14 +105,10 @@ export function DateRoulette() {
       if (!cryptoKey || !storedState) return;
       if (storedState.deleted === true) return;
       if (!Number.isFinite(storedState.updatedAt)) return;
-      // Our own echo, or a row we have already applied.
       if (storedState.updatedAt <= appliedAtRef.current) return;
 
       let record;
       try {
-        // The table is REQUIRED here. Without it decryptRecord has no expected
-        // table to compare the sealed `_tbl` against, so a row sealed for a
-        // different one is never flagged and renders as ordinary content.
         record = await decryptRecord(storedState, cryptoKey, { table: 'dateIdeas' });
       } catch {
         return;
@@ -170,13 +116,9 @@ export function DateRoulette() {
       if (!active) return;
       if (record._headerTampered || record.deleted === true) return;
 
-      // Marked processed either way, so a row we cannot use is not re-decrypted
-      // on every subsequent write to the table.
       appliedAtRef.current = record.updatedAt;
 
       const idea = IDEAS_BY_ID.get(record.ideaId);
-      // An unknown ideaId means the peer is running a build with a different
-      // catalogue. Keep whatever is on screen rather than blanking the card.
       if (!idea) return;
 
       const revealed = record.revealed === true;
@@ -187,7 +129,6 @@ export function DateRoulette() {
         setSelectedCategory(record.category);
       }
       setIsRevealed(revealed);
-      // Fresh coating for the newly adopted idea.
       setCardKey((prev) => prev + 1);
     }
 
@@ -197,20 +138,6 @@ export function DateRoulette() {
     };
   }, [storedState, cryptoKey]);
 
-  /* --------------------------------------------------------------------- *
-   * Rolling and revealing
-   * --------------------------------------------------------------------- */
-
-  /**
-   * Rolls a new idea.
-   *
-   * The category is an ARGUMENT, not read from state. The category pills used to
-   * call setSelectedCategory() and then pickRandomIdea() in the same handler,
-   * where the latter still saw the previous render's filter - so tapping
-   * "Foodie" rolled an idea from whatever category had been selected before it.
-   *
-   * @param {string} [categoryId] Defaults to the current filter.
-   */
   const pickRandomIdea = useCallback(
     (categoryId = selectedCategory) => {
       tap();
@@ -243,32 +170,19 @@ export function DateRoulette() {
     persist({ ideaId: currentIdea?.id, category: selectedCategory, revealed: true });
   }, [currentIdea, selectedCategory, celebration, persist]);
 
-  /**
-   * The canvas effect must not re-run when handleRevealed's identity changes -
-   * that would wipe a half-scratched card - so it reads the callback through a
-   * ref instead of taking it as a dependency.
-   */
   const revealCallbackRef = useRef(handleRevealed);
   useEffect(() => {
     revealCallbackRef.current = handleRevealed;
   }, [handleRevealed]);
 
-  /* --------------------------------------------------------------------- *
-   * Scratch surface
-   * --------------------------------------------------------------------- */
-
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return undefined;
 
-    // willReadFrequently keeps the surface CPU-side, which is what the periodic
-    // getImageData progress check wants; without it Chrome warns and each
-    // readback pulls the bitmap back off the GPU.
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
     const width = canvas.width;
     const height = canvas.height;
 
-    // Draw shimmering pastel scratch-off coating
     const grad = ctx.createLinearGradient(0, 0, width, height);
     grad.addColorStop(0, '#ffd1dc');
     grad.addColorStop(0.5, '#ffe8ed');
@@ -276,7 +190,6 @@ export function DateRoulette() {
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, width, height);
 
-    // Add cute pattern and instructions on the scratch surface
     ctx.fillStyle = '#ff5480';
     ctx.font = 'bold 16px "Plus Jakarta Sans", sans-serif';
     ctx.textAlign = 'center';
@@ -285,9 +198,6 @@ export function DateRoulette() {
     ctx.font = '12px "Plus Jakarta Sans", sans-serif';
     ctx.fillText('to reveal your romantic date idea 💕', width / 2, height / 2 + 14);
 
-    // Scratching state is per-card and per-gesture, so it lives here rather than
-    // in React state: nothing renders from it, and a setState per pointer move
-    // would re-render the whole card mid-gesture.
     let isScratching = false;
     let strokes = 0;
 
@@ -298,7 +208,6 @@ export function DateRoulette() {
         const data = imgData.data;
         let clearCount = 0;
         let sampled = 0;
-        // Alpha channel of every 16th pixel.
         for (let i = 3; i < data.length; i += 64) {
           if (data[i] === 0) clearCount += 1;
           sampled += 1;
@@ -307,7 +216,6 @@ export function DateRoulette() {
           revealCallbackRef.current();
         }
       } catch {
-        // getImageData can throw on a tainted canvas; the card is still usable.
       }
     };
 
@@ -327,9 +235,6 @@ export function DateRoulette() {
 
       strokes += 1;
       if (strokes % STROKES_PER_TICK === 0) tick();
-      // A full-canvas getImageData is ~347KB per call. Running one per pointer
-      // move pinned a phone at a few frames a second; once per two dozen strokes
-      // is still well inside a single swipe.
       if (strokes % STROKES_PER_PROGRESS_CHECK === 0) checkScratchProgress();
     };
 
@@ -373,8 +278,6 @@ export function DateRoulette() {
     canvas.addEventListener('touchend', handleTouchEnd);
     canvas.addEventListener('touchcancel', handleTouchEnd);
     canvas.addEventListener('mousedown', handleMouseDown);
-    // Move and release go on the window so dragging off the card mid-scratch
-    // neither stops painting nor leaves the gesture stuck open.
     window.addEventListener('mousemove', handleMouseMove);
     window.addEventListener('mouseup', handleMouseUp);
 
@@ -391,7 +294,6 @@ export function DateRoulette() {
 
   return (
     <div className="space-y-4">
-      {/* Title */}
       <div className="text-center">
         <h2 className="text-2xl font-extrabold text-slate-800 tracking-tight flex items-center justify-center gap-2">
           <span>Date Night Scratch-Off</span>
@@ -402,7 +304,6 @@ export function DateRoulette() {
         </p>
       </div>
 
-      {/* Category Pills */}
       <div className="flex items-center justify-center gap-1.5 overflow-x-auto py-1 px-2 no-scrollbar">
         {CATEGORIES.map((cat) => {
           const Icon = cat.icon;
@@ -428,9 +329,7 @@ export function DateRoulette() {
         })}
       </div>
 
-      {/* Interactive Scratch Card */}
       <div className="relative max-w-sm mx-auto aspect-[4/3] rounded-3xl overflow-hidden shadow-2xl border-4 border-white bg-gradient-to-tr from-blush-100 via-white to-lavender-100 p-5 flex flex-col justify-center text-center">
-        {/* Underneath: The Revealed Date Idea */}
         <motion.div
           key={currentIdea?.id}
           initial={{ opacity: 0, scale: 0.96 }}
@@ -451,7 +350,6 @@ export function DateRoulette() {
           </p>
         </motion.div>
 
-        {/* Scratch-Off Canvas Layer on Top */}
         <canvas
           key={cardKey}
           ref={canvasRef}
@@ -463,7 +361,6 @@ export function DateRoulette() {
         />
       </div>
 
-      {/* Control Actions */}
       <div className="flex justify-center gap-3 pt-2">
         <BouncyButton
           onClick={() => pickRandomIdea()}

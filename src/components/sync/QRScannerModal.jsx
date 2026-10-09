@@ -1,15 +1,3 @@
-/**
- * src/components/sync/QRScannerModal.jsx
- * In-app camera QR code scanner for Android devices using jsQR.
- *
- * Two things this file has to get right:
- *  - Cost. jsQR runs on the main thread, so the frame it is handed is downscaled
- *    to SCAN_MAX_DIMENSION and only sampled SCAN_INTERVAL_MS apart. Decoding a
- *    12MP frame 60 times a second locks up a phone for no extra accuracy.
- *  - Handing the payload over intact. The QR encodes a full invite URL with a
- *    salt and other params; splitting it by hand mangles it. `parseInvite` is
- *    the single parser and the raw scanned string is what gets forwarded on.
- */
 import React, { useRef, useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { X } from 'lucide-react';
@@ -17,9 +5,7 @@ import jsQR from 'jsqr';
 import { parseInvite } from '../../utils/invite';
 import { useHaptics } from '../../hooks/useHaptics';
 
-/** Longest edge of the buffer jsQR actually scans. QR codes decode fine here. */
 const SCAN_MAX_DIMENSION = 640;
-/** ~10fps. Anything faster just burns battery on the same frame. */
 const SCAN_INTERVAL_MS = 100;
 
 export function QRScannerModal({ isOpen, onClose, onScanSuccess }) {
@@ -45,9 +31,6 @@ export function QRScannerModal({ isOpen, onClose, onScanSuccess }) {
           video: { facingMode: 'environment' },
         });
 
-        // The modal can close (or a scan can succeed) while the permission
-        // prompt is still up. Cleanup already ran and saw a null stream, so the
-        // camera would stay live with its LED on until the tab died.
         if (!isScanning) {
           media.getTracks().forEach((track) => track.stop());
           return;
@@ -66,7 +49,6 @@ export function QRScannerModal({ isOpen, onClose, onScanSuccess }) {
       }
     }
 
-    /** Sizes the scan buffer once per resolution change, not once per frame. */
     function syncCanvasSize(canvas, video) {
       const sourceWidth = video.videoWidth;
       const sourceHeight = video.videoHeight;
@@ -79,7 +61,6 @@ export function QRScannerModal({ isOpen, onClose, onScanSuccess }) {
       if (width !== scanWidth || height !== scanHeight) {
         scanWidth = width;
         scanHeight = height;
-        // Assigning width/height clears the canvas, so only do it on a change.
         canvas.width = width;
         canvas.height = height;
       }
@@ -107,8 +88,6 @@ export function QRScannerModal({ isOpen, onClose, onScanSuccess }) {
             });
 
             const payload = code && code.data ? code.data.trim() : '';
-            // Validate, but forward the ORIGINAL string: the invite carries the
-            // vault salt and pairing metadata alongside the peer id.
             if (payload && parseInvite(payload)?.partnerPeerId) {
               isScanning = false;
               celebration();
@@ -168,7 +147,6 @@ export function QRScannerModal({ isOpen, onClose, onScanSuccess }) {
             <video ref={videoRef} className="w-full h-full object-cover" />
             <canvas ref={canvasRef} className="hidden" />
 
-            {/* Target reticle */}
             <div className="absolute inset-8 border-2 border-dashed border-white/60 rounded-2xl pointer-events-none animate-pulse" />
           </div>
         )}

@@ -1,21 +1,3 @@
-/**
- * src/components/polaroids/PolaroidWall.jsx
- * Aesthetic scrapbook wall displaying interactive polaroids.
- *
- * SCHEMA v2: `date` is no longer a plaintext IndexedDB index, so it cannot be
- * sorted on before decryption. The wall therefore opens each record's envelope
- * here - cheap, it is one AES-GCM pass over a small JSON payload - and sorts the
- * results in memory. The photo BYTES are not touched at this level; each card
- * unseals its own image exactly once, keyed on (id, updatedAt).
- *
- * The Dexie query is kept pure - raw rows only, no foreign awaits inside the
- * querier - so useLiveQuery's change subscription registers cleanly, and the
- * decryption happens in a separate effect. Same shape the rest of the app uses.
- *
- * Rows that refuse to decrypt are counted, not swallowed. A silent gap in the
- * wall is indistinguishable from having lost the photos, which is exactly the
- * moment a user deserves to be told something.
- */
 import React, { useCallback, useEffect, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import db from '../../db';
@@ -31,7 +13,6 @@ import { useHaptics } from '../../hooks/useHaptics';
 
 const EMPTY_WALL = { items: [], unreadable: 0, error: '', ready: false };
 
-/** Sort key for a decrypted record: local midnight of its date. Undated sinks. */
 function dateSortKey(record) {
   if (!record.date) return 0;
   const ms = parseLocalDate(record.date).getTime();
@@ -46,7 +27,6 @@ export function PolaroidWall() {
   const [wall, setWall] = useState(EMPTY_WALL);
   const { tap } = useHaptics();
 
-  // Raw encrypted rows. Pure Dexie so the live subscription is reliable.
   const storedRows = useLiveQuery(() => db.memories.toArray(), []);
 
   useEffect(() => {
@@ -66,13 +46,8 @@ export function PolaroidWall() {
       for (const row of storedRows) {
         if (row.deleted === true) continue;
         try {
-          // The table is REQUIRED here. Without it decryptRecord has no expected
-          // table to compare the sealed `_tbl` against, so a row sealed for a
-          // different one is never flagged and renders as ordinary content.
           const record = await decryptRecord(row, cryptoKey, { table: 'memories' });
           if (record.deleted === true) continue;
-          // A rewritten plaintext header means a peer edited fields that AES-GCM
-          // authenticates. Refuse to render forged metadata.
           if (record._headerTampered) {
             unreadable += 1;
             continue;
@@ -110,8 +85,6 @@ export function PolaroidWall() {
   const { items: memories, unreadable, error: wallError } = wall;
   const isLoading = storedRows === undefined || !wall.ready;
 
-  // A record can vanish underneath an open lightbox (partner deleted it), which
-  // would leave it pointing at an ObjectURL its card has already revoked.
   useEffect(() => {
     if (!activePreview) return;
     if (!memories.some((m) => m.id === activePreview.id)) setActivePreview(null);
@@ -121,7 +94,6 @@ export function PolaroidWall() {
 
   return (
     <div className="space-y-4">
-      {/* Header bar */}
       <div className="flex items-center justify-between px-1">
         <div>
           <h2 className="text-xl font-extrabold text-slate-800 tracking-tight flex items-center gap-2">
@@ -147,7 +119,6 @@ export function PolaroidWall() {
         </BouncyButton>
       </div>
 
-      {/* Read failures are reported, never silently dropped from the grid */}
       {(wallError || unreadable > 0) && (
         <div
           role="alert"
@@ -161,7 +132,6 @@ export function PolaroidWall() {
         </div>
       )}
 
-      {/* Grid of polaroids */}
       {isLoading ? (
         <div className="grid grid-cols-2 gap-4 pt-2">
           {[0, 1].map((i) => (
@@ -201,27 +171,17 @@ export function PolaroidWall() {
         </div>
       )}
 
-      {/* Add Memory Modal */}
       <AddMemoryModal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
         cryptoKey={cryptoKey}
       />
 
-      {/* Lightbox full-size view */}
       {activePreview && (
         <div
           onClick={() => setActivePreview(null)}
           className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md"
         >
-          {/*
-            NO fixed aspect ratio anywhere in here, deliberately. The grid card is
-            a polaroid and crops to its frame on purpose; this view is the
-            opposite - it exists to show the photo exactly as it was taken. The
-            panel sizes itself to the image rather than the image being poured
-            into the panel, so a portrait gets a tall narrow frame, a landscape a
-            wide short one, and neither is letterboxed with grey bars.
-          */}
           <div
             onClick={(e) => e.stopPropagation()}
             className="relative max-w-[92vw] bg-white p-3 pb-5 rounded-3xl shadow-2xl"
@@ -233,11 +193,6 @@ export function PolaroidWall() {
               <X className="w-4 h-4" />
             </button>
             <div className="rounded-2xl overflow-hidden bg-black/5">
-              {/*
-                w-auto/h-auto keeps the image at its own proportions; the two max
-                bounds only ever shrink it to fit the screen. No upscaling, so a
-                small photo stays sharp instead of being blown up to fill a frame.
-              */}
               <img
                 src={activePreview.imageUrl}
                 alt="Full polaroid"

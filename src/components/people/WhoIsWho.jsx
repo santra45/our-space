@@ -1,26 +1,3 @@
-/**
- * src/components/people/WhoIsWho.jsx
- * Change a name, a pronoun, or which of you is holding this phone.
- *
- * WHY THIS HAS TO EXIST
- * Because PeopleSetup tells people it does. Its one-tap screen ends with "pick
- * the wrong one? Tap the other name any time in Settings", and a promise like
- * that either is true or it is the app lying to someone at the exact moment
- * they are worried they broke something.
- *
- * SWITCHING IS THE IMPORTANT ONE, not renaming. A mis-tap on the claim screen
- * means this device is writing answers as the wrong person, and the longer it
- * goes unnoticed the more there is to untangle. claimPerson is exclusive - the
- * device tag comes off whoever held it - so switching here genuinely moves this
- * phone rather than leaving it claimed by both.
- *
- * AND SWITCHING IS NOT RENAMING, which is why it asks first. When your names
- * look swapped, "I'm this one" on your own name feels like the fix, but it
- * moves this phone to the other person and leaves every answer already written
- * here behind with the first one. That is how two people ended up trading
- * places. So the switch says what it does, and points at "Swap us back"
- * (services/peopleRepair.js), which is the actual fix for swapped names.
- */
 import React, { useState } from 'react';
 import { UserRound, Check, Pencil } from 'lucide-react';
 import { usePeople } from '../../context/PeopleContext';
@@ -34,7 +11,6 @@ const PRONOUN_LABELS = {
   they: 'they / them',
 };
 
-/** "Sun, 4 Oct, 5:10 pm" in the reader's own locale. */
 function formatMoment(ms) {
   try {
     return new Date(ms).toLocaleString(undefined, {
@@ -56,13 +32,10 @@ export function WhoIsWho() {
   const [editing, setEditing] = useState(null);
   const [name, setName] = useState('');
   const [pronoun, setPronoun] = useState('they');
-  /** The person this phone is about to become, while that is being confirmed. */
   const [confirmClaim, setConfirmClaim] = useState(null);
   const [swapOpen, setSwapOpen] = useState(false);
   const [swapNote, setSwapNote] = useState('');
 
-  // Nothing to show until there are people. The setup card is what appears
-  // instead, and it is already on screen when this would be empty.
   if (status !== 'ready' || !me) return null;
 
   const startEdit = (person) => {
@@ -191,7 +164,6 @@ export function WhoIsWho() {
         {partner && row(partner, false)}
       </div>
 
-      {/* Switching moves this phone, not the names. Say so before it happens. */}
       {partner && confirmClaim === partner.personId && (
         <div className="mt-2 p-3 rounded-2xl bg-amber-50 border border-amber-200 text-[11px] text-amber-900 leading-relaxed">
           <p className="font-bold">Make this phone {partner.name || 'the other one'}?</p>
@@ -225,7 +197,6 @@ export function WhoIsWho() {
         </div>
       )}
 
-      {/* The real fix for names that look swapped. See services/peopleRepair.js. */}
       {partner && people.length === 2 && !swapOpen && (
         <button
           type="button"

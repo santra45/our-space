@@ -1,7 +1,3 @@
-/**
- * src/hooks/useLiveCounter.js
- * Precision timer hook for real-time live relationship duration
- */
 import { useState, useEffect } from 'react';
 import { calculateLoveDuration } from '../utils/dateHelpers';
 

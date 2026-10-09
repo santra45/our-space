@@ -1,85 +1,15 @@
-/**
- * src/utils/invite.js
- * Builds and parses the P2P pairing invite (link, QR payload, composite code).
- *
- * WHY THIS FILE IS SECURITY-SENSITIVE
- * Everything it returns is attacker-controlled the moment a user opens a link
- * somebody sent them, and one of those fields feeds cryptography directly:
- *
- *  - `salt` becomes the PBKDF2 salt for the joining device's vault key. An
- *    unvalidated salt used to flow straight through to `atob()`, so a 3-character
- *    string produced a 2-byte salt and a silently-wrong key, and a non-base64
- *    character threw out of vault initialization. Every return path now gates on
- *    `isValidSalt()` (base64 of exactly 16 bytes) and drops a malformed salt.
- *
- * A link used to carry a PBKDF2 iteration count as well, because a vault created
- * before the OWASP bump derived at a lower one and a joiner had to be told. There
- * is one count now, both phones already know it, and a number a stranger chooses
- * is a number worth not accepting: a link asking for 1,000 iterations is a link
- * asking the joining phone to derive a weak key. So `kdf` is gone from the link
- * entirely rather than merely ignored.
- *
- * WHY THE CANARY IS PARSED BUT NEVER SENT
- * `canary`/`canaryIv` would let a joiner prove the typed passphrase matches the
- * inviter's at the moment of typing. Parsing them is supported, and
- * VaultContext verifies them when present - but nothing in this app puts them
- * in a link, deliberately. The canary is a ciphertext under the vault key, so
- * publishing it hands an OFFLINE passphrase-cracking oracle to every party that
- * relays the invite: the messenger, anyone forwarded the link, anyone who
- * photographs the QR. Against a human-chosen phrase that is a real attack, and
- * the vault passphrase is the only secret this product has.
- *
- * The typo it would catch is already caught: the P2P handshake encrypts every
- * frame under the vault key, so mismatched passphrases fail authentication and
- * surface as `passphrase_mismatch` seconds later. Trading the single secret's
- * offline strength for a slightly earlier error message is a bad deal. The
- * parameter stays supported for a future flow that can deliver it over an
- * already-authenticated channel, where it costs nothing.
- *
- * The salt is canonicalised to standard base64 on the way out of `parseInvite`.
- * It is compared as a STRING elsewhere (`existing.salt === salt` decides whether
- * a re-pair is destructive), so a transport that swapped `+/` for `-_` would
- * otherwise make an identical vault look like a foreign one and prompt the user
- * to erase it.
- *
- * Zero knowledge: all of this rides in the URL fragment, which browsers never
- * send to a web server. It does travel through whatever chat app relays the
- * link - see the README's invite-link note.
- */
-// Explicit `.js` extension (the only one in src/): it lets Node resolve this
-// module directly, so the invite parser - the one place that turns a stranger's
-// link into cryptographic inputs - is covered by test-crypto.mjs rather than by
-// hope. Vite resolves it identically.
 import { isValidBase64, isValidSalt, bufferToBase64, base64ToBuffer } from '../services/crypto.js';
 
 export const PEER_ID_REGEX = /^[a-zA-Z0-9_-]{4,64}$/;
 
-/** AES-GCM IV length, in bytes. `canaryIv` must be exactly this. */
 const IV_BYTES = 12;
 
-/**
- * Shortest id accepted from the ambiguous "peerId.salt" composite form.
- *
- * Generated ids are `love-` plus 16 base32 characters, so this only rejects
- * things no real id looks like. Without it `parseInvite('ourspace.app')` split
- * into a valid-looking id and a salt of `'app'`, and any bare domain, filename
- * or version string a user pasted became an "invite" that created a vault
- * permanently divergent from the partner's.
- */
 const MIN_COMPOSITE_ID_LENGTH = 8;
 
-/** Ceiling on any single field parsed out of a link, to bound a hostile payload. */
 const MAX_FIELD_LENGTH = 2048;
 
-/** Longest couple name accepted from an invite. Matches VaultContext. */
 const MAX_COUPLE_NAMES_LENGTH = 120;
 
-/**
- * Re-encodes base64 into its canonical standard-alphabet, padded form.
- * @param {unknown} value
- * @param {number} [byteLength] - Required exact decoded length, when known.
- * @returns {string|null} Null when `value` is not valid base64 of that length.
- */
 function canonicalBase64(value, byteLength) {
   if (typeof value !== 'string' || value.length === 0 || value.length > MAX_FIELD_LENGTH) {
     return null;
@@ -92,7 +22,6 @@ function canonicalBase64(value, byteLength) {
   }
 }
 
-/** @returns {string|null} A canonical 16-byte vault salt, or null. */
 function cleanSalt(value) {
   if (typeof value !== 'string') return null;
   const trimmed = value.trim();
@@ -100,7 +29,6 @@ function cleanSalt(value) {
   return canonicalBase64(trimmed, 16);
 }
 
-/** @returns {string|null} A 'YYYY-MM-DD' calendar date, or null. */
 function cleanStartDate(value) {
   if (typeof value !== 'string') return null;
   const trimmed = value.trim();
@@ -108,43 +36,21 @@ function cleanStartDate(value) {
   return Number.isFinite(Date.parse(`${trimmed}T00:00:00`)) ? trimmed : null;
 }
 
-/** @returns {string|null} A bounded couple-name string, or null. */
 function cleanCoupleNames(value) {
   if (typeof value !== 'string') return null;
   const trimmed = value.slice(0, MAX_COUPLE_NAMES_LENGTH).trim();
   return trimmed || null;
 }
 
-/**
- * Rewrites base64 into the URL-safe alphabet with padding stripped, for the
- * wire only. `parseInvite` canonicalises it straight back, so nothing
- * downstream ever sees the URL-safe form.
- *
- * This is purely about transport: standard base64 contains `+`, `/` and `=`,
- * which URLSearchParams percent-encodes to three characters each. On a QR code
- * that is wasted modules, and in a chat client that "helpfully" reformats a
- * link it is a whole class of mangling bugs that simply cannot happen now.
- *
- * @param {unknown} value
- * @returns {string|null}
- */
 function toUrlSafe(value) {
   if (typeof value !== 'string' || value.length === 0) return null;
   return value.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
-/**
- * Normalises one parsed invite. A malformed optional field is DROPPED rather
- * than passed through, so a caller can never derive against a hostile salt.
- * @returns {Object|null}
- */
 function buildInvite(peerId, raw = {}) {
   const id = typeof peerId === 'string' ? peerId.trim() : '';
   if (!PEER_ID_REGEX.test(id)) return null;
 
-  // The canary and its IV are one artefact: half of a passphrase proof proves
-  // nothing, and a caller that saw only `canary` populated could reasonably
-  // believe verification was available when it is not. All or neither.
   const canary = canonicalBase64(raw.canary);
   const canaryIv = canonicalBase64(raw.canaryIv, IV_BYTES);
   const hasProof = Boolean(canary && canaryIv);
@@ -159,7 +65,6 @@ function buildInvite(peerId, raw = {}) {
   };
 }
 
-/** Pulls the invite fields out of a URLSearchParams. */
 function fromParams(params) {
   return buildInvite(params.get('connect'), {
     salt: params.get('salt'),
@@ -170,16 +75,6 @@ function fromParams(params) {
   });
 }
 
-/**
- * Builds the full invite URL. Everything rides in the hash fragment, which is
- * never transmitted to a web server.
- *
- * @param {string} peerId
- * @param {string} salt - The inviter's vault salt (base64, 16 bytes).
- * @param {{ baseUrl?: string, startDate?: string, coupleNames?: string,
- *           canary?: string, canaryIv?: string }|string} [optionsOrBaseUrl]
- * @returns {string}
- */
 export function buildInviteUrl(peerId, salt, optionsOrBaseUrl = null) {
   let baseUrl = null;
   let startDate = null;
@@ -208,9 +103,6 @@ export function buildInviteUrl(peerId, salt, optionsOrBaseUrl = null) {
   if (salt) hashParams.set('salt', toUrlSafe(salt) || salt);
   if (startDate) hashParams.set('start', startDate);
   if (coupleNames) hashParams.set('names', coupleNames);
-  // NOTHING in this app passes these, on purpose - see the canary note in the
-  // module header. Supported so a future flow that has an already-authenticated
-  // channel can reuse this builder without publishing an offline oracle.
   if (canary && canaryIv) {
     hashParams.set('canary', toUrlSafe(canary) || canary);
     hashParams.set('civ', toUrlSafe(canaryIv) || canaryIv);
@@ -219,43 +111,22 @@ export function buildInviteUrl(peerId, salt, optionsOrBaseUrl = null) {
   return `${base}#${hashParams.toString()}`;
 }
 
-/**
- * Parses an invite from:
- *  1. A full URL          https://domain.com/#connect=love-123&salt=abc
- *  2. A hash string       #connect=love-123&salt=abc
- *  3. A query string      connect=love-123&salt=abc
- *  4. A composite code    love-123.abc
- *  5. A bare peer id      love-123
- *
- * Optional fields that fail validation are returned as null. A peer id that
- * fails validation makes the whole invite null - there is nothing to dial.
- *
- * @param {string} input
- * @returns {{ partnerPeerId: string, salt: string|null, startDate: string|null,
- *             coupleNames: string|null, canary: string|null,
- *             canaryIv: string|null } | null}
- */
 export function parseInvite(input) {
   if (!input || typeof input !== 'string') return null;
   const text = input.trim();
   if (!text) return null;
 
-  // Case 1 & 2: contains '#'
   if (text.includes('#')) {
     const parsed = fromParams(new URLSearchParams(text.substring(text.indexOf('#') + 1)));
     if (parsed) return parsed;
   }
 
-  // Case 3: bare query-string form
   if (text.includes('connect=')) {
     const cleanQuery = text.startsWith('?') ? text.substring(1) : text;
     const parsed = fromParams(new URLSearchParams(cleanQuery));
     if (parsed) return parsed;
   }
 
-  // Case 4: composite "peerId.salt".
-  // Deliberately strict: BOTH halves must validate. Accepting a valid-looking
-  // id with an unvalidated salt is how 'ourspace.app' used to become an invite.
   if (text.includes('.') && !text.startsWith('http')) {
     const separator = text.indexOf('.');
     const idPart = text.slice(0, separator).trim();
@@ -266,7 +137,6 @@ export function parseInvite(input) {
     }
   }
 
-  // Case 5: bare peer id
   return buildInvite(text);
 }
 

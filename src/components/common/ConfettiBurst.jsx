@@ -1,26 +1,7 @@
-/**
- * src/components/common/ConfettiBurst.jsx
- * Celebratory heart and pastel confetti bursts.
- *
- * WHY THIS DOES NOT USE canvas-confetti's DEFAULT EXPORT
- * The default `confetti()` is created internally with `useWorker: true`, which
- * renders inside a Web Worker built from a `blob:` URL. Our CSP sets
- * `worker-src 'self'`, so the browser blocks that worker - and the failure is
- * silent in the worst possible way: in Chromium the `new Worker(blob:...)` call
- * does NOT throw, so canvas-confetti's own try/catch never fires. It hands the
- * canvas to a worker that will never run a single frame. The canvas is created,
- * sized and attached, nothing is ever drawn on it, and no error surfaces. That
- * is exactly what "the button works but no confetti appears" looked like.
- *
- * `useWorker` is a CREATION option, not a per-call one, so the fix is our own
- * instance. Rendering moves to the main thread, which for a few seconds of
- * particles is not a cost worth loosening the CSP over.
- */
 import confetti from 'canvas-confetti';
 
 const CANVAS_ID = 'our-space-confetti';
 
-/** Lazily created worker-free confetti instance, bound to our own canvas. */
 let cannon = null;
 
 function getCannon() {
@@ -31,8 +12,6 @@ function getCannon() {
   if (!canvas) {
     canvas = document.createElement('canvas');
     canvas.id = CANVAS_ID;
-    // Full-viewport overlay that never intercepts a tap. z-index sits above the
-    // modals (z-50) so a burst fired from inside one is still visible.
     Object.assign(canvas.style, {
       position: 'fixed',
       top: '0',

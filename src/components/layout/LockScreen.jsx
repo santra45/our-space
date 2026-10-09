@@ -1,21 +1,3 @@
-/**
- * src/components/layout/LockScreen.jsx
- * Zero-knowledge vault unlock, partner pairing, and initial setup screen.
- *
- * THE FOOTGUN THIS SCREEN GUARDS
- * Two of the three forms here write a fresh salt to vaultMeta, which makes
- * every existing memory, letter, milestone and bucket item permanently
- * undecryptable. A returning user must therefore land on UNLOCK - never on
- * CREATE - and must not be able to reach either destructive form without
- * typing a confirmation phrase and being offered a rescue backup first.
- *
- * Mode is derived from `vaultCheckState`, which has FOUR values, not two.
- * 'checking' and 'unreadable' both render a non-destructive holding screen and
- * no form at all: a vault we cannot see is not a vault that is not there, and
- * offering CREATE VAULT on a read error is how a returning user gets walked into
- * erasing everything. 'unreadable' additionally names the usual cause - another
- * tab holding the old database schema open - and offers a retry.
- */
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { motion } from 'framer-motion';
 import {
@@ -54,10 +36,6 @@ import BouncyButton from '../common/BouncyButton';
 import { fireHeartConfetti } from '../common/ConfettiBurst';
 import { useHaptics } from '../../hooks/useHaptics';
 
-/**
- * Restore failures, phrased so the user knows what to do next rather than what
- * threw. Keys are the `code` values returned by VaultContext.restoreVaultFromBackup.
- */
 const RESTORE_ERRORS = {
   no_identity: 'This file is missing the part we need to rebuild your space here.',
   bad_salt: 'This file looks damaged, so we left everything as it is.',
@@ -75,11 +53,6 @@ const RESTORE_ERRORS = {
   write_failed: 'That stopped partway. Nothing more was written.',
 };
 
-/**
- * The blocking confirmation shown before anything replaces an existing vault.
- * Defined at module scope so React keeps its inputs mounted (and focused)
- * across the parent's re-renders.
- */
 function DangerGate({
   headline,
   confirmText,
@@ -112,12 +85,6 @@ function DangerGate({
         </div>
       </div>
 
-      {/* Rescue backup: the encrypted rows are still on disk, so let them out.
-          The copy here is deliberately blunt about the TWO passphrases involved.
-          It used to say this file was "the only way back" - while no code path
-          in the app could write a salt back from a backup, so the file was in
-          fact unrestorable. The restore flow now exists (mode 'restore' below),
-          and this text describes exactly what it can and cannot do. */}
       <div className="p-2.5 rounded-xl bg-white/70 border border-rose-200 space-y-2">
         <p className="text-[11px] font-bold text-slate-700 flex items-center gap-1.5">
           <Download className="w-3.5 h-3.5 text-slate-500" />
@@ -182,27 +149,6 @@ function DangerGate({
   );
 }
 
-/**
- * How long vaultCheckState may sit at 'checking' before the spinner explains itself.
- *
- * A blocked schema upgrade does NOT resolve to 'unreadable'. Dexie fires
- * on('blocked') but leaves the open request PENDING with no reject, so the
- * vaultMeta read never settles, checkVault never leaves 'checking', and the
- * blocked panel below - which lived only in the 'unreadable' branch - was
- * unreachable in precisely the case it was written for. A genuinely blocked user
- * watched "Looking for your vault…" forever and was never told to close the
- * other tab. So the guidance has to be reachable from 'checking' too.
- *
- * 6 seconds: opening IndexedDB and reading one row is single-digit milliseconds
- * on a warm start and tens of milliseconds on a phone waking from sleep, so this
- * is two orders of magnitude past normal - far too long to fire on a merely slow
- * device, short enough that a stuck user is not abandoned. The common block
- * self-resolves anyway (Dexie's default versionchange handler closes the other
- * tab's connection); a sustained one needs a frozen or non-Dexie holder, which
- * is rare enough that a time-based HINT is the honest shape here. It diagnoses
- * nothing, changes nothing, and the spinner keeps running underneath in case the
- * read does land.
- */
 const CHECK_SLOW_MS = 6000;
 
 export function LockScreen() {
@@ -228,33 +174,21 @@ export function LockScreen() {
   const [startDate, setStartDate] = useState(localDateString());
   const [partnerInviteInput, setPartnerInviteInput] = useState('');
   const [inviteData, setInviteData] = useState(null);
-  const [mode, setMode] = useState('unlock'); // 'unlock' | 'setup' | 'join' | 'restore'
-  /** Opened from the home screen icon rather than a browser tab. Fixed per launch. */
+  const [mode, setMode] = useState('unlock');
   const [installedApp] = useState(() => isInstalledApp());
-  /** Opened inside another app's built-in browser (Instagram and the like). */
   const [inAppBrowser] = useState(() => detectInAppBrowser());
-  /** null until tried, then 'copied' or 'failed'. */
   const [linkCopy, setLinkCopy] = useState(null);
   const [loading, setLoading] = useState(false);
   const [localError, setLocalError] = useState(null);
 
-  /**
-   * When quick unlock is set up, the passphrase field starts out of the way -
-   * that is the entire point of the feature. It is always one tap from coming
-   * back, and it comes back on its own the moment quick unlock fails.
-   */
   const [showPassphraseForm, setShowPassphraseForm] = useState(false);
 
-  // Destructive-path confirmation state
   const [confirmText, setConfirmText] = useState('');
   const [backupPassphrase, setBackupPassphrase] = useState('');
   const [backupBusy, setBackupBusy] = useState(false);
   const [backupDone, setBackupDone] = useState(false);
   const [backupError, setBackupError] = useState(null);
 
-  // Rescue-restore state. `restoreTables` holds the DECRYPTED container payload,
-  // which is still fully encrypted at the record level - opening the file proves
-  // nothing about the vault passphrase.
   const [restoreFileName, setRestoreFileName] = useState('');
   const [restoreContainer, setRestoreContainer] = useState(null);
   const [restoreFilePassphrase, setRestoreFilePassphrase] = useState('');
@@ -269,10 +203,8 @@ export function LockScreen() {
   const isChecking = vaultCheckState === 'checking';
   const isUnreadable = vaultCheckState === 'unreadable';
   const hasVault = vaultCheckState === 'present';
-  /** No form may be rendered until the vault question has an actual answer. */
   const canRenderForms = hasVault || vaultCheckState === 'absent';
 
-  /** See CHECK_SLOW_MS: a blocked upgrade never leaves 'checking' on its own. */
   const [checkIsSlow, setCheckIsSlow] = useState(false);
   useEffect(() => {
     if (!isChecking) {
@@ -283,15 +215,8 @@ export function LockScreen() {
     return () => clearTimeout(timer);
   }, [isChecking]);
 
-  /** Once the user picks a form, the default-mode effect stops overriding them. */
   const modeTouched = useRef(false);
 
-  /**
-   * Switches form, wiping every error and confirmation from the previous one.
-   * Leaving `restore` also drops the decrypted container from memory - it is the
-   * whole vault in plaintext-envelope form and has no business outliving the
-   * screen that needed it.
-   */
   const switchMode = (next) => {
     tap();
     modeTouched.current = true;
@@ -304,7 +229,6 @@ export function LockScreen() {
     clearError();
   };
 
-  // Detect an invite link in the URL hash on mount and on hash change.
   useEffect(() => {
     const handleHash = () => {
       const invite = parseInvite(window.location.hash);
@@ -318,18 +242,6 @@ export function LockScreen() {
     return () => window.removeEventListener('hashchange', handleHash);
   }, []);
 
-  /**
-   * Derive the default form from what we actually know.
-   *
-   * A device that already has a vault ALWAYS defaults to unlock, invite link or
-   * not. Honouring `#salt=` here is how a crafted link used to drop an existing
-   * user straight onto a form that replaced their salt: one tap, one passphrase,
-   * whole vault orphaned. The link is remembered and applied after unlocking.
-   *
-   * An installed app with no vault opens on JOIN, not CREATE: that is almost
-   * always someone whose space was evicted or cleared, and CREATE would take
-   * their usual passphrase and give them a second, separate space.
-   */
   useEffect(() => {
     if (modeTouched.current) return;
     const next = defaultLockScreenMode({
@@ -337,15 +249,12 @@ export function LockScreen() {
       inviteHasSalt: Boolean(inviteData && inviteData.salt),
       installed: installedApp,
     });
-    // null while 'checking' or 'unreadable': those deliberately choose nothing.
     if (next) setMode(next);
   }, [vaultCheckState, inviteData, installedApp]);
 
-  /** The installed app came up empty, and no invite arrived to explain why. */
   const lostSpace =
     vaultCheckState === 'absent' && installedApp && !(inviteData && inviteData.salt);
 
-  /** Puts this page's link on the clipboard, so it can be opened in a real browser. */
   const handleCopyLink = async () => {
     tap();
     try {
@@ -356,7 +265,6 @@ export function LockScreen() {
     }
   };
 
-  /** The salt this join would adopt, as far as we can tell right now. */
   const pendingJoinSalt = useMemo(() => {
     if (inviteData && inviteData.salt) return inviteData.salt;
     if (!partnerInviteInput.trim()) return null;
@@ -364,25 +272,17 @@ export function LockScreen() {
     return (parsed && parsed.salt) || null;
   }, [inviteData, partnerInviteInput]);
 
-  /** True when this join would adopt a DIFFERENT salt than the one on disk. */
   const joinReplacesVault = hasVault && pendingJoinSalt !== vaultSalt;
-  /** True when a restore would replace a DIFFERENT vault already on this device. */
   const restoreReplacesVault = Boolean(
     hasVault && restoreIdentity && restoreIdentity.salt !== vaultSalt
   );
   const isConfirmed = confirmText.trim().toUpperCase() === DESTROY_CONFIRMATION_PHRASE;
   const destroyToken = isConfirmed ? DESTROY_CONFIRMATION_PHRASE : undefined;
 
-  /** An invite for a vault that is not the one on this device. */
   const inviteIsForAnotherVault = Boolean(
     hasVault && inviteData && inviteData.salt && inviteData.salt !== vaultSalt
   );
 
-  /**
-   * Writes an encrypted container of everything currently on disk, then proves
-   * the file opens with the passphrase that was just typed. A backup nobody can
-   * decrypt is worse than no backup, because it feels like insurance.
-   */
   const handleDownloadRescueBackup = async () => {
     setBackupError(null);
     setBackupDone(false);
@@ -397,8 +297,6 @@ export function LockScreen() {
     try {
       const raw = await db.exportRawDataForBackup();
       const container = await createEncryptedBackup(raw, backupPassphrase);
-      // Round-trip it before handing it over. This is the check the old export
-      // flow never did, which is how typos produced unopenable .vault files.
       await decryptBackupContainer(container, backupPassphrase);
 
       const blob = new Blob([JSON.stringify(container)], { type: 'application/json' });
@@ -406,8 +304,6 @@ export function LockScreen() {
       const anchor = document.createElement('a');
       anchor.href = url;
       anchor.download = `our-space-rescue-${localDateString()}.vault`;
-      // Firefox aborts a download whose anchor was never in the document, and
-      // aborts it again if the object URL is revoked in the same tick.
       document.body.appendChild(anchor);
       anchor.click();
       anchor.remove();
@@ -420,17 +316,6 @@ export function LockScreen() {
       setBackupBusy(false);
     }
   };
-
-  /* ----------------------------------------------------------------------- *
-   * Rescue restore
-   *
-   * Three separate steps, on purpose, because they prove three different things:
-   *   1. pick the file          - it is a .vault container
-   *   2. open the container     - the FILE passphrase is right
-   *   3. adopt the identity     - the VAULT passphrase is right
-   * Step 2 succeeding tells you nothing about step 3. Collapsing them into one
-   * "restore" button is what would let someone adopt a salt they cannot decrypt.
-   * ----------------------------------------------------------------------- */
 
   const resetRestoreState = () => {
     setRestoreFileName('');
@@ -473,7 +358,6 @@ export function LockScreen() {
     }
   };
 
-  /** Step 2: open the container and read the identity it carries. */
   const handleOpenRestoreContainer = async (e) => {
     e.preventDefault();
     setRestoreError(null);
@@ -493,8 +377,6 @@ export function LockScreen() {
       }
       setRestoreTables(decrypted.tables);
       setRestoreIdentity(identity);
-      // Most rescue files are written with the vault's own passphrase, so try it
-      // first rather than making the user type it twice for nothing.
       setRestoreVaultPassphrase(restoreFilePassphrase);
     } catch (err) {
       console.error('Could not open the backup container:', err);
@@ -504,7 +386,6 @@ export function LockScreen() {
     }
   };
 
-  /** Step 3: adopt the identity, keyed by the ORIGINAL vault passphrase. */
   const handleRestoreVault = async (e) => {
     e.preventDefault();
     setRestoreError(null);
@@ -532,19 +413,15 @@ export function LockScreen() {
     setRestoreError(RESTORE_ERRORS[result.code] || 'That did not finish. Please try again.');
   };
 
-  /** Remembers the peer id so SyncContext can offer to dial after unlock. */
   const rememberPartnerId = (partnerPeerId) => {
     if (!partnerPeerId) return;
     try {
       sessionStorage.setItem('pending_partner_connect', partnerPeerId);
       localStorage.setItem('sweetheart_paired_partner_id', partnerPeerId);
     } catch {
-      // Storage blocked (private window). Pairing still works, it just will not
-      // be remembered for next time.
     }
   };
 
-  /** Quick unlock only leads the screen when it can actually work. */
   const quickUnlockOffered = quickUnlockAvailable && quickUnlockEnrolled;
 
   const handleQuickUnlock = async () => {
@@ -566,8 +443,6 @@ export function LockScreen() {
       return;
     }
 
-    // Dismissed, failed, or stale - it does not matter which. She is standing
-    // at a locked door, so the other key goes back on the table.
     setShowPassphraseForm(true);
   };
 
@@ -631,7 +506,6 @@ export function LockScreen() {
       return;
     }
 
-    // Prefer the invite from the URL; fall back to whatever was pasted in.
     const invite =
       inviteData && inviteData.salt ? inviteData : parseInvite(partnerInviteInput);
 
@@ -656,7 +530,6 @@ export function LockScreen() {
       {
         startDate: invite.startDate,
         coupleNames: invite.coupleNames,
-        // Present only once invites carry them; verified when they are.
         canary: invite.canary,
         canaryIv: invite.canaryIv,
       },
@@ -708,7 +581,6 @@ export function LockScreen() {
         transition={{ duration: 0.5, ease: 'easeOut' }}
         className="w-full max-w-md"
       >
-        {/* Cute Icon Avatar */}
         <div className="text-center mb-6">
           <motion.div
             animate={{
@@ -733,16 +605,11 @@ export function LockScreen() {
         </div>
 
         <GlassCard className="border-2 border-blush-100 shadow-xl shadow-blush-200/30">
-          {/* Still reading IndexedDB. Showing a form now means guessing, and
-              guessing wrong offers a returning user the CREATE VAULT form. */}
           {isChecking && (
             <div className="py-10 text-center space-y-3">
               <div className="w-8 h-8 mx-auto rounded-full border-2 border-blush-200 border-t-blush-500 animate-spin" />
               <p className="text-xs text-slate-500 font-medium">Finding your space…</p>
 
-              {/* Dexie told us another connection is holding the old schema. The
-                  read above will never settle on its own, so this is the only
-                  place the user can be told why. */}
               {vaultCheckBlocked && (
                 <div className="mx-2 p-3 rounded-xl bg-amber-50 border border-amber-200 text-[11px] text-amber-900 leading-relaxed text-left">
                   <p className="font-bold">Our Space is open somewhere else.</p>
@@ -752,9 +619,6 @@ export function LockScreen() {
                 </div>
               )}
 
-              {/* No blocked event, but the read is still not back. Same advice,
-                  stated as a possibility rather than a fact, because we do not
-                  actually know the cause here. */}
               {!vaultCheckBlocked && checkIsSlow && (
                 <div className="mx-2 p-3 rounded-xl bg-slate-50 border border-slate-200 text-[11px] text-slate-600 leading-relaxed text-left">
                   <p className="font-bold">This is taking a little while.</p>
@@ -767,10 +631,6 @@ export function LockScreen() {
             </div>
           )}
 
-          {/* The read FAILED. This is not the same as "there is no vault", and it
-              must never be rendered as one: every form below either unlocks a
-              vault we cannot see or replaces it. So: no forms, a named cause, and
-              a retry. */}
           {isUnreadable && (
             <div className="py-6 text-center space-y-3">
               <ShieldAlert className="w-8 h-8 mx-auto text-amber-500" />
@@ -794,9 +654,6 @@ export function LockScreen() {
             </div>
           )}
 
-          {/* Opened inside another app's built-in browser, which keeps its own
-              storage. A space set up here would stay stuck inside that app,
-              and the installed app would still come up empty. */}
           {canRenderForms && inAppBrowser && (
             <div className="mb-4 p-3 rounded-xl bg-amber-50 border border-amber-200 text-[11px] text-amber-900 leading-relaxed">
               <p className="font-bold">
@@ -820,7 +677,6 @@ export function LockScreen() {
             </div>
           )}
 
-          {/* Mode switcher, only once we know there is nothing to lose. */}
           {vaultCheckState === 'absent' && mode !== 'restore' && (
             <div className="flex bg-slate-100/80 p-1 rounded-2xl mb-5">
               <button
@@ -850,7 +706,6 @@ export function LockScreen() {
             </div>
           )}
 
-          {/* MODE 1: UNLOCK EXISTING VAULT */}
           {canRenderForms && mode === 'unlock' && (
             <form onSubmit={handleUnlock} className="space-y-4">
               <div className="text-center mb-4">
@@ -973,7 +828,6 @@ export function LockScreen() {
             </form>
           )}
 
-          {/* MODE 2: JOIN PARTNER'S SPACE (Via Link or Manual Code) */}
           {canRenderForms && mode === 'join' && (
             <form onSubmit={handleJoin} className="space-y-4">
               <div className="text-center mb-3">
@@ -990,8 +844,6 @@ export function LockScreen() {
                 </p>
               </div>
 
-              {/* The installed app opened with nothing in it. Say what most likely
-                  happened and how to get it back, before they reach for CREATE. */}
               {lostSpace && (
                 <div className="p-3 rounded-xl bg-indigo-50/70 border border-indigo-100 text-[11px] text-indigo-900 leading-relaxed flex gap-2">
                   <LifeBuoy className="w-4 h-4 text-indigo-500 flex-shrink-0 mt-0.5" />
@@ -1005,7 +857,6 @@ export function LockScreen() {
                 </div>
               )}
 
-              {/* If no salt came from the URL, take a pasted link or code. */}
               {!(inviteData && inviteData.salt) && (
                 <div>
                   <label className="block text-xs font-semibold text-slate-600 mb-1">
@@ -1112,7 +963,6 @@ export function LockScreen() {
             </form>
           )}
 
-          {/* MODE 3: CREATE NEW SPACE (Initiator First-Time Setup) */}
           {canRenderForms && mode === 'setup' && (
             <form onSubmit={handleSetup} className="space-y-4">
               <div className="text-center mb-2">
@@ -1126,10 +976,6 @@ export function LockScreen() {
                 </p>
               </div>
 
-              {/* On an empty phone this form erases nothing, so there is no gate -
-                  but a returning person can still land here, read "a passphrase
-                  only the two of you know" and type their usual one. Say plainly
-                  what this makes before they do. */}
               {!hasVault && (
                 <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-[11px] text-amber-900 leading-relaxed">
                   <p className="font-bold">This makes a brand-new, empty space.</p>
@@ -1240,11 +1086,6 @@ export function LockScreen() {
             </form>
           )}
 
-          {/* MODE 4: RESTORE FROM A RESCUE BACKUP
-              The counterpart to the rescue download in DangerGate, and the only
-              flow in the app that writes a vault salt out of a file. Kept
-              separate from the Sync Hub's merge-import on purpose: that one keeps
-              the key you already have, this one replaces it. */}
           {canRenderForms && mode === 'restore' && (
             <div className="space-y-4">
               <div className="text-center mb-1">
@@ -1258,7 +1099,6 @@ export function LockScreen() {
                 </p>
               </div>
 
-              {/* Step 1: the file */}
               <div>
                 <label className="flex items-center justify-center gap-2 py-2.5 px-3 rounded-2xl border-2 border-dashed border-slate-300 text-xs font-semibold text-slate-600 hover:bg-slate-50 cursor-pointer">
                   <Upload className="w-4 h-4 text-slate-400" />
@@ -1272,7 +1112,6 @@ export function LockScreen() {
                 </label>
               </div>
 
-              {/* Step 2: the FILE passphrase */}
               {restoreContainer && !restoreTables && (
                 <form onSubmit={handleOpenRestoreContainer} className="space-y-2">
                   <label className="block text-xs font-semibold text-slate-600">
@@ -1300,7 +1139,6 @@ export function LockScreen() {
                 </form>
               )}
 
-              {/* Step 3: the VAULT passphrase, which is a different question. */}
               {restoreTables && restoreIdentity && (
                 <form onSubmit={handleRestoreVault} className="space-y-3">
                   <div className="p-2.5 rounded-xl bg-emerald-50/70 border border-emerald-100 text-[11px] text-emerald-800 flex items-start gap-2">
@@ -1316,15 +1154,6 @@ export function LockScreen() {
                       'Bringing this file back moves this phone over to the space inside it.'
                     )}
 
-                  {/* The old copy said "nothing here will be overwritten", which
-                      the code does not honour: restoreVaultFromBackup calls
-                      wipeSyncedTables unconditionally, including on this path.
-                      The wipe is deliberately kept - a device with no vaultMeta
-                      can still hold rows a previous destroy orphaned, and those
-                      are encrypted under a key that no longer exists anywhere,
-                      so carrying them into the restored vault would only feed
-                      permanently unreadable rows back into sync. So the STRING
-                      moves to meet the code, not the other way round. */}
                   {!hasVault && (
                     <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-[11px] text-slate-600 leading-relaxed">
                       There is nothing here to replace. Anything left over from an older space on
@@ -1392,7 +1221,6 @@ export function LockScreen() {
             </div>
           )}
 
-          {/* Entry point to the restore flow, from wherever the user is stuck. */}
           {canRenderForms && mode !== 'restore' && (
             <div className="pt-3 mt-1 text-center">
               <button
@@ -1406,7 +1234,6 @@ export function LockScreen() {
             </div>
           )}
 
-          {/* Security badge */}
           <div className="mt-5 pt-4 border-t border-blush-100/80 flex items-center justify-center gap-2 text-slate-400 text-[11px]">
             <ShieldCheck className="w-4 h-4 text-emerald-500" />
             <span>Locked with your passphrase. Only you two can open it.</span>

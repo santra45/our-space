@@ -1,18 +1,3 @@
-/**
- * src/components/sync/SyncHubModal.jsx
- * P2P WebRTC connection hub: QR code generation, WhatsApp share link, sync
- * controls, and encrypted vault backup/restore.
- *
- * Connection indicators here are driven by `isAuthorized` only. peerSync reports
- * `handshaking` for a data channel that opened but has not proved it holds the
- * vault key; rendering that as "Connected to Partner" told the user a stranger
- * was their partner.
- *
- * The backup passphrase is collected through a masked in-app prompt with a
- * confirm field and is verified against the live vault canary before a single
- * byte is written. A typo used to produce a .vault file that nobody, including
- * its owner, could ever open.
- */
 import React, { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 import {
@@ -60,10 +45,6 @@ import {
 
 const MAX_BACKUP_FILE_MB = Math.round(MAX_BACKUP_FILE_BYTES / (1024 * 1024));
 
-/**
- * Masked passphrase prompt. Replaces window.prompt, which rendered the vault
- * passphrase as plain text on screen and offered no way to confirm it.
- */
 function PassphrasePrompt({
   title,
   description,
@@ -172,97 +153,7 @@ function PassphrasePrompt({
   );
 }
 
-/**
- * The preview a merge-import must survive before a single row is written.
- *
- * Counts, not reassurance. `stale` is the number the old blind bulkPut would
- * have silently overwritten with older data, and `undecryptable` is the tell
- * that the file belongs to a different vault entirely.
- *
- * `tampered` is counted and rendered APART from `undecryptable`, and the split
- * lives in db/index.js's verifyRowIntegrity rather than here. One line used to
- * carry both: every integrity failure landed in `undecryptable` under the label
- * "Could not be decrypted by this vault", including rows that decrypted
- * perfectly under the live key and were refused because their header, their
- * photo bytes or their table disagreed with the envelope. So the single row
- * that proves someone edited the user's file was reported to them as "wrong
- * key" - the most reassuring possible reading of the least reassuring fact.
- *
- * A MERGE CAN DESTROY, AND THAT IS THE HEADLINE NUMBER.
- * `planBackupMerge` classifies a write that tombstones a live row as `deleted`,
- * separately from `updated` (db/index.js, the `row.deleted === true &&
- * existing.deleted !== true` branch). Before that counter was rendered here,
- * importing a backup taken AFTER a deletion showed the user "Updated 2" and then
- * dropped two photos on confirm. No attacker is required for that: device A
- * deletes a photo and exports, the user imports that export on device B which
- * still holds the only copy, and B obeys the tombstone. So `deleted` gets its
- * own loud tile, its own sentence, and its own acknowledgement.
- *
- * Every `relation` compareVaultIdentity can return has a branch here. 'unknown'
- * used to have none, so a file whose origin could not be established rendered
- * identically to the user's own backup - same counts, no banner, live Merge
- * button. It now says so out loud.
- *
- * BUT ORIGIN IS THE WRONG THING TO KEY A WARNING ON, AND THAT WAS THE HOLE.
- * Keying the only unproven-origin banner on relation === 'unknown' left the
- * CREATE path silent, and creating is the permissive half of the record gate:
- * a row that lands at an id this device has never held destroys nothing, so it
- * is allowed where an overwrite would not be. That is exactly where a file whose
- * own vaultMeta classifies as 'same' arrives - which costs a forger nothing,
- * because
- * readBackupVaultIdentity reads that identity out of the file itself - showing
- * "Added: 2, Deleted permanently: 0" and no banner whatsoever. So the second
- * banner is keyed on `added > 0` instead, with no reference to origin at all,
- * and it names the thing the counts do not: a created record is a real record on
- * this device, and this device hands its records to the partner (db/index.js
- * getManifest enumerates every primary key in every synced table; peerSync
- * `_handleSyncRequest` serves `db.table(req.table).get(req.id)` for anything the
- * partner asks for).
- *
- * DELIBERATE: the extra confirmation is keyed on WHAT THE PLAN DOES, not on the
- * file's label. 'unknown' gets a loud banner but no gate beyond the preview
- * itself; a plan with `deleted > 0` gets a gate whatever its origin says. The
- * reasoning, since the opposite choice is the tempting one:
- *
- *   - A label gate is bypassable by the attacker it is aimed at. Identity is
- *     read out of the file's own vaultMeta (readBackupVaultIdentity), so anyone
- *     who can build a hostile file can simply leave a matching vaultMeta in
- *     place and classify as 'same'. Gating on 'unknown' would therefore stop
- *     only the forger who volunteered to be caught, while charging every honest
- *     user with a truncated file.
- *   - The per-row gate is what actually holds, and it is two-tier. Every
- *     candidate must be a sealed envelope that AES-GCM verifies under THIS
- *     device's live key (planBackupMerge -> verifyRowIntegrity ->
- *     recordHasAuthenticatedHeader + decryptRecord), whether it would create
- *     something or replace something. On top of that, a row may only OVERWRITE
- *     OR TOMBSTONE a row that already exists when its photo bytes and its table
- *     are sealed in too, enforced at plan time and re-asserted inside the
- *     applyBackupMerge transaction.
- *   - Neither tier stops the loss this dialog is really about. A genuinely newer
- *     tombstone is not an attack, it is the sync rule working, and it is exactly
- *     what erases the last copy of a photo when the user imports device A's
- *     post-deletion export onto device B. No cryptographic gate can refuse that
- *     on the user's behalf; only the user can. That is an argument for naming
- *     the destruction, not for a confirmation PHRASE - a phrase is reserved for
- *     replacing the vault salt, where the loss is total and instant, and reusing
- *     it here would train the user to type it past routine merges. So the
- *     destructive count is named in its own tile, in an acknowledgement that
- *     must be ticked, on the button, and in the post-merge notice.
- *
- * DO NOT re-derive the record gates anywhere in the rendered copy beyond the two
- * places that already do it: the second sentence of the "Origin not established"
- * banner, and the second sentence of the "would be created" banner. How strong
- * an envelope is belongs to crypto.js and has changed more than once; a UI
- * paragraph that restates it goes stale in silence, and this component has
- * already shipped one such false guarantee. Both surviving restatements are
- * deliberately the SAME sentence about the same rule - may create; may overwrite
- * or delete only with a sealed header on vault-authored content - so there is
- * one claim to re-check, not two.
- */
 function ImportPreview({ plan, relation, busy, onConfirm, onCancel }) {
-  // Defaulted, not destructured raw: an older plan object missing a counter would
-  // otherwise make `willWrite` NaN, which is neither 0 nor a number - the button
-  // would light up and offer to "Merge NaN".
   const t = plan.totals || {};
   const added = t.added || 0;
   const updated = t.updated || 0;
@@ -272,11 +163,7 @@ function ImportPreview({ plan, relation, busy, onConfirm, onCancel }) {
   const undecryptable = t.undecryptable || 0;
   const tampered = t.tampered || 0;
   const unauthenticated = t.unauthenticated || 0;
-  // Deletions are writes. Excluding them from this total once made a merge whose
-  // entire effect was destroying rows render as "Nothing to write".
   const willWrite = added + updated + deleted;
-  // Every reason a row can be held back, added up. The individual counts stay
-  // exactly as the plan reports them; only the DISPLAY is collapsed to one line.
   const leftOut = stale + invalid + undecryptable + tampered + unauthenticated;
   const destructive = deleted > 0;
   const foreign = relation === 'foreign';
@@ -339,11 +226,6 @@ function ImportPreview({ plan, relation, busy, onConfirm, onCancel }) {
           </div>
         </div>
 
-        {/* Deliberately NOT a third cell in the grid above. This number is not a
-            peer of "Added" and "Updated" - it is the only one that destroys
-            something, so it gets full width, a different colour, and a sentence
-            saying what is lost. A user scanning three equal tiles reads three
-            equal outcomes. */}
         <div
           className={`mt-2 p-3 rounded-xl border-2 flex items-start gap-2.5 ${
             destructive ? 'bg-rose-50 border-rose-300' : 'bg-slate-50 border-slate-200'
@@ -374,14 +256,6 @@ function ImportPreview({ plan, relation, busy, onConfirm, onCancel }) {
                 destructive ? 'text-rose-800' : 'text-slate-500'
               }`}
             >
-              {/* The timeline runs the other way round: a tombstone inside the
-                  file was necessarily written BEFORE the file was exported. The
-                  deletion is newer than YOUR copy, not newer than the file. */}
-              {/* U2: this reassurance is about DELETION only. It never meant
-                  "this import is harmless" - created rows still travel on to the
-                  partner's phone. The paragraph that used to spell that out has
-                  been dropped from the UI as unreadable jargon; the rule itself
-                  is unchanged in db/index.js. */}
               {destructive
                 ? `This will remove ${deleted} ${deleted === 1 ? 'thing' : 'things'} you still ` +
                   `have, here and on the other phone. That cannot be undone.`
@@ -390,10 +264,6 @@ function ImportPreview({ plan, relation, busy, onConfirm, onCancel }) {
           </div>
         </div>
 
-        {/* The five per-reason counters above are still computed - they are the
-            numbers the plan is made of - but the user gets one friendly line and
-            an optional plain-English "why". Five forensic categories on a
-            scrapbook screen is a security console, not a love letter. */}
         {leftOut > 0 && (
           <div className="mt-2 px-1">
             <div className="flex items-baseline justify-between gap-2 text-[11px] text-slate-600">
@@ -417,16 +287,6 @@ function ImportPreview({ plan, relation, busy, onConfirm, onCancel }) {
           </div>
         )}
 
-        {/* The long explanations that used to live here (what a created row can
-            and cannot do, how last-write-wins works, which id/updatedAt/deleted
-            fields are sealed) were internal reasoning rendered at the user. The
-            RULES are unchanged and enforced in db/index.js planBackupMerge; only
-            the essay is gone. */}
-
-        {/* The gate is on the destructive outcome, not on the file's label - see
-            the block comment above. It is a deliberate act naming the count, not
-            a confirmation phrase: a phrase belongs to salt replacement, and
-            spending it here would teach the user to type it past routine imports. */}
         {destructive && (
           <label className="mt-3 flex items-start gap-2 p-2.5 rounded-xl bg-rose-50 border border-rose-200 cursor-pointer">
             <input
@@ -531,27 +391,16 @@ export function SyncHubModal({ isOpen, onClose }) {
   const [backupError, setBackupError] = useState('');
   const [pairError, setPairError] = useState('');
 
-  // { mode: 'export' | 'import', container?: Object }
   const [passphrasePrompt, setPassphrasePrompt] = useState(null);
   const [promptBusy, setPromptBusy] = useState(false);
   const [promptError, setPromptError] = useState('');
 
-  // { plan, relation, identity }
   const [importPreview, setImportPreview] = useState(null);
   const [importBusy, setImportBusy] = useState(false);
 
   const qrCanvasRef = useRef(null);
   const { tap, celebration } = useHaptics();
 
-  /**
-   * An invite needs two things and waits for both: somewhere to dial, and the
-   * salt the joining phone derives its key from. The peer id arrives from the
-   * signalling server a moment after the modal opens, so there IS a window where
-   * neither exists - and a link copied in that window is a link that pairs
-   * nothing. Until both are here there is no invite.
-   *
-   * The passphrase CANARY is deliberately not carried. See buildInviteUrl.
-   */
   const inviteReady = Boolean(myPeerId) && Boolean(vaultSalt);
 
   const shareUrl = inviteReady
@@ -561,7 +410,6 @@ export function SyncHubModal({ isOpen, onClose }) {
       })
     : '';
 
-  // Render QR Code on canvas
   useEffect(() => {
     if (!isOpen || !inviteReady || !shareUrl || !qrCanvasRef.current) return;
 
@@ -570,8 +418,6 @@ export function SyncHubModal({ isOpen, onClose }) {
       shareUrl,
       {
         width: 190,
-        // The QR spec requires a four-module quiet zone; `margin: 1` supplied
-        // one and made the symbol harder to acquire against a light background.
         margin: 2,
         errorCorrectionLevel: 'M',
         color: {
@@ -585,7 +431,6 @@ export function SyncHubModal({ isOpen, onClose }) {
     );
   }, [isOpen, inviteReady, shareUrl]);
 
-  // WhatsApp / Native Web Share API trigger
   const handleShareInvite = async () => {
     tap();
     if (!inviteReady) {
@@ -604,7 +449,6 @@ export function SyncHubModal({ isOpen, onClose }) {
         celebration();
         return;
       } catch {
-        // user cancelled or share failed, fallback to copy
       }
     }
 
@@ -625,7 +469,6 @@ export function SyncHubModal({ isOpen, onClose }) {
       setCodeCopied(true);
       setTimeout(() => setCodeCopied(false), 2000);
     } catch {
-      // clipboard blocked; the id is visible on the button anyway
     }
   };
 
@@ -647,7 +490,6 @@ export function SyncHubModal({ isOpen, onClose }) {
     connectToPartner(parsed.partnerPeerId);
   };
 
-  /** Receives the RAW scanned payload; parseInvite is the only parser. */
   const handleScanSuccess = (scannedPayload) => {
     setIsScannerOpen(false);
     setPairError('');
@@ -660,25 +502,12 @@ export function SyncHubModal({ isOpen, onClose }) {
     connectToPartner(parsed.partnerPeerId);
   };
 
-  /* --------------------------------------------------------------------- *
-   * Encrypted backup
-   * --------------------------------------------------------------------- */
-
   const closePrompt = () => {
     setPassphrasePrompt(null);
     setPromptError('');
     setPromptBusy(false);
   };
 
-  /**
-   * Every branch here has to say something.
-   *
-   * The first version of this leaned on the vault `error` banner, which only
-   * the lock screen ever draws - so a setup that failed looked exactly like a
-   * setup that had not been tried, and the only clue was the button coming
-   * back. The wording is deliberately different per cause: what she reads is
-   * how we find out which one happened.
-   */
   const QUICK_UNLOCK_PROBLEMS = {
     'wrong-passphrase': 'That passphrase does not match this space. Have another go.',
     cancelled: 'That got stopped partway, so nothing changed. Try again when you are ready.',
@@ -733,8 +562,6 @@ export function SyncHubModal({ isOpen, onClose }) {
     setPromptError('');
     let url = null;
     try {
-      // D3: prove the typed passphrase actually opens THIS vault before writing
-      // anything. Without this, one typo produces an undecryptable .vault.
       const meta = await db.vaultMeta.get('config');
       if (!meta || !meta.salt) {
         setPromptError('Nothing is set up on this phone yet, so there is nothing to save.');
@@ -751,14 +578,11 @@ export function SyncHubModal({ isOpen, onClose }) {
 
       const rawData = await db.exportRawDataForBackup();
       const container = await createEncryptedBackup(rawData, passphrase);
-      // Round-trip the container before handing it over.
       await decryptBackupContainer(container, passphrase);
 
       const blob = new Blob([JSON.stringify(container)], { type: 'application/json' });
       url = URL.createObjectURL(blob);
 
-      // P5: Firefox aborts a download whose anchor was never in the document,
-      // and aborts it again if the object URL is revoked in the same tick.
       const anchor = document.createElement('a');
       anchor.href = url;
       anchor.download = `our-space-${new Date().toISOString().split('T')[0]}.vault`;
@@ -788,8 +612,6 @@ export function SyncHubModal({ isOpen, onClose }) {
     setBackupError('');
     setPromptError('');
 
-    // P5: without a cap, readAsText on a multi-GB file pulls it all into a
-    // string and hangs the tab before anything is even validated.
     if (file.size > MAX_BACKUP_FILE_BYTES) {
       setBackupError(
         `That file is ${Math.round(file.size / (1024 * 1024))}MB — a bit big. The most we can take is ${MAX_BACKUP_FILE_MB}MB.`
@@ -818,25 +640,10 @@ export function SyncHubModal({ isOpen, onClose }) {
     }
   };
 
-  /**
-   * PLANS the import. Writes nothing.
-   *
-   * The old version went straight from this passphrase prompt to a bulkPut over
-   * the live tables - no check that the file came from this vault, no timestamp
-   * comparison, no preview, no confirmation. With the deterministic seed ids this
-   * build introduced (bkt-default-1..6, roulette-current), two DIFFERENT vaults
-   * collide on primary key, so importing a friend's backup replaced live rows
-   * with rows encrypted under a key this device does not have. Every read path
-   * skips undecryptable rows silently, so those items just disappeared.
-   *
-   * Now: verify identity, verify every record decrypts here, compare timestamps
-   * with the sync engine's own rule, then show the user the damage before asking.
-   */
   const runImport = async (passphrase) => {
     setPromptBusy(true);
     setPromptError('');
     try {
-      // Decrypt and verify the 128-bit GCM tag. Wrong key or tampering throws.
       const decrypted = await decryptBackupContainer(passphrasePrompt.container, passphrase);
 
       if (!cryptoKey) {
@@ -848,8 +655,6 @@ export function SyncHubModal({ isOpen, onClose }) {
       const localRead = await db.readVaultIdentity();
       const relation = compareVaultIdentity(identity, localRead);
 
-      // Fail closed: if we cannot read our own identity we cannot tell whether
-      // this file belongs here, and a wrong answer costs the user their photos.
       if (relation === 'unknown' && !localRead.ok) {
         setPromptError(
           'We could not read what is already on this phone, so we stopped. Nothing changed. Close ' +
@@ -869,20 +674,6 @@ export function SyncHubModal({ isOpen, onClose }) {
     }
   };
 
-  /**
-   * Applies a plan the user has now seen and accepted.
-   *
-   * The notice has to name deletions. It used to say "Merged N record(s)" after
-   * a merge whose entire effect was tombstoning N live rows - the one word the
-   * user needed was the one word missing.
-   *
-   * applyBackupMerge reports only how many rows it wrote per table, not how many
-   * of those were tombstones, so the exact figure is derived rather than
-   * reported: every planned write lands unless it was superseded between the
-   * preview and the confirm, so with `supersededSincePreview === 0` the planned
-   * `deleted` count IS what happened, and otherwise it is an upper bound. Say
-   * which of the two this was instead of picking one and hoping.
-   */
   const confirmImport = async () => {
     if (!importPreview) return;
     const plannedDeletes = importPreview.plan?.totals?.deleted || 0;
@@ -902,9 +693,6 @@ export function SyncHubModal({ isOpen, onClose }) {
           : '';
       setImportPreview(null);
       setBackupNotice(`Added ${written} ${written === 1 ? 'thing' : 'things'}.${deleteNote}${supersededNote}`);
-      // No celebration buzz for a merge that erased something. The haptic is
-      // part of the message, and congratulating a data loss is a lie told in
-      // vibration.
       if (plannedDeletes > 0) tap();
       else celebration();
     } catch (err) {
@@ -917,10 +705,6 @@ export function SyncHubModal({ isOpen, onClose }) {
   };
 
   if (!isOpen) return null;
-
-  /* --------------------------------------------------------------------- *
-   * Status rendering
-   * --------------------------------------------------------------------- */
 
   let statusDot = 'bg-amber-400';
   let statusLabel = 'Waiting to connect';
@@ -958,7 +742,6 @@ export function SyncHubModal({ isOpen, onClose }) {
           <p className="text-xs text-slate-400">Your two phones, straight to each other</p>
         </div>
 
-        {/* Live Status */}
         <div className="mb-4 p-3.5 rounded-2xl bg-blush-50/60 border border-blush-100 space-y-2.5">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -980,7 +763,6 @@ export function SyncHubModal({ isOpen, onClose }) {
             )}
           </div>
 
-          {/* X3: the route badge reports what was actually measured. */}
           {isAuthorized && (
             <div className="pt-2 border-t border-blush-100/70 text-[11px] space-y-1">
               <div className="flex items-center justify-between gap-2">
@@ -1011,7 +793,6 @@ export function SyncHubModal({ isOpen, onClose }) {
             </div>
           )}
 
-          {/* Paired Partner Info & Reconnect Button */}
           {partnerId && (
             <div className="pt-2 border-t border-blush-100/70 text-[11px] flex items-center justify-between">
               <div className="flex items-center gap-1.5 overflow-hidden">
@@ -1049,7 +830,6 @@ export function SyncHubModal({ isOpen, onClose }) {
             </div>
           )}
 
-          {/* Partner Activity & Last Connection status tiles */}
           <div className="pt-2 border-t border-blush-100/70 grid grid-cols-2 gap-2">
             <div className="bg-white/80 rounded-xl p-2.5 border border-blush-100/60 shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
               <div className="flex items-center justify-between mb-1">
@@ -1098,8 +878,6 @@ export function SyncHubModal({ isOpen, onClose }) {
             </div>
           </div>
 
-          {/* X4: fatal sync problems. peerSync emits these as auth_failed /
-              ice_failed / error, none of which the old gate ever matched. */}
           {syncError && (
             <div className="pt-1.5">
               <div className="flex items-start gap-2 p-2.5 rounded-xl bg-rose-50 border border-rose-200">
@@ -1143,7 +921,6 @@ export function SyncHubModal({ isOpen, onClose }) {
             </div>
           )}
 
-          {/* Non-fatal problem alongside a live connection. */}
           {!syncError && syncWarning && (
             <div className="pt-1.5 flex items-start gap-2 text-[10px] text-amber-700 bg-amber-50 p-2 rounded-xl border border-amber-200/60 leading-relaxed">
               <ShieldAlert className="w-3 h-3 mt-0.5 shrink-0 text-amber-500" />
@@ -1156,13 +933,6 @@ export function SyncHubModal({ isOpen, onClose }) {
           )}
         </div>
 
-        {/*
-          The mailbox. Reported separately from the live connection on purpose:
-          they answer different questions. "Are we connected right now" and
-          "will what I just wrote reach them at all" used to be the same
-          question, and the honest answer to the second one is now yes even
-          when the first is no.
-        */}
         {mailboxEnabled && (
           <div className="mb-4 p-3.5 rounded-2xl bg-indigo-50/60 border border-indigo-100">
             <div className="flex items-center justify-between gap-2">
@@ -1197,16 +967,12 @@ export function SyncHubModal({ isOpen, onClose }) {
           </div>
         )}
 
-        {/* Who is who - names, pronouns, and which of you this phone is. */}
         <WhoIsWho />
 
-        {/* My QR Code Card */}
         <div className="text-center bg-slate-50 p-4 rounded-2xl border border-slate-200/70 mb-4">
           <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-2">
             Your Device Pairing QR
           </p>
-          {/* No QR until the invite is complete. A code that scans into a
-              half-built link is a silent pairing failure on the other phone. */}
           {inviteReady ? (
             <div className="inline-block p-2 bg-white rounded-xl shadow-sm border border-slate-200">
               <canvas ref={qrCanvasRef} className="mx-auto block" />
@@ -1231,7 +997,6 @@ export function SyncHubModal({ isOpen, onClose }) {
             {codeCopied && <span className="text-[10px] text-emerald-600 font-bold">Copied ID!</span>}
           </div>
 
-          {/* 1-Tap Share via WhatsApp / Messaging */}
           <div className="mt-3">
             <BouncyButton
               onClick={handleShareInvite}
@@ -1250,7 +1015,6 @@ export function SyncHubModal({ isOpen, onClose }) {
           </div>
         </div>
 
-        {/* Connect to Partner Section */}
         <div className="space-y-3 mb-4">
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold text-slate-700">Connect to Partner's Phone</span>
@@ -1289,8 +1053,6 @@ export function SyncHubModal({ isOpen, onClose }) {
           </p>
         </div>
 
-        {/* Quick unlock. Only offered where the hardware can actually do it -
-            on a device without a sensor this section simply is not there. */}
         {quickUnlockAvailable && (
           <div className="pt-3 border-t border-slate-100 mb-4">
             <p className="text-[11px] font-bold text-slate-600 mb-2 flex items-center gap-1.5">
@@ -1378,7 +1140,6 @@ export function SyncHubModal({ isOpen, onClose }) {
           </div>
         )}
 
-        {/* Encrypted Backup & Restore section */}
         <div className="pt-3 border-t border-slate-100">
           <p className="text-[11px] font-bold text-slate-600 mb-2 flex items-center gap-1.5">
             <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
@@ -1419,14 +1180,12 @@ export function SyncHubModal({ isOpen, onClose }) {
         </div>
       </motion.div>
 
-      {/* In-app camera scanner modal */}
       <QRScannerModal
         isOpen={isScannerOpen}
         onClose={() => setIsScannerOpen(false)}
         onScanSuccess={handleScanSuccess}
       />
 
-      {/* D3: masked passphrase entry, verified before anything is written. */}
       {passphrasePrompt?.mode === 'export' && (
         <PassphrasePrompt
           title="Lock this copy"
@@ -1453,7 +1212,6 @@ export function SyncHubModal({ isOpen, onClose }) {
         />
       )}
 
-      {/* RISK-1: the confirmation step the import never had. */}
       {importPreview && (
         <ImportPreview
           plan={importPreview.plan}

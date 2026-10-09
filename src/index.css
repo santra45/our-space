@@ -9,7 +9,6 @@
   --sal: env(safe-area-inset-left);
 }
 
-/* Custom smooth scrollbar */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
@@ -25,7 +24,6 @@
   background: #ffb3c5;
 }
 
-/* Glassmorphism helpers */
 .glass-panel {
   background: rgba(255, 255, 255, 0.72);
   backdrop-filter: blur(16px);
@@ -41,7 +39,6 @@
   border: 1px solid rgba(255, 255, 255, 0.9);
 }
 
-/* Washi tape decoration effect for polaroids */
 .washi-tape {
   position: absolute;
   top: -12px;
@@ -58,7 +55,6 @@
   z-index: 10;
 }
 
-/* Mobile safe area spacing */
 .pb-safe {
   padding-bottom: calc(env(safe-area-inset-bottom, 16px) + 5.5rem);
 }

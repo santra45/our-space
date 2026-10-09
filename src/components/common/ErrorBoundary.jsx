@@ -1,19 +1,3 @@
-/**
- * src/components/common/ErrorBoundary.jsx
- * Catches a render crash so the app shows a kind card instead of a white screen.
- *
- * WHY RETRY COMES BEFORE RELOAD
- * The vault key is a non-extractable CryptoKey held only in memory (see
- * services/vaultKey.js) - deliberately, so a passphrase never touches storage.
- * The cost is that a reload throws the key away and Our Space asks for the
- * passphrase again. So the primary action here re-mounts the subtree in place,
- * which fixes a one-off render fault while the vault stays open. Reloading is
- * offered second, for when retrying does not help.
- *
- * Nothing about the error reaches the screen. Stack traces name internals and
- * sometimes echo the data that broke the render; they go to the console, where
- * a developer can find them and a partner cannot.
- */
 import React from 'react';
 import { AlertTriangle, RefreshCw, RotateCcw } from 'lucide-react';
 
@@ -24,7 +8,6 @@ export class ErrorBoundary extends React.Component {
   }
 
   static getDerivedStateFromError() {
-    // No error details in state: nothing renderable should carry them.
     return { hasError: true };
   }
 

@@ -1,17 +1,3 @@
-/**
- * src/components/bucketlist/BucketList.jsx
- * Shared couple's bucket list with progress bar, completion stamps, and confetti.
- *
- * Schema v2: only `id`, `updatedAt` and `deleted` remain in plaintext on disk.
- * `text`, `category`, `completed` and `completedAt` all live inside the encrypted
- * record envelope, so none of them are indexed any more - the live query reads raw
- * rows purely for liveness and every filter, sort and count below happens in
- * memory, after decryptRecord().
- *
- * The built-in starter items use STABLE, DERIVED ids (`bkt-default-1` ...). Both
- * devices independently seed the same six ids, so the first sync merges them into
- * six items instead of the twelve that `'bkt-' + Date.now()` used to guarantee.
- */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Plus, Check, Trophy, Trash2, AlertTriangle, Pencil } from 'lucide-react';
@@ -34,26 +20,10 @@ const DEFAULT_BUCKET_ITEMS = [
   { text: 'Get matching silly holiday pajamas', category: 'Silly' },
 ];
 
-/**
- * The deterministic id of a built-in starter item.
- *
- * This is the whole S4 fix: the id is a function of the item's position in the
- * list above and nothing else, so device A and device B produce byte-identical
- * primary keys and sync reconciles them instead of appending a second set.
- *
- * @param {number} index
- * @returns {string}
- */
 export function defaultItemId(index) {
   return `bkt-default-${index + 1}`;
 }
 
-/**
- * Collision-resistant id for a user-created item.
- *
- * `'bkt-' + Date.now()` collides whenever both partners add something inside the
- * same millisecond, and last-write-wins then silently destroys one of the two.
- */
 function newItemId() {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
     return `bkt-${crypto.randomUUID()}`;
@@ -61,7 +31,6 @@ function newItemId() {
   return `bkt-${generateUrlSafeNonce(12)}`;
 }
 
-/** Monotonic write stamp, so a skewed device clock cannot permanently win or lose. */
 function nextTimestamp() {
   try {
     return peerSync.getSyncSafeTimestamp();
@@ -70,7 +39,6 @@ function nextTimestamp() {
   }
 }
 
-/** Drops decryptRecord's `_`-prefixed diagnostics before writing a record back. */
 function stripInternalFields(record) {
   const out = {};
   for (const [field, value] of Object.entries(record)) {
@@ -80,23 +48,8 @@ function stripInternalFields(record) {
   return out;
 }
 
-/**
- * Shared across every mount of this component so React StrictMode's deliberate
- * double-invoke in development cannot start two concurrent seeds.
- */
 let seedInFlight = null;
 
-/**
- * Writes the six starter items, once.
- *
- * Encryption happens first and outside the transaction, because Web Crypto
- * promises are not part of Dexie's transaction scope and awaiting them inside one
- * makes it commit early. The emptiness check is then repeated INSIDE the
- * read-write transaction, which is the point that actually excludes a racing
- * seed or a batch of the partner's records that landed while we were encrypting.
- *
- * @param {CryptoKey} key
- */
 export async function seedDefaultItems(key) {
   const rows = [];
   for (let index = 0; index < DEFAULT_BUCKET_ITEMS.length; index += 1) {
@@ -109,53 +62,22 @@ export async function seedDefaultItems(key) {
           category: item.category,
           completed: false,
           completedAt: null,
-          // Small integers, so the starter items always sort ahead of anything
-          // either partner adds later, in the order they are authored above.
           createdAt: index,
           updatedAt: nextTimestamp(),
           deleted: false,
         },
         key,
-        // Bind the table. Without it these rows seal as "table unverified", and
-        // the import/sync gates refuse an unverified row an overwrite - which
-        // would quietly make the six starter items un-editable from a partner
-        // device. Every other write goes through db.putEncrypted, which supplies
-        // this already; this is the one direct encryptRecord call in the app.
         { table: 'bucketList' }
       )
     );
   }
 
   await db.transaction('rw', db.bucketList, async () => {
-    // Tombstones must NOT count as "this table already has content". They are
-    // invisible in every list, so a table holding only deletes looks empty to
-    // the user while suppressing the starter items forever. That was reachable:
-    // the sync path still accepts a tombstone for an id it has never held (the
-    // manifest diff legitimately requests them), so one such row would have
-    // silently cost this device all six starter items.
     if ((await db.bucketList.where('_del').equals(0).count()) > 0) return;
 
-    // ...and having stopped that row suppressing the seed, the seed then has to
-    // survive it. The row is STILL THERE, sitting on one of the six fixed ids,
-    // and bulkAdd raises ConstraintError on an existing primary key - so the one
-    // forged tombstone that used to cost all six items would instead have cost
-    // whichever of them the failure took down, reported to nobody.
-    //
-    // Skipped rather than overwritten, deliberately. bulkPut would seed straight
-    // over that id, and this device cannot tell a forged tombstone from a real
-    // deletion its partner made and it has not finished syncing; the app's rule
-    // everywhere else is that a write may create but may not overwrite a record
-    // it cannot prove it authored, and a blind local seed is not an exception to
-    // it. The read is inside the same rw transaction as the write, so a seed
-    // racing in another tab cannot land between them.
     const collisions = await db.bucketList.bulkGet(rows.map((row) => row.id));
     const fresh = rows.filter((_, index) => !collisions[index]);
     if (fresh.length === 0) return;
-    // bulkAdd does not fire the tombstone hooks, and encryptRecord strips
-    // `_del`, so stamp the index mirror here too. These seed rows are all live,
-    // but a row missing `_del` is invisible to the `where('_del').equals(0)`
-    // count that decides whether to seed at all - which would make the starter
-    // items reappear on every unlock.
     await db.bucketList.bulkAdd(fresh.map((row) => ({ ...row, _del: row.deleted === true ? 1 : 0 })));
   });
 }
@@ -173,15 +95,9 @@ export function BucketList() {
   const [editCategory, setEditCategory] = useState('Romance');
   const { tap, celebration } = useHaptics();
 
-  // Raw rows only. Everything worth filtering on is encrypted, so the query
-  // cannot do it - see the decrypt pass below.
   const storedItems = useLiveQuery(() => db.bucketList.toArray(), []);
 
   const decryptCache = useRef(new Map());
-
-  /* --------------------------------------------------------------------- *
-   * Seeding
-   * --------------------------------------------------------------------- */
 
   useEffect(() => {
     if (!cryptoKey) return undefined;
@@ -189,8 +105,6 @@ export function BucketList() {
 
     async function run() {
       try {
-        // Cheap pre-check so the common case never allocates six AES operations.
-        // Re-checked inside the lock; same tombstone reasoning as above.
         if ((await db.bucketList.where('_del').equals(0).count()) > 0) return;
         if (!seedInFlight) {
           seedInFlight = seedDefaultItems(cryptoKey).finally(() => {
@@ -199,13 +113,6 @@ export function BucketList() {
         }
         await seedInFlight;
       } catch (err) {
-        // A bare `catch {}` used to sit here on the reasoning that losing the
-        // seed race is the expected outcome of a race, not a fault. True of the
-        // race, and only of the race - seedDefaultItems now filters colliding
-        // ids inside its own transaction, so what reaches here is a failed
-        // encrypt or a failed write, i.e. the starter items are genuinely not
-        // on this device. Swallowed, that is six items missing with the same
-        // empty screen a brand new vault shows.
         console.error('Could not seed the starter bucket-list items:', err);
         if (!cancelled) {
           setError(
@@ -222,12 +129,7 @@ export function BucketList() {
     };
   }, [cryptoKey]);
 
-  /* --------------------------------------------------------------------- *
-   * Decrypt pass
-   * --------------------------------------------------------------------- */
-
   useEffect(() => {
-    // A different key invalidates every cached plaintext.
     decryptCache.current = new Map();
   }, [cryptoKey]);
 
@@ -251,10 +153,6 @@ export function BucketList() {
         if (!row || typeof row !== 'object') continue;
         if (row.deleted === true) continue;
 
-        // useLiveQuery hands back fresh object identities on every write to the
-        // table, so without this every item would be re-decrypted whenever any
-        // one of them changed. The IV rotates on each re-encryption, which makes
-        // it a sound staleness marker.
         const fingerprint = row.iv || row.textIv || '';
         const cacheKey = `${row.id}::${row.updatedAt}::${fingerprint}`;
         seen.add(cacheKey);
@@ -263,16 +161,12 @@ export function BucketList() {
         if (!record) {
           let decrypted;
           try {
-            // The table is REQUIRED here. Without it decryptRecord has no expected
-            // table to compare the sealed `_tbl` against, so a row sealed for a
-            // different one is never flagged and renders as ordinary content.
             decrypted = await decryptRecord(row, cryptoKey, { table: 'bucketList' });
           } catch {
             skipped += 1;
             continue;
           }
           if (decrypted._headerTampered) {
-            // A peer rewrote the plaintext id/updatedAt/deleted header. Refuse it.
             skipped += 1;
             continue;
           }
@@ -290,12 +184,6 @@ export function BucketList() {
 
       if (!active) return;
 
-      // Completed items sink to the bottom, then insertion order.
-      //
-      // `createdAt` is explicit rather than implied by the id: ids are random
-      // UUIDs now, so primary-key order would drop a newly added item into an
-      // arbitrary slot among the starter items. It travels inside the envelope
-      // with the record, so both devices sort the list identically.
       next.sort((a, b) => {
         if (a.completed !== b.completed) return a.completed ? 1 : -1;
         const byCreated = (a.createdAt || 0) - (b.createdAt || 0);
@@ -311,10 +199,6 @@ export function BucketList() {
       active = false;
     };
   }, [storedItems, cryptoKey]);
-
-  /* --------------------------------------------------------------------- *
-   * Mutations
-   * --------------------------------------------------------------------- */
 
   const toggleComplete = useCallback(
     async (item) => {
@@ -354,9 +238,6 @@ export function BucketList() {
       tap();
 
       try {
-        // Tombstone rather than delete: the row keeps its id and a bumped
-        // updatedAt so the removal replicates, and drops its payload so the text
-        // is really gone.
         const row = await db.softDelete('bucketList', id, cryptoKey);
         if (row) peerSync.broadcastLiveRecord('bucketList', row);
         setError('');
@@ -459,7 +340,6 @@ export function BucketList() {
 
   return (
     <div className="space-y-4">
-      {/* Header bar */}
       <div className="flex items-center justify-between px-1">
         <div>
           <h2 className="text-xl font-extrabold text-slate-800 tracking-tight flex items-center gap-2">
@@ -483,7 +363,6 @@ export function BucketList() {
         </BouncyButton>
       </div>
 
-      {/* Failure surface - previously these paths failed silently */}
       {(error || skippedCount > 0) && (
         <div className="flex items-start gap-2 p-3 rounded-2xl bg-amber-50 border border-amber-200 text-amber-800">
           <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
@@ -496,7 +375,6 @@ export function BucketList() {
         </div>
       )}
 
-      {/* Progress Bar Card */}
       <GlassCard className="p-4 bg-gradient-to-r from-blush-50 to-cream-50">
         <div className="flex items-center justify-between text-xs font-bold text-slate-700 mb-2">
           <span>Adventures Conquered Together</span>
@@ -512,7 +390,6 @@ export function BucketList() {
         </div>
       </GlassCard>
 
-      {/* Add Item Form */}
       {isAdding && (
         <form onSubmit={handleAddItem} className="p-4 bg-white rounded-3xl border border-blush-200 shadow-lg space-y-3">
           <div>
@@ -549,7 +426,6 @@ export function BucketList() {
         </form>
       )}
 
-      {/* Checklist items */}
       <div className="space-y-2.5">
         {items.map((item) => (
           <motion.div
@@ -642,7 +518,6 @@ export function BucketList() {
                 </div>
 
                 <div className="flex items-center gap-1 flex-shrink-0 mt-0.5">
-                  {/* Completed Stamp Effect */}
                   {item.completed && (
                     <motion.div
                       initial={{ scale: 2, rotate: -20, opacity: 0 }}
@@ -653,7 +528,6 @@ export function BucketList() {
                     </motion.div>
                   )}
 
-                  {/* Edit Button */}
                   <button
                     type="button"
                     onClick={(e) => handleStartEdit(e, item)}
@@ -663,7 +537,6 @@ export function BucketList() {
                     <Pencil className="w-3.5 h-3.5" />
                   </button>
 
-                  {/* Delete Button */}
                   <button
                     type="button"
                     onClick={(e) => handleDeleteItem(e, item.id)}

@@ -1,27 +1,3 @@
-/**
- * src/components/capsule/SecretCapsule.jsx
- * Time-locked love letters and digital time capsule.
- *
- * Schema v2: only `id`, `updatedAt` and `deleted` stay in plaintext on disk.
- * `unlockDate`, `isOpened`, `title` and the body all live inside the encrypted
- * record envelope, so none of them are indexed any more - every filter and sort
- * in this file happens in memory, after decryptRecord().
- *
- * The time lock is a real key wrap, not a UI check. A sealed letter's body is
- * encrypted under a random content key that is itself wrapped under a key
- * derived from the vault key AND the unlock date (crypto.sealTimeLocked). The
- * plaintext is never present in the record, so there is no `if (!locked)` branch
- * left to skip - reaching the body requires unsealTimeLocked(), which refuses
- * before the date, and editing the stored date breaks decryption outright rather
- * than bypassing a check.
- *
- * The honest limit, stated the same way in the UI and the README: this is not a
- * vault against its own owner. Everything needed to re-derive the wrapping key
- * sits on the device from the moment the letter is written, so anyone holding
- * the vault passphrase - either partner - can open a sealed letter early by
- * moving their device clock forward. It defeats accidents, curiosity and
- * tampering with the stored data. It does not defeat determination.
- */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import {
@@ -57,45 +33,18 @@ import GlassCard from '../common/GlassCard';
 import { fireHeartConfetti } from '../common/ConfettiBurst';
 import { useHaptics } from '../../hooks/useHaptics';
 
-/** How often the locked/unlocked split is recomputed while letters are pending. */
 const LOCK_TICK_MS = 30000;
 
-/** How long a transient banner stays on screen. */
 const NOTICE_TTL_MS = 7000;
 
-/**
- * How many times one letter may be re-sealed in a single session.
- *
- * The retro-seal pass below re-tries a row whose seal did not survive to disk,
- * and each successful write wakes useLiveQuery, which re-runs the pass. Without
- * a ceiling, a row that is being clobbered on every attempt would spin the
- * crypto and the database forever. Three is enough to beat an incoming sync
- * landing on the same letter, and small enough that a pathological loop stops on
- * its own.
- */
 const MAX_SEAL_UPGRADE_ATTEMPTS = 3;
 
-/**
- * Today as the date input sees it: LOCAL calendar day, never toISOString().
- * @returns {string} 'YYYY-MM-DD'
- */
 function localTodayIso() {
   const now = new Date();
   const pad = (n) => String(n).padStart(2, '0');
   return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
 }
 
-/**
- * Coerces any stored unlock date to the bare local calendar day it was meant to be.
- *
- * Letters written by older builds stored `new Date('YYYY-MM-DD').toISOString()`,
- * i.e. UTC midnight of the day the writer picked on a LOCAL date input. Reading
- * the UTC components back recovers exactly that calendar day; reading local ones
- * would shift it by a day for most of the planet.
- *
- * @param {string|null|undefined} value
- * @returns {string|null} 'YYYY-MM-DD', or null when there is no usable date.
- */
 function normalizeUnlockDate(value) {
   if (typeof value !== 'string') return null;
   const trimmed = value.trim();
@@ -106,15 +55,10 @@ function normalizeUnlockDate(value) {
   return parsed.toISOString().slice(0, 10);
 }
 
-/**
- * Collision-resistant record id. `'let-' + Date.now()` alone loses a letter when
- * both devices write inside the same millisecond and sync picks one.
- */
 function newLetterId() {
   return `let-${Date.now().toString(36)}-${generateUrlSafeNonce(6)}`;
 }
 
-/** Drops decryptRecord's `_`-prefixed diagnostics before writing a record back. */
 function stripInternalFields(record) {
   const out = {};
   for (const [field, value] of Object.entries(record)) {
@@ -124,7 +68,6 @@ function stripInternalFields(record) {
   return out;
 }
 
-/** Monotonic write stamp, so a skewed device clock cannot permanently win or lose. */
 function nextTimestamp() {
   try {
     return peerSync.getSyncSafeTimestamp();
@@ -150,36 +93,19 @@ export function SecretCapsule() {
   const [nowTick, setNowTick] = useState(() => Date.now());
   const { tap, celebration } = useHaptics();
 
-  // Raw rows only, purely for liveness. Everything meaningful is encrypted, so
-  // the query cannot filter or sort - that happens below, after decryption.
   const storedLetters = useLiveQuery(() => db.letters.toArray(), []);
 
   const decryptCache = useRef(new Map());
 
-  /** id -> how many seal writes have been ATTEMPTED for it this session. */
   const upgradeAttempts = useRef(new Map());
 
-  /**
-   * Ids currently being sealed. The effect re-runs on every `records` change,
-   * including the one its own write causes, so without this a second pass would
-   * start sealing a row the first pass is still awaiting. Worst case if it ever
-   * misses is a duplicate but equivalent envelope, resolved by last-write-wins.
-   */
   const sealInFlight = useRef(new Set());
 
   const today = useMemo(() => localTodayIso(), []);
 
-  /* --------------------------------------------------------------------- *
-   * Decrypt pass
-   * --------------------------------------------------------------------- */
-
   useEffect(() => {
-    // A different key invalidates every cached plaintext.
     decryptCache.current = new Map();
     upgradeAttempts.current = new Map();
-    // sealInFlight is deliberately NOT reset: its entries are removed in a
-    // `finally`, and clearing it out from under a seal that is still awaiting
-    // would let a second pass start on the same row.
   }, [cryptoKey]);
 
   useEffect(() => {
@@ -202,10 +128,6 @@ export function SecretCapsule() {
         if (!row || typeof row !== 'object') continue;
         if (row.deleted === true) continue;
 
-        // The IV changes on every re-encryption, so this key is stable exactly
-        // as long as the stored bytes are - useLiveQuery hands back fresh object
-        // identities on every write, and without this every letter would be
-        // re-decrypted whenever any letter changed.
         const fingerprint = row.iv || row.contentIv || row.titleIv || '';
         const cacheKey = `${row.id}::${row.updatedAt}::${fingerprint}`;
         seen.add(cacheKey);
@@ -214,16 +136,12 @@ export function SecretCapsule() {
         if (!record) {
           let decrypted;
           try {
-            // The table is REQUIRED here. Without it decryptRecord has no expected
-            // table to compare the sealed `_tbl` against, so a row sealed for a
-            // different one is never flagged and renders as ordinary content.
             decrypted = await decryptRecord(row, cryptoKey, { table: 'letters' });
           } catch {
             skipped += 1;
             continue;
           }
           if (decrypted._headerTampered) {
-            // A peer rewrote the plaintext id/updatedAt/deleted header. Refuse it.
             skipped += 1;
             continue;
           }
@@ -250,54 +168,13 @@ export function SecretCapsule() {
     };
   }, [storedLetters, cryptoKey]);
 
-  /* --------------------------------------------------------------------- *
-   * Retro-seal pass
-   * --------------------------------------------------------------------- */
-
-  /**
-   * Letters written before real time locks hold their body as ordinary text
-   * inside the envelope, guarded only by a clock check. Any of those that are
-   * still pending get sealed properly here.
-   *
-   * THIS PASS HAS COMPETITORS AND MUST ASSUME IT LOSES.
-   * A letter is a row like any other, and a partner's sync, a live broadcast or
-   * the user's own edit on another screen can all rewrite it between the moment
-   * this pass reads it and the moment it writes. If a writer that is holding a
-   * PRE-SEAL copy lands after this pass seals, the sealed envelope is silently
-   * replaced by the plaintext-in-envelope body - and the UI goes on calling that
-   * letter "key-wrapped". Two things stop that here:
-   *
-   *   1. RE-READ    `records` is a snapshot that may already be stale, so the
-   *                 row is read and re-checked from disk immediately before the
-   *                 write, and the seal is built from THAT copy.
-   *   2. VERIFY     after writing, the row is read back. If the seal is not
-   *                 there, the attempt is not treated as done and may retry.
-   *
-   * The rewrite no longer preserves updatedAt. Keeping it was what made the race
-   * unrecoverable: two devices ended up with differing-but-equivalent rows at
-   * EQUAL timestamps, and peerSync._diffManifest only ever requests strictly
-   * newer records, so a device that lost its seal could never be repaired from
-   * its partner. Bumping the stamp costs one extra sync of a letter body and one
-   * possible flap between two equally valid seals. That is the right trade: the
-   * alternative is a letter that stays unsealed forever while the app claims
-   * otherwise.
-   */
   useEffect(() => {
     if (!cryptoKey || records.length === 0) return undefined;
     let active = true;
 
-    /**
-     * Seals exactly one letter, from the row as it stands on disk right now.
-     * Writes nothing unless the fresh copy still needs it.
-     *
-     * @param {string} id
-     * @returns {Promise<'sealed'|'skipped'|'failed'>}
-     */
     async function sealOnePendingLock(id) {
       const stored = await db.getDecrypted('letters', id, cryptoKey);
       if (!stored) return 'skipped';
-      // Never resurrect a tombstone, never rewrite a record whose plaintext
-      // header a peer has edited, and never re-seal what is already sealed.
       if (stored.deleted === true) return 'skipped';
       if (stored._headerTampered === true) return 'skipped';
       if (stored.sealedContent) return 'skipped';
@@ -305,7 +182,7 @@ export function SecretCapsule() {
 
       const lockDate = normalizeUnlockDate(stored.unlockDate);
       if (!lockDate) return 'skipped';
-      if (isTimeLockOpen(lockDate)) return 'skipped'; // already readable, nothing left to protect
+      if (isTimeLockOpen(lockDate)) return 'skipped';
 
       const sealedContent = await sealTimeLocked(stored.content, lockDate, cryptoKey, {
         context: id,
@@ -323,15 +200,9 @@ export function SecretCapsule() {
         cryptoKey
       );
 
-      // Another writer can still land between the read above and this write.
-      // Read back rather than trusting the put: reporting a letter as
-      // key-wrapped when the body is sitting in the envelope in plain text is
-      // exactly the failure this whole pass exists to prevent.
       const confirmed = await db.getDecrypted('letters', id, cryptoKey);
       if (!confirmed || !confirmed.sealedContent) return 'failed';
 
-      // Now that updatedAt moved, the partner can actually converge on this.
-      // Best-effort: a manifest diff picks it up on the next connection anyway.
       await peerSync.broadcastLiveRecord('letters', row);
       return 'sealed';
     }
@@ -344,7 +215,7 @@ export function SecretCapsule() {
 
         const lockDate = normalizeUnlockDate(record.unlockDate);
         if (!lockDate) continue;
-        if (isTimeLockOpen(lockDate)) continue; // already readable, nothing left to protect
+        if (isTimeLockOpen(lockDate)) continue;
 
         const id = record.id;
         if (sealInFlight.current.has(id)) continue;
@@ -355,17 +226,11 @@ export function SecretCapsule() {
         try {
           outcome = await sealOnePendingLock(id);
         } catch {
-          // Leave the record exactly as it was; it stays readable the old way.
           outcome = 'failed';
         } finally {
           sealInFlight.current.delete(id);
         }
 
-        // Only a real write attempt burns an attempt: a 'skipped' row needed
-        // nothing, so counting it would strand the letter unsealed for the rest
-        // of the session for no reason. A 'sealed' row IS counted, so that if its
-        // seal is clobbered after the read-back the retries are bounded instead
-        // of endless.
         if (outcome === 'sealed' || outcome === 'failed') {
           upgradeAttempts.current.set(id, (upgradeAttempts.current.get(id) || 0) + 1);
         }
@@ -377,10 +242,6 @@ export function SecretCapsule() {
       active = false;
     };
   }, [records, cryptoKey]);
-
-  /* --------------------------------------------------------------------- *
-   * In-memory filter / sort
-   * --------------------------------------------------------------------- */
 
   const letters = useMemo(() => {
     return records
@@ -411,29 +272,12 @@ export function SecretCapsule() {
     return () => clearTimeout(timer);
   }, [notice]);
 
-  /* --------------------------------------------------------------------- *
-   * Actions
-   * --------------------------------------------------------------------- */
-
   const handleOpenLetter = useCallback(
     async (letter) => {
       if (!cryptoKey || openingId) return;
       tap();
       setNotice(null);
 
-      // A date-locked letter is one of TWO different things, and saying the
-      // stronger one about the weaker one is a lie the user cannot check.
-      //
-      //   isSealed  - the body is wrapped under a sub-key derived from the
-      //               unlock date and the record id. Nothing here can re-derive
-      //               it before that date; the clock is not what stops you.
-      //   !isSealed - the body is plaintext inside the ordinary vault envelope
-      //               and only this app's date check hides it. That is the state
-      //               a letter is in when the retro-seal pass gave up after
-      //               MAX_SEAL_UPGRADE_ATTEMPTS.
-      //
-      // The list badge already only says "key-wrapped" for the sealed case; this
-      // banner used to claim the key wrap for both.
       if (letter.isLocked) {
         const until = `${formatDatePretty(letter.lockDate)} - ${formatTimeRemaining(letter.lockDate)}`;
         setNotice({
@@ -479,7 +323,6 @@ export function SecretCapsule() {
     [cryptoKey, openingId, tap]
   );
 
-  /** Records that the seal has actually been broken, and replicates that. */
   const handleLetterOpened = useCallback(
     async (letterId) => {
       if (!cryptoKey || !letterId) return;
@@ -498,7 +341,6 @@ export function SecretCapsule() {
         );
         peerSync.broadcastLiveRecord('letters', row);
       } catch {
-        // Purely cosmetic bookkeeping - never block the reader over it.
       }
     },
     [cryptoKey]
@@ -527,8 +369,6 @@ export function SecretCapsule() {
         deleted: false,
       };
 
-      // A sealed letter stores ONLY the wrapped envelope - the body never sits
-      // in the record in a form the app can read before the date.
       const record = lockDate
         ? {
             ...base,
@@ -577,13 +417,8 @@ export function SecretCapsule() {
 
   const isLoading = Boolean(cryptoKey) && storedLetters === undefined;
 
-  /* --------------------------------------------------------------------- *
-   * Render
-   * --------------------------------------------------------------------- */
-
   return (
     <div className="space-y-4">
-      {/* Header bar */}
       <div className="flex items-center justify-between px-1">
         <div>
           <h2 className="text-xl font-extrabold text-slate-800 tracking-tight flex items-center gap-2">
@@ -606,7 +441,6 @@ export function SecretCapsule() {
         </BouncyButton>
       </div>
 
-      {/* Transient banner: lock refusals and real failures */}
       {notice && (
         <div
           className={`flex items-start gap-2 px-3.5 py-2.5 rounded-2xl text-[11px] leading-relaxed border ${
@@ -642,7 +476,6 @@ export function SecretCapsule() {
         </div>
       )}
 
-      {/* Letters List */}
       {isLoading ? (
         <div className="text-center py-16 text-xs text-slate-400">Unsealing your letters...</div>
       ) : letters.length === 0 ? (
@@ -728,7 +561,6 @@ export function SecretCapsule() {
         </div>
       )}
 
-      {/* Reading modal */}
       {activeReadingLetter && (
         <LetterEnvelope
           letter={activeReadingLetter}
@@ -738,7 +570,6 @@ export function SecretCapsule() {
         />
       )}
 
-      {/* Write Letter Modal */}
       {isWriteModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
           <motion.div
@@ -815,7 +646,6 @@ export function SecretCapsule() {
                 </p>
               </div>
 
-              {/* Honesty box - this wording must match the README's threat model */}
               <div className="flex items-start gap-2 px-3 py-2.5 rounded-2xl bg-slate-50 border border-slate-200 text-[10px] leading-relaxed text-slate-600">
                 <Info className="w-3.5 h-3.5 mt-0.5 flex-shrink-0 text-slate-400" />
                 <p>

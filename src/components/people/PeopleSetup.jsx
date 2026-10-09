@@ -1,38 +1,3 @@
-/**
- * src/components/people/PeopleSetup.jsx
- * The two questions that let the app use your names.
- *
- * TWO STATES, AND THEY FEEL VERY DIFFERENT ON PURPOSE
- *   empty      Nobody has been entered. This is a small warm form, asked once,
- *              by whoever opens the app first.
- *   unclaimed  The names are already here - they arrived over sync - and this
- *              device just needs to know which of you is holding it. That is
- *              ONE TAP, and it must never look like a form, because it is also
- *              what a person sees after their browser quietly discarded
- *              localStorage. Being asked to fill in a form again at that moment
- *              would read as "the app lost our stuff".
- *
- * WHY 'empty' IS DISMISSIBLE AND 'unclaimed' IS NOT
- * Dismissing 'empty' costs nothing: every screen already has neutral copy to
- * fall back on, because that is all it had before people existed. Dismissing
- * 'unclaimed' would leave the app unable to tell whose answers are whose,
- * which is the one thing it must not get wrong - and the cost of answering is a
- * single tap on your own name.
- *
- * The one-tap screen also promises you can switch later. components/people/
- * WhoIsWho.jsx is what makes that true, and the two have to stay honest about
- * each other: a promise made at the moment someone thinks they have broken
- * something is not a promise to leave dangling.
- *
- * 'empty' IS NOT THE SAME AS "NOBODY HAS DONE THIS YET"
- * A phone that was just wiped and rejoined is empty until the other phone's
- * records arrive, which takes seconds. Asking for both names in that gap is how
- * two people traded places: this form files "you" under the first person id on
- * every phone, so the second phone to fill it in writes over the first
- * person's record (see services/people.js#derivePersonSlots). So the form
- * waits until the mailbox has been read and any connection to the other phone
- * has finished syncing, or until NAMES_WAIT_MS has passed, and only then asks.
- */
 import React, { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Heart } from 'lucide-react';
@@ -42,13 +7,10 @@ import { MAX_NAME_LENGTH, PRONOUNS } from '../../services/people';
 import BouncyButton from '../common/BouncyButton';
 import { useHaptics } from '../../hooks/useHaptics';
 
-/** Longest an empty phone waits for names to arrive before offering to set them. */
 const NAMES_WAIT_MS = 12000;
 
-/** Connection states in which the other phone's records may still be on their way. */
 const STILL_SYNCING = new Set(['connecting', 'handshaking', 'authorized', 'syncing']);
 
-/** How each pronoun is offered. The label is a sentence, not a grammar term. */
 const PRONOUN_LABELS = {
   she: 'she / her',
   he: 'he / him',
@@ -105,7 +67,6 @@ export function PeopleSetup() {
   const [error, setError] = useState('');
   const [waitedOut, setWaitedOut] = useState(false);
 
-  // See 'empty' IS NOT THE SAME AS "NOBODY HAS DONE THIS YET" above.
   useEffect(() => {
     if (status !== 'empty') {
       setWaitedOut(false);
@@ -120,15 +81,11 @@ export function PeopleSetup() {
   const partnerSettling = Boolean(syncStatus && STILL_SYNCING.has(syncStatus.state));
   const stillLooking = status === 'empty' && !waitedOut && (!mailboxSettled || partnerSettling);
 
-  // The mailbox announces new records a moment before its own state settles, so
-  // read people once more when it does rather than trusting the earlier read.
   useEffect(() => {
     if (status === 'empty' && mailboxSettled) refresh();
   }, [status, mailboxSettled, refresh]);
 
   if (status === 'loading' || status === 'locked' || status === 'ready') return null;
-
-  /* ------------------------------------------------------------ which of you */
 
   if (status === 'unclaimed') {
     return (
@@ -147,7 +104,6 @@ export function PeopleSetup() {
         </p>
 
         <div className="space-y-2">
-          {/* One colour each, so the two names never read as the same button twice. */}
           {people.map((person, index) => (
             <BouncyButton
               key={person.personId}
@@ -179,8 +135,6 @@ export function PeopleSetup() {
       </Shell>
     );
   }
-
-  /* ------------------------------------------------------------ both names */
 
   if (dismissed || stillLooking) return null;
 
@@ -274,11 +228,6 @@ export function PeopleSetup() {
           {busy ? 'Saving…' : 'That’s us 💕'}
         </BouncyButton>
 
-        {/*
-          Only reachable before anything is written. Once both names exist this
-          screen never shows the form again - the other phone gets the one-tap
-          version instead, because the names reach it over sync.
-        */}
         <button
           type="button"
           onClick={() => {
