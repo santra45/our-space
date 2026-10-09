@@ -40,6 +40,7 @@ class AppNotices extends ChangeNotifier {
   }
 
   void _onNotice(SyncNotice notice) {
+    if (!vault.isUnlocked) return;
     if (notice.kind == SyncNoticeKind.warning) {
       _warningTimer?.cancel();
       _syncWarning = notice.text;
@@ -51,7 +52,7 @@ class AppNotices extends ChangeNotifier {
   }
 
   void _onBursts(int total) {
-    if (total <= 0) return;
+    if (total <= 0 || !vault.isUnlocked) return;
     _pendingCelebrations++;
     notifyListeners();
   }
