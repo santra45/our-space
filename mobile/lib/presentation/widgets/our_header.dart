@@ -178,6 +178,7 @@ class SyncStatusPill extends StatelessWidget {
   Widget build(BuildContext context) {
     final style = SyncPillStyle.of(state);
     return Semantics(
+      container: true,
       button: true,
       label: style.label,
       excludeSemantics: true,
@@ -233,6 +234,7 @@ class HeaderLockButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Semantics(
+      container: true,
       button: true,
       label: 'Lock Our Space',
       child: GestureDetector(
@@ -301,6 +303,7 @@ class HeaderSyncErrorBanner extends StatelessWidget {
           ),
           const SizedBox(width: 8),
           Semantics(
+            container: true,
             button: true,
             label: 'Dismiss',
             child: GestureDetector(
@@ -479,7 +482,8 @@ class OurHeader extends StatelessWidget {
           color: background,
           border: Border(bottom: BorderSide(color: borderColor)),
           backdropBlur: backdropBlur,
-          child: Center(
+          child: Align(
+            heightFactor: 1,
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: AppLayout.maxWidthMd),
               child: content,

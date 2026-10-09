@@ -71,7 +71,8 @@ class _OurBottomNavState extends State<OurBottomNav> with SingleTickerProviderSt
       border: const Border(top: BorderSide(color: AppColors.blush100)),
       shadows: AppShadows.bottomNav,
       backdropBlur: OurBottomNav.backdropBlur,
-      child: Center(
+      child: Align(
+        heightFactor: 1,
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: AppLayout.maxWidthMd),
           child: CustomMultiChildLayout(
@@ -217,7 +218,7 @@ class _NavButton extends StatelessWidget {
               const SizedBox(height: 4),
               AnimatedDefaultTextStyle(
                 duration: const Duration(milliseconds: 150),
-                style: Tw.px10.semibold.c(active ? AppColors.blush600 : AppColors.slate400),
+                style: DefaultTextStyle.of(context).style.merge(Tw.px10.semibold.c(active ? AppColors.blush600 : AppColors.slate400)),
                 child: Text(item.label, maxLines: 1),
               ),
             ],

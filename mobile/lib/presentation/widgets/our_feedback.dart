@@ -177,6 +177,7 @@ class OurNotice extends StatelessWidget {
                   onDismiss!();
                 },
                 child: Semantics(
+                  container: true,
                   button: true,
                   label: 'Dismiss',
                   child: Opacity(

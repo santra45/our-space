@@ -204,6 +204,7 @@ class _BouncyButtonState extends State<BouncyButton> with SingleTickerProviderSt
     }
 
     return Semantics(
+      container: true,
       button: true,
       enabled: widget.isEnabled,
       label: widget.semanticLabel,

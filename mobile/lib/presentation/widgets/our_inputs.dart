@@ -120,6 +120,7 @@ class OurFieldFrame extends StatelessWidget {
   Widget build(BuildContext context) {
     return Stack(
       clipBehavior: Clip.none,
+      fit: StackFit.passthrough,
       children: [
         CssBox(
           padding: style.padding + extraPadding,
@@ -254,7 +255,21 @@ class _OurTextFieldState extends State<OurTextField> {
       focusNode: _focus,
       style: style.textStyle,
       strutStyle: StrutStyle.fromTextStyle(style.textStyle, forceStrutHeight: true),
-      decoration: InputDecoration.collapsed(hintText: widget.hint, hintStyle: style.hintStyle),
+      decoration: InputDecoration(
+        isCollapsed: true,
+        filled: false,
+        contentPadding: EdgeInsets.zero,
+        border: InputBorder.none,
+        enabledBorder: InputBorder.none,
+        focusedBorder: InputBorder.none,
+        disabledBorder: InputBorder.none,
+        errorBorder: InputBorder.none,
+        focusedErrorBorder: InputBorder.none,
+        hintText: widget.hint,
+        hintStyle: style.hintStyle,
+        hintMaxLines: widget.obscure ? 1 : widget.maxLines,
+        counterText: '',
+      ),
       obscureText: widget.obscure && !_revealed,
       maxLines: widget.obscure ? 1 : widget.maxLines,
       minLines: widget.obscure ? null : widget.minLines,
@@ -281,6 +296,7 @@ class _OurTextFieldState extends State<OurTextField> {
       textField: true,
       child: Stack(
         clipBehavior: Clip.none,
+        fit: StackFit.passthrough,
         children: [
           OurFieldFrame(
             style: style,
@@ -303,6 +319,7 @@ class _OurTextFieldState extends State<OurTextField> {
                 behavior: HitTestBehavior.opaque,
                 onTap: () => setState(() => _revealed = !_revealed),
                 child: Semantics(
+                  container: true,
                   button: true,
                   label: _revealed ? 'Hide passphrase' : 'Show passphrase',
                   child: LucideIcon(_revealed ? AppIcons.eyeOff : AppIcons.eye, size: 16, color: AppColors.slate400),

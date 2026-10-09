@@ -239,6 +239,7 @@ class OurIconButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Semantics(
+      container: true,
       button: true,
       enabled: onPressed != null,
       label: semanticLabel,

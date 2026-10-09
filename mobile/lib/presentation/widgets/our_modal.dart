@@ -173,6 +173,7 @@ class OurCloseButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Semantics(
+      container: true,
       button: true,
       label: MaterialLocalizations.of(context).closeButtonTooltip,
       child: Opacity(
