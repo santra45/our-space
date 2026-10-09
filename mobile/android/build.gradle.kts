@@ -19,11 +19,6 @@ subprojects {
     if (project.name == "file_picker") {
         project.plugins.apply("org.jetbrains.kotlin.android")
     }
-    tasks.whenTaskAdded {
-        if (name.contains("AarMetadata")) {
-            enabled = false
-        }
-    }
     project.evaluationDependsOn(":app")
 }
 
