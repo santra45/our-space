@@ -2,12 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 
-import 'screens/bucketlist/bucket_list_screen.dart';
-import 'screens/capsule/secret_capsule_screen.dart';
-import 'screens/countdown/countdown_screen.dart';
-import 'screens/polaroids/polaroid_screen.dart';
-import 'screens/roulette/date_roulette_screen.dart';
-import 'screens/sync/sync_hub_screen.dart';
+import 'screens/bucketlist/bucket_list.dart';
+import 'screens/capsule/secret_capsule.dart';
+import 'screens/love/love_tab.dart';
+import 'screens/polaroids/polaroid_wall.dart';
+import 'screens/roulette/date_roulette.dart';
+import 'screens/sync/sync_hub.dart';
 import 'theme/app_colors.dart';
 import 'theme/app_motion.dart';
 import 'theme/app_theme.dart';
@@ -69,18 +69,18 @@ class ShellActions extends InheritedWidget {
       oldWidget.onLock != onLock || oldWidget.onOpenSync != onOpenSync;
 }
 
-Widget legacyTabPage(BuildContext context, AppTab tab) {
+Widget tabPage(BuildContext context, AppTab tab) {
   switch (tab) {
     case AppTab.countdown:
-      return const CountdownScreen();
+      return const LoveTab();
     case AppTab.polaroids:
-      return const PolaroidScreen();
+      return const PolaroidWall();
     case AppTab.roulette:
-      return const DateRouletteScreen();
+      return const DateRoulette();
     case AppTab.capsule:
-      return const SecretCapsuleScreen();
+      return const SecretCapsule();
     case AppTab.bucketlist:
-      return const BucketListScreen();
+      return const BucketList();
   }
 }
 
@@ -136,7 +136,7 @@ class AppShellState extends State<AppShell> {
       handler();
       return;
     }
-    Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const SyncHubScreen()));
+    showSyncHub(context);
   }
 
   void _lock() {
@@ -157,15 +157,7 @@ class AppShellState extends State<AppShell> {
     super.dispose();
   }
 
-  Widget _page(BuildContext context, AppTab tab) {
-    final builder = widget.pageBuilder;
-    if (builder != null) return builder(context, tab);
-    final media = MediaQuery.of(context);
-    return Padding(
-      padding: EdgeInsets.only(bottom: OurBottomNav.heightFor(media.viewPadding.bottom)),
-      child: MediaQuery.removePadding(context: context, removeBottom: true, child: legacyTabPage(context, tab)),
-    );
-  }
+  Widget _page(BuildContext context, AppTab tab) => (widget.pageBuilder ?? tabPage)(context, tab);
 
   @override
   Widget build(BuildContext context) {
