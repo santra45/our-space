@@ -3,8 +3,6 @@ import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
 import '../constants/app_constants.dart';
 
-/// Native SQLite Database persistence for Our Space 💕.
-/// Replaces Dexie/IndexedDB with identical Schema v2 semantics.
 class AppDatabase {
   AppDatabase._();
   static final AppDatabase instance = AppDatabase._();
@@ -25,7 +23,6 @@ class AppDatabase {
       path,
       version: 1,
       onCreate: (db, version) async {
-        // Vault metadata table
         await db.execute('''
           CREATE TABLE vaultMeta (
             id TEXT PRIMARY KEY NOT NULL,
@@ -38,7 +35,6 @@ class AppDatabase {
           );
         ''');
 
-        // Synced tables with Schema v2 authenticated envelopes
         for (final table in syncedTables) {
           final isMemories = table == 'memories';
           final blobCol = isMemories ? ', imageBlob BLOB' : '';
@@ -65,10 +61,6 @@ class AppDatabase {
     );
   }
 
-  // --------------------------------------------------------------------------
-  // Vault Meta operations
-  // --------------------------------------------------------------------------
-
   Future<Map<String, dynamic>?> getVaultMeta() async {
     final db = await database;
     final results = await db.query('vaultMeta', where: 'id = ?', whereArgs: ['config']);
@@ -93,11 +85,6 @@ class AppDatabase {
     );
   }
 
-  // --------------------------------------------------------------------------
-  // Envelope CRUD operations
-  // --------------------------------------------------------------------------
-
-  /// Reads a single envelope by ID.
   Future<Map<String, dynamic>?> getRecord(String table, String id) async {
     final db = await database;
     final results = await db.query(table, where: 'id = ?', whereArgs: [id]);
@@ -105,7 +92,6 @@ class AppDatabase {
     return results.first;
   }
 
-  /// Lists all non-deleted envelopes from a table.
   Future<List<Map<String, dynamic>>> getActiveRecords(String table) async {
     final db = await database;
     return await db.query(
@@ -115,7 +101,6 @@ class AppDatabase {
     );
   }
 
-  /// Saves or updates an authenticated envelope.
   Future<void> putEnvelope(
     String table,
     Map<String, dynamic> envelope, {
@@ -134,7 +119,6 @@ class AppDatabase {
     );
   }
 
-  /// Soft deletes a record by updating tombstone flag and incrementing updatedAt.
   Future<void> softDelete(String table, String id, int updatedAt) async {
     final db = await database;
     await db.update(
@@ -148,7 +132,6 @@ class AppDatabase {
     );
   }
 
-  /// Returns manifest summary of (id, updatedAt, deleted) across all synced tables for replication.
   Future<Map<String, List<Map<String, dynamic>>>> getManifest() async {
     final db = await database;
     final Map<String, List<Map<String, dynamic>>> manifest = {};
@@ -164,7 +147,6 @@ class AppDatabase {
     return manifest;
   }
 
-  /// Destroys all database contents (Hard Reset).
   Future<void> wipeDatabase() async {
     final db = await database;
     for (final table in syncedTables) {

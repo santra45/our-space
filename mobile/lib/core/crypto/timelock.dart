@@ -15,18 +15,11 @@ class TimeLockedException implements Exception {
   String toString() => 'Letter is sealed until $unlockDate 💕';
 }
 
-/// Cryptographic time-lock engine for secret capsule love letters.
-///
-/// Letters are sealed using key wrapping: the body is encrypted under an
-/// ephemeral content key, which is itself encrypted under a key derived from
-/// the unlock date and the master vault key. Tampering with the unlock date
-/// mathematically corrupts key derivation and decryption fails.
 class TimeLockEngine {
   TimeLockEngine._();
 
   static final Random _random = Random.secure();
 
-  /// Computes the local midnight timestamp for a given YYYY-MM-DD date.
   static int? getTimeLockBoundary(String unlockDate) {
     try {
       final parts = unlockDate.split('-');
@@ -41,7 +34,6 @@ class TimeLockEngine {
     }
   }
 
-  /// True when the current time is past the unlock date boundary.
   static bool isTimeLockOpen(String? unlockDate, [int? now]) {
     if (unlockDate == null || unlockDate.isEmpty) return true;
     final boundary = getTimeLockBoundary(unlockDate);
@@ -54,7 +46,6 @@ class TimeLockEngine {
     return '$timeLockContext|$unlockDate|$context';
   }
 
-  /// Seals letter plaintext into a time-locked envelope.
   static Future<Map<String, dynamic>> sealTimeLocked(
     String plainText,
     String unlockDate,
@@ -69,20 +60,17 @@ class TimeLockEngine {
     final binding = _timeLockBinding(unlockDate, context);
     final bindingBytes = Uint8List.fromList(utf8.encode(binding));
 
-    // 1. Generate random 32-byte content key
     final contentKey = Uint8List(32);
     for (int i = 0; i < 32; i++) {
       contentKey[i] = _random.nextInt(256);
     }
 
-    // 2. Encrypt plaintext under contentKey with binding as AAD
     final bodyEncrypted = await CryptoEngine.instance.encryptBytes(
       Uint8List.fromList(utf8.encode(plainText)),
       contentKey,
       aad: bindingBytes,
     );
 
-    // 3. Generate salt & IVs
     final lockSalt = Uint8List.fromList(
       List.generate(32, (_) => _random.nextInt(256)),
     );
@@ -93,7 +81,6 @@ class TimeLockEngine {
       List.generate(ivLengthBytes, (_) => _random.nextInt(256)),
     );
 
-    // 4. Derive material = AES-GCM(vaultKey, lockIv, binding)
     final materialEncrypted = await CryptoEngine.instance.encryptBytes(
       bindingBytes,
       vaultKey,
@@ -101,7 +88,6 @@ class TimeLockEngine {
     );
     final materialBytes = base64Decode(materialEncrypted['ciphertext']!);
 
-    // 5. Derive lockKey = HKDF-SHA256(material, salt = lockSalt, info = binding)
     final hkdf = Hkdf(
       hmac: Hmac.sha256(),
       outputLength: 32,
@@ -113,7 +99,6 @@ class TimeLockEngine {
     );
     final lockKeyBytes = Uint8List.fromList(await lockKeySecret.extractBytes());
 
-    // 6. Wrap contentKey under lockKey with binding as AAD
     final wrappedEncrypted = await CryptoEngine.instance.encryptBytes(
       contentKey,
       lockKeyBytes,
@@ -133,7 +118,6 @@ class TimeLockEngine {
     };
   }
 
-  /// Unseals a time-locked letter. Throws TimeLockedException if accessed before unlock date.
   static Future<String> unsealTimeLocked(
     Map<String, dynamic> sealed,
     Uint8List vaultKey, {
@@ -159,7 +143,6 @@ class TimeLockEngine {
     final ciphertext = sealed['ciphertext'] as String;
     final iv = sealed['iv'] as String;
 
-    // 1. Re-derive material = AES-GCM(vaultKey, lockIv, binding)
     final materialEncrypted = await CryptoEngine.instance.encryptBytes(
       bindingBytes,
       vaultKey,
@@ -167,7 +150,6 @@ class TimeLockEngine {
     );
     final materialBytes = base64Decode(materialEncrypted['ciphertext']!);
 
-    // 2. Re-derive lockKey = HKDF-SHA256(material, salt = lockSalt, info = binding)
     final hkdf = Hkdf(
       hmac: Hmac.sha256(),
       outputLength: 32,
@@ -179,7 +161,6 @@ class TimeLockEngine {
     );
     final lockKeyBytes = Uint8List.fromList(await lockKeySecret.extractBytes());
 
-    // 3. Unseal contentKey
     final contentKey = await CryptoEngine.instance.decryptBytes(
       wrappedKey,
       wrapIv,
@@ -187,7 +168,6 @@ class TimeLockEngine {
       aad: bindingBytes,
     );
 
-    // 4. Decrypt body
     final bodyBytes = await CryptoEngine.instance.decryptBytes(
       ciphertext,
       iv,

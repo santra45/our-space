@@ -28,7 +28,6 @@ class MailboxService {
 
   bool get isConfigured => _mailboxUrl != null && _mailboxToken != null;
 
-  /// Derives the 64-hex-character mailbox ID from the master vault key.
   Future<String> deriveMailboxId(Uint8List vaultKey) async {
     final fixedIv = Uint8List(ivLengthBytes);
     final contextBytes = Uint8List.fromList(utf8.encode(mailboxIdContext));
@@ -45,7 +44,6 @@ class MailboxService {
     return digest.bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
   }
 
-  /// URL-safe base64 encoding for record IDs.
   String recordKey(String id) {
     final bytes = utf8.encode(id);
     return base64Encode(bytes)
@@ -54,7 +52,6 @@ class MailboxService {
         .replaceAll('=', '');
   }
 
-  /// Uploads dirty/updated records and an encrypted manifest to the Cloudflare Worker mailbox.
   Future<int> publish(Uint8List vaultKey) async {
     if (!isConfigured) return 0;
 
@@ -63,7 +60,6 @@ class MailboxService {
 
     int uploadedCount = 0;
 
-    // 1. Upload records across synced tables
     for (final table in syncedTables) {
       final rows = await AppDatabase.instance.getActiveRecords(table);
       for (final row in rows) {
@@ -85,7 +81,6 @@ class MailboxService {
       }
     }
 
-    // 2. Encrypt and upload manifest last (so manifest promises only what was saved)
     final encryptedManifest = await CryptoEngine.instance.encryptJSON(manifest, vaultKey);
     await http.put(
       Uri.parse('$_mailboxUrl/m/$mailboxId/manifest'),
@@ -99,13 +94,11 @@ class MailboxService {
     return uploadedCount;
   }
 
-  /// Collects missing/newer records from the mailbox and applies them locally.
   Future<int> collect(Uint8List vaultKey) async {
     if (!isConfigured) return 0;
 
     final mailboxId = await deriveMailboxId(vaultKey);
 
-    // 1. Fetch remote manifest
     final manifestResponse = await http.get(
       Uri.parse('$_mailboxUrl/m/$mailboxId/manifest'),
       headers: {
@@ -124,7 +117,6 @@ class MailboxService {
 
     int appliedCount = 0;
 
-    // 2. Fetch and apply records that are missing or newer
     for (final table in syncedTables) {
       final remoteRows = (remoteManifest[table] as List<dynamic>?) ?? [];
       for (final r in remoteRows) {

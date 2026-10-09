@@ -152,7 +152,6 @@ class _CountdownScreenState extends State<CountdownScreen> {
               child: ListView(
                 padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                 children: [
-                  // Main Live Counter Hero Card
                   Card(
                     color: Colors.white,
                     child: Padding(

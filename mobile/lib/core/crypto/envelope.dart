@@ -42,11 +42,9 @@ class DecryptedRecordResult {
   bool get deleted => data['deleted'] == true;
 }
 
-/// Record envelope (Schema v2) cryptographic packager and verifier.
 class RecordEnvelope {
   RecordEnvelope._();
 
-  /// Packs a logical record into an authenticated AES-GCM envelope.
   static Future<Map<String, dynamic>> encryptRecord(
     Map<String, dynamic> plainFields,
     Uint8List keyBytes, {
@@ -68,14 +66,12 @@ class RecordEnvelope {
     payload['updatedAt'] = updatedAt;
     payload['deleted'] = deleted;
 
-    // Binary digest binding
     final Map<String, String> digests = {};
     if (imageBytes != null && imageBytes.isNotEmpty) {
       digests['imageBlob'] = CryptoEngine.instance.digestBytes(imageBytes);
     }
     payload[binaryDigestField] = digests;
 
-    // Table binding
     if (table != null && table.isNotEmpty) {
       payload[tableBindingField] = table;
     }
@@ -94,7 +90,6 @@ class RecordEnvelope {
     };
   }
 
-  /// Unpacks an encrypted envelope, strictly verifying header, table, and binary integrity.
   static Future<DecryptedRecordResult> decryptRecord(
     Map<String, dynamic> record,
     Uint8List keyBytes, {
@@ -119,7 +114,6 @@ class RecordEnvelope {
     final int? innerUpdatedAt = (payload['updatedAt'] as num?)?.toInt();
     final bool? innerDeleted = payload['deleted'] as bool?;
 
-    // Verify binary digest
     bool binaryTampered = false;
     bool binaryUnverified = false;
 
@@ -136,7 +130,6 @@ class RecordEnvelope {
           }
         }
       } else if (expectedDigest != null && expectedDigest.isNotEmpty) {
-        // Blob was stripped in transit
         binaryTampered = true;
       }
     } else {
@@ -145,13 +138,11 @@ class RecordEnvelope {
       }
     }
 
-    // Verify table binding
     final String? sealedTable = payload[tableBindingField] as String?;
     final bool tableUnverified = sealedTable == null || sealedTable.isEmpty;
     final bool tableTampered =
         table != null && sealedTable != null && sealedTable != table;
 
-    // Header tampering gate
     final bool headerTampered = (innerId != null && innerId != outerId) ||
         (innerUpdatedAt != null && innerUpdatedAt != outerUpdatedAt) ||
         (innerDeleted != null && innerDeleted != outerDeleted) ||

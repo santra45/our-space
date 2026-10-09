@@ -1,8 +1,6 @@
 import 'package:flutter/services.dart';
 import 'package:vibration/vibration.dart';
 
-/// Sensory haptic feedback engine for Android & iOS.
-/// Preserves the warm tactile feel of Our Space 💕.
 class HapticsService {
   HapticsService._();
   static final HapticsService instance = HapticsService._();
@@ -20,21 +18,18 @@ class HapticsService {
     _initialized = true;
   }
 
-  /// Gentle mechanical click (bottom nav, tab switch)
   Future<void> tick() async {
     try {
       await HapticFeedback.selectionClick();
     } catch (_) {}
   }
 
-  /// Soft confirmation tap (saving an item, checking a box)
   Future<void> tap() async {
     try {
       await HapticFeedback.lightImpact();
     } catch (_) {}
   }
 
-  /// Romantic heartbeat rhythm [60ms vibe, 120ms pause, 60ms vibe]
   Future<void> heartbeat() async {
     try {
       await init();
@@ -53,7 +48,6 @@ class HapticsService {
     }
   }
 
-  /// Celebration rhythm for scratch-off reveal or love bursts
   Future<void> celebration() async {
     try {
       await init();

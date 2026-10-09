@@ -1,8 +1,8 @@
 class Person {
-  final String id; // 'slot-0' | 'slot-1'
+  final String id;
   final String personId;
   final String name;
-  final String pronoun; // 'she' | 'he' | 'they'
+  final String pronoun;
   final List<String> deviceIds;
   final int? lastActiveAt;
   final int updatedAt;

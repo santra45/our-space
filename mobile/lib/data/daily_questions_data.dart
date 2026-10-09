@@ -1,10 +1,8 @@
-/// Ported question bank from src/data/dailyQuestions.js.
-/// INVARIANT: Shuffled batches are append-only. Never edit or reorder an existing batch.
 library;
 
 class DailyQuestionItem {
   final String id;
-  final String tone; // 'light' | 'memory' | 'deep' | 'future' | 'apart'
+  final String tone;
   final String text;
 
   const DailyQuestionItem({
@@ -22,7 +20,6 @@ class QuestionBatch {
 }
 
 const List<DailyQuestionItem> batchOne = [
-  /* ---------------------------------------------------------------- light */
   DailyQuestionItem(id: 'b1-001', tone: 'light', text: 'What is the most useless thing you know a lot about?'),
   DailyQuestionItem(id: 'b1-002', tone: 'light', text: 'If you had to describe me to a stranger using only three words, which three?'),
   DailyQuestionItem(id: 'b1-003', tone: 'light', text: 'What food would you happily eat every single day for a year?'),
@@ -60,7 +57,6 @@ const List<DailyQuestionItem> batchOne = [
   DailyQuestionItem(id: 'b1-035', tone: 'light', text: 'What is something you are looking forward to this week, however small?'),
   DailyQuestionItem(id: 'b1-036', tone: 'light', text: 'What is a word or phrase you use far too often?'),
 
-  /* --------------------------------------------------------------- memory */
   DailyQuestionItem(id: 'b1-037', tone: 'memory', text: 'What do you actually remember about the first time we spoke?'),
   DailyQuestionItem(id: 'b1-038', tone: 'memory', text: 'What did you think of me before you knew me properly?'),
   DailyQuestionItem(id: 'b1-039', tone: 'memory', text: 'What is a message from me you have gone back and read again?'),
@@ -92,7 +88,6 @@ const List<DailyQuestionItem> batchOne = [
   DailyQuestionItem(id: 'b1-065', tone: 'memory', text: 'When did you first tell someone you were serious about me?'),
   DailyQuestionItem(id: 'b1-066', tone: 'memory', text: 'What is something we did early on that we should start doing again?'),
 
-  /* ----------------------------------------------------------------- deep */
   DailyQuestionItem(id: 'b1-067', tone: 'deep', text: 'What is something you want me to understand about you but struggle to explain?'),
   DailyQuestionItem(id: 'b1-068', tone: 'deep', text: 'What do you think I underestimate about myself?'),
   DailyQuestionItem(id: 'b1-069', tone: 'deep', text: 'What is something you are afraid of that you have never said out loud?'),
@@ -130,7 +125,6 @@ const List<DailyQuestionItem> batchOne = [
   DailyQuestionItem(id: 'b1-101', tone: 'deep', text: 'What would you like to be braver about?'),
   DailyQuestionItem(id: 'b1-102', tone: 'deep', text: 'What is something you have never asked me but have wondered about?'),
 
-  /* --------------------------------------------------------------- future */
   DailyQuestionItem(id: 'b1-103', tone: 'future', text: 'What is the first thing you want to do when we are finally in the same place?'),
   DailyQuestionItem(id: 'b1-104', tone: 'future', text: 'What does an ordinary Tuesday with me look like, in your head?'),
   DailyQuestionItem(id: 'b1-105', tone: 'future', text: 'What is something you want us to be better at?'),
@@ -164,7 +158,6 @@ const List<DailyQuestionItem> batchOne = [
   DailyQuestionItem(id: 'b1-133', tone: 'future', text: 'What is a place you want to show me, and what will you show me first?'),
   DailyQuestionItem(id: 'b1-134', tone: 'future', text: 'What kind of old person do you want to be?'),
 
-  /* ---------------------------------------------------------------- apart */
   DailyQuestionItem(id: 'b1-135', tone: 'apart', text: 'What is the hardest part of the day when we are apart?'),
   DailyQuestionItem(id: 'b1-136', tone: 'apart', text: 'What do you miss that is not the obvious thing?'),
   DailyQuestionItem(id: 'b1-137', tone: 'apart', text: 'What is something you wanted to show me today but could not?'),

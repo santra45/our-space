@@ -32,13 +32,11 @@ class _DailyQuestionScreenState extends State<DailyQuestionScreen> {
   }
 
   Future<void> _loadDailyState() async {
-    // 1. Determine question of the day using UTC day index
     final now = DateTime.now().toUtc();
     final daysSinceEpoch = now.millisecondsSinceEpoch ~/ (1000 * 60 * 60 * 24);
     final questionIndex = daysSinceEpoch % allQuestions.length;
     _todayQuestion = allQuestions[questionIndex];
 
-    // 2. Load answers from database
     final keyBytes = VaultKeyHolder.instance.rawKeyBits;
     if (keyBytes != null) {
       final records = await AppDatabase.instance.getActiveRecords('dailyAnswers');
@@ -125,7 +123,6 @@ class _DailyQuestionScreenState extends State<DailyQuestionScreen> {
         padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
         child: Column(
           children: [
-            // Question Card
             Card(
               child: Padding(
                 padding: const EdgeInsets.all(24),
@@ -164,7 +161,6 @@ class _DailyQuestionScreenState extends State<DailyQuestionScreen> {
             const SizedBox(height: 24),
 
             if (!hasIAnswered) ...[
-              // Answering area
               Card(
                 child: Padding(
                   padding: const EdgeInsets.all(20),
@@ -195,7 +191,6 @@ class _DailyQuestionScreenState extends State<DailyQuestionScreen> {
                 ),
               ),
             ] else ...[
-              // User has answered!
               Card(
                 child: Padding(
                   padding: const EdgeInsets.all(20),
@@ -221,7 +216,6 @@ class _DailyQuestionScreenState extends State<DailyQuestionScreen> {
 
               const SizedBox(height: 16),
 
-              // Partner Answer Gate
               Card(
                 color: hasBothAnswered ? Colors.white : AppColors.lavender50,
                 child: Padding(

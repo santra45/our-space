@@ -35,7 +35,7 @@ void main() {
       final key = await crypto.deriveKeyFromPassphrase(
         validPassphrase,
         salt,
-        iterations: 1000, // Speed up unit test
+        iterations: 1000,
       );
 
       expect(key.length, equals(32));
@@ -77,12 +77,10 @@ void main() {
       expect(envelope['id'], equals('mem-001'));
       expect(envelope['v'], equals(2));
 
-      // Decrypt untampered
       final result = await RecordEnvelope.decryptRecord(envelope, key, table: 'memories');
       expect(result.isHeaderTampered, isFalse);
       expect(result.data['caption'], equals('Our sunset walk'));
 
-      // Tamper with plaintext updatedAt
       final tampered = Map<String, dynamic>.from(envelope);
       tampered['updatedAt'] = 1700000099999;
 
@@ -98,14 +96,12 @@ void main() {
       const futureDate = '2099-01-01';
       const pastDate = '2020-01-01';
 
-      // 1. Future letter
       final sealedFuture = await TimeLockEngine.sealTimeLocked(secretText, futureDate, key, context: 'let-1');
       expect(
         () async => await TimeLockEngine.unsealTimeLocked(sealedFuture, key, context: 'let-1'),
         throwsA(isA<TimeLockedException>()),
       );
 
-      // 2. Past letter opens cleanly
       final sealedPast = await TimeLockEngine.sealTimeLocked(secretText, pastDate, key, context: 'let-2');
       final unsealed = await TimeLockEngine.unsealTimeLocked(sealedPast, key, context: 'let-2');
       expect(unsealed, equals(secretText));
@@ -118,7 +114,6 @@ void main() {
       expect(TombstoneHelper.incomingWins(oldRecord, newRecord), isTrue);
       expect(TombstoneHelper.incomingWins(newRecord, oldRecord), isFalse);
 
-      // Tie-break: deletion beats edit at same millisecond
       final sameTimeEdit = {'id': '1', 'updatedAt': 150, 'deleted': 0, 'ciphertext': 'a'};
       final sameTimeDelete = {'id': '1', 'updatedAt': 150, 'deleted': 1, 'ciphertext': 'b'};
 

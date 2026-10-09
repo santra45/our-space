@@ -1,6 +1,6 @@
 class DailyAnswer {
   final String id;
-  final String dayKey; // YYYY-MM-DD
+  final String dayKey;
   final String questionId;
   final String personId;
   final String authorName;

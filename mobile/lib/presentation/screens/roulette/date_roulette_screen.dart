@@ -87,7 +87,6 @@ class _DateRouletteScreenState extends State<DateRouletteScreen> {
                 ),
                 const SizedBox(height: 32),
 
-                // Scratch Card Area
                 Container(
                   width: double.infinity,
                   height: 240,
@@ -104,7 +103,6 @@ class _DateRouletteScreenState extends State<DateRouletteScreen> {
                   ),
                   child: Stack(
                     children: [
-                      // Underneath: Revealed Date Content
                       Center(
                         child: Padding(
                           padding: const EdgeInsets.all(24),
@@ -132,7 +130,6 @@ class _DateRouletteScreenState extends State<DateRouletteScreen> {
                         ),
                       ),
 
-                      // Overlay: Scratch Foil
                       if (!_isRevealed)
                         GestureDetector(
                           onPanUpdate: (details) {
@@ -203,7 +200,6 @@ class _DateRouletteScreenState extends State<DateRouletteScreen> {
             ),
           ),
 
-          // Confetti overlay
           ConfettiWidget(
             confettiController: _confettiController,
             blastDirectionality: BlastDirectionality.explosive,

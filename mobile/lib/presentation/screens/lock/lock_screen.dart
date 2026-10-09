@@ -75,7 +75,6 @@ class _LockScreenState extends State<LockScreen> {
           return;
         }
 
-        // Initialize new vault
         final salt = CryptoEngine.instance.generateSalt();
         final keyBytes = await CryptoEngine.instance.deriveKeyFromPassphrase(passphrase, salt);
         final canary = await CryptoEngine.instance.createCanary(keyBytes);
@@ -90,7 +89,6 @@ class _LockScreenState extends State<LockScreen> {
         HapticsService.instance.celebration();
         widget.onUnlocked();
       } else {
-        // Unlock existing vault
         final meta = await AppDatabase.instance.getVaultMeta();
         if (meta == null) throw Exception('Vault metadata missing');
 
@@ -137,7 +135,6 @@ class _LockScreenState extends State<LockScreen> {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                // Heart Icon
                 Container(
                   padding: const EdgeInsets.all(20),
                   decoration: const BoxDecoration(
@@ -165,7 +162,6 @@ class _LockScreenState extends State<LockScreen> {
                 ),
                 const SizedBox(height: 32),
 
-                // Biometrics shortcut button
                 if (!_isFirstTime && _hasBiometrics) ...[
                   OutlinedButton.icon(
                     onPressed: _tryBiometricUnlock,
@@ -194,7 +190,6 @@ class _LockScreenState extends State<LockScreen> {
                   const SizedBox(height: 24),
                 ],
 
-                // Passphrase Input
                 TextField(
                   controller: _passphraseController,
                   obscureText: true,

@@ -134,7 +134,7 @@ class _SecretCapsuleScreenState extends State<SecretCapsuleScreen> {
                     keyBytes,
                     context: id,
                   );
-                  finalBody = ''; // Cleared from top-level body!
+                  finalBody = '';
                 }
 
                 final letter = Letter(

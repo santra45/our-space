@@ -10,7 +10,6 @@ const int backupVersion = 2;
 class BackupCrypto {
   BackupCrypto._();
 
-  /// Exports the entire database into an encrypted .vault backup JSON string.
   static Future<String> exportBackup(String backupPassphrase) async {
     final salt = CryptoEngine.instance.generateSalt();
     final backupKey = await CryptoEngine.instance.deriveKeyFromPassphrase(
@@ -42,7 +41,6 @@ class BackupCrypto {
     return jsonEncode(backupFile);
   }
 
-  /// Restores records from an encrypted .vault backup string, merging using LWW rules.
   static Future<int> importBackup(String backupJson, String backupPassphrase) async {
     final Map<String, dynamic> backupFile = jsonDecode(backupJson) as Map<String, dynamic>;
 

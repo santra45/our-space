@@ -4,7 +4,6 @@ import 'package:crypto/crypto.dart';
 import '../constants/app_constants.dart';
 import '../crypto/crypto_engine.dart';
 
-/// SWEETHEART_V2 protocol message types.
 abstract class PeerMessageType {
   static const String authChallenge = 'AUTH_CHALLENGE';
   static const String authResponse = 'AUTH_RESPONSE';
@@ -17,11 +16,9 @@ abstract class PeerMessageType {
   static const String loveBurst = 'LOVE_BURST';
 }
 
-/// Cryptographic Wire Framing and Challenge-Response Authentication for SWEETHEART_V2.
 class PeerProtocol {
   PeerProtocol._();
 
-  /// Encases a protocol message into an encrypted SWEETHEART_V2 wire frame.
   static Future<Map<String, dynamic>> packFrame(
     Map<String, dynamic> message,
     Uint8List vaultKey,
@@ -37,7 +34,6 @@ class PeerProtocol {
     };
   }
 
-  /// Unpacks and decrypts an inbound SWEETHEART_V2 wire frame.
   static Future<Map<String, dynamic>> unpackFrame(
     Map<String, dynamic> frame,
     Uint8List vaultKey,
@@ -60,14 +56,12 @@ class PeerProtocol {
     return await CryptoEngine.instance.decryptJSON(ciphertext, iv, vaultKey);
   }
 
-  /// Generates mutual challenge response: HMAC-SHA256(challenge, vaultKey).
   static String computeChallengeResponse(String challengeNonce, Uint8List vaultKey) {
     final hmac = Hmac(sha256, vaultKey);
     final digest = hmac.convert(utf8.encode('our-space/auth-v2|$challengeNonce'));
     return base64Encode(digest.bytes);
   }
 
-  /// Verifies a received challenge response against expected value.
   static bool verifyChallengeResponse(
     String challengeNonce,
     String responseBase64,

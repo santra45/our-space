@@ -171,7 +171,6 @@ class _SyncHubScreenState extends State<SyncHubScreen> {
       body: ListView(
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
         children: [
-          // Pairing Card
           Card(
             child: Padding(
               padding: const EdgeInsets.all(24),
@@ -210,7 +209,6 @@ class _SyncHubScreenState extends State<SyncHubScreen> {
 
           const SizedBox(height: 16),
 
-          // Biometrics Card
           if (_isBiometricsSupported) ...[
             Card(
               child: Padding(
@@ -238,7 +236,6 @@ class _SyncHubScreenState extends State<SyncHubScreen> {
             const SizedBox(height: 16),
           ],
 
-          // Backup & Restore Card
           Card(
             child: Padding(
               padding: const EdgeInsets.all(20),

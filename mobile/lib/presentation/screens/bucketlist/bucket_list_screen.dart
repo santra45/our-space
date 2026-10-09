@@ -175,7 +175,6 @@ class _BucketListScreenState extends State<BucketListScreen> {
           : ListView(
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
               children: [
-                // Progress Card
                 Card(
                   child: Padding(
                     padding: const EdgeInsets.all(20),
@@ -212,7 +211,6 @@ class _BucketListScreenState extends State<BucketListScreen> {
 
                 const SizedBox(height: 16),
 
-                // Category Chips
                 SizedBox(
                   height: 40,
                   child: ListView.separated(

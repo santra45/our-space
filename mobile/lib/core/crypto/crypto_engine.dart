@@ -5,21 +5,12 @@ import 'package:crypto/crypto.dart' as std_crypto;
 import 'package:cryptography/cryptography.dart';
 import '../constants/app_constants.dart';
 
-/// Zero-Knowledge Cryptographic Engine for Our Space 💕.
-///
-/// Implements:
-/// - PBKDF2 with HMAC-SHA-256 (600,000 iterations for new vaults, 250,000 for legacy)
-/// - AES-GCM 256-bit with unique 96-bit (12-byte) IV
-/// - Web Crypto API concatenation compatibility (Ciphertext + 16-byte MAC)
-/// - Authenticated associated data (AAD) for tamper-proof bindings
-/// - Canary verification token
 class CryptoEngine {
   CryptoEngine._();
   static final CryptoEngine instance = CryptoEngine._();
 
   final Random _random = Random.secure();
 
-  /// Generates 16 random bytes (base64-encoded) for the shared vault salt.
   String generateSalt() {
     final bytes = Uint8List(saltLengthBytes);
     for (int i = 0; i < saltLengthBytes; i++) {
@@ -28,7 +19,6 @@ class CryptoEngine {
     return base64Encode(bytes);
   }
 
-  /// Generates a cryptographically secure random nonce string (base64).
   String generateSecureNonce([int byteLength = 16]) {
     final bytes = Uint8List(byteLength);
     for (int i = 0; i < byteLength; i++) {
@@ -37,7 +27,6 @@ class CryptoEngine {
     return base64Encode(bytes);
   }
 
-  /// Generates a URL-safe base64 nonce with padding stripped.
   String generateUrlSafeNonce([int byteLength = 16]) {
     return generateSecureNonce(byteLength)
         .replaceAll('+', '-')
@@ -45,13 +34,10 @@ class CryptoEngine {
         .replaceAll('=', '');
   }
 
-  /// Normalizes a passphrase before it reaches PBKDF2.
-  /// Enforces trimming and Unicode NFKC normalization.
   String normalizePassphrase(String passphrase) {
     return passphrase.trim();
   }
 
-  /// Derives a 256-bit (32-byte) AES-GCM key using PBKDF2-HMAC-SHA-256.
   Future<Uint8List> deriveKeyFromPassphrase(
     String passphrase,
     String saltBase64, {
@@ -80,8 +66,6 @@ class CryptoEngine {
     return Uint8List.fromList(keyBytes);
   }
 
-  /// Encrypts bytes with AES-GCM 256.
-  /// Matches Web Crypto API: returns base64(ciphertext + 16-byte MAC) and base64(iv).
   Future<Map<String, String>> encryptBytes(
     Uint8List plainBytes,
     Uint8List keyBytes, {
@@ -101,7 +85,6 @@ class CryptoEngine {
       aad: aad ?? Uint8List(0),
     );
 
-    // Web Crypto API concatenates ciphertext + 16-byte MAC into a single buffer
     final concatenated = secretBox.concatenation();
 
     return {
@@ -110,7 +93,6 @@ class CryptoEngine {
     };
   }
 
-  /// Decrypts AES-GCM 256 ciphertext (concatenated with 16-byte MAC).
   Future<Uint8List> decryptBytes(
     String ciphertextBase64,
     String ivBase64,
@@ -144,7 +126,6 @@ class CryptoEngine {
     return Uint8List.fromList(decrypted);
   }
 
-  /// Encrypts a UTF-8 string.
   Future<Map<String, String>> encryptText(
     String plainText,
     Uint8List keyBytes, {
@@ -157,7 +138,6 @@ class CryptoEngine {
     );
   }
 
-  /// Decrypts to a UTF-8 string.
   Future<String> decryptText(
     String ciphertextBase64,
     String ivBase64,
@@ -173,7 +153,6 @@ class CryptoEngine {
     return utf8.decode(bytes);
   }
 
-  /// Encrypts an arbitrary JSON object.
   Future<Map<String, String>> encryptJSON(
     Map<String, dynamic> data,
     Uint8List keyBytes,
@@ -181,7 +160,6 @@ class CryptoEngine {
     return encryptText(jsonEncode(data), keyBytes);
   }
 
-  /// Decrypts an encrypted JSON payload.
   Future<Map<String, dynamic>> decryptJSON(
     String ciphertextBase64,
     String ivBase64,
@@ -191,7 +169,6 @@ class CryptoEngine {
     return jsonDecode(decryptedText) as Map<String, dynamic>;
   }
 
-  /// Creates the encrypted canary verification payload stored in vaultMeta.
   Future<Map<String, String>> createCanary(
     Uint8List keyBytes, {
     String coupleNames = 'Us',
@@ -213,7 +190,6 @@ class CryptoEngine {
     };
   }
 
-  /// Verifies a key against a canary and returns the decrypted config, or null if key is wrong.
   Future<Map<String, dynamic>?> readCanary(
     Uint8List keyBytes,
     Map<String, dynamic> meta,
@@ -231,7 +207,6 @@ class CryptoEngine {
     }
   }
 
-  /// Computes SHA-256 digest of binary bytes (base64 encoded).
   String digestBytes(Uint8List bytes) {
     final digest = std_crypto.sha256.convert(bytes);
     return base64Encode(digest.bytes);

@@ -1,11 +1,5 @@
 import 'dart:typed_data';
 
-/// In-memory holder for the unlocked master vault key.
-///
-/// CRITICAL SECURITY INVARIANT:
-/// - Never saved to SharedPreferences, disk, SQLite, or logs.
-/// - Exists ONLY in volatile memory (RAM) while the session is active.
-/// - Cleared immediately when locked.
 class VaultKeyHolder {
   VaultKeyHolder._();
   static final VaultKeyHolder instance = VaultKeyHolder._();
@@ -40,7 +34,6 @@ class VaultKeyHolder {
     }
   }
 
-  /// Sets the unlocked 256-bit (32 bytes) master key material.
   void setKey(Uint8List keyBits, {String? salt, int? iterations}) {
     if (keyBits.lengthInBytes != 32) {
       throw ArgumentError('Master vault key must be exactly 32 bytes (256 bits).');
@@ -52,7 +45,6 @@ class VaultKeyHolder {
     _notify();
   }
 
-  /// Returns the unlocked key, or throws if locked.
   Uint8List requireKey() {
     final key = _rawKeyBits;
     if (key == null) {
@@ -61,10 +53,9 @@ class VaultKeyHolder {
     return key;
   }
 
-  /// Locks the vault and zeros out the key bytes in memory.
   void lock() {
     if (_rawKeyBits != null) {
-      _rawKeyBits!.fillRange(0, _rawKeyBits!.length, 0); // Zeroize memory
+      _rawKeyBits!.fillRange(0, _rawKeyBits!.length, 0);
       _rawKeyBits = null;
     }
     _salt = null;
