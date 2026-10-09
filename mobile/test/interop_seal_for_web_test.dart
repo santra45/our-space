@@ -12,7 +12,6 @@ import 'package:our_space_mobile/core/engine/domain/daily_question.dart';
 import 'package:our_space_mobile/core/engine/identity/device_id.dart';
 import 'package:our_space_mobile/core/engine/invite/invite.dart';
 import 'package:our_space_mobile/core/engine/storage/tables.dart';
-import 'package:our_space_mobile/core/engine/storage/vault_store.dart';
 import 'package:our_space_mobile/core/engine/sync/backup_service.dart';
 import 'package:our_space_mobile/core/engine/sync/mailbox.dart';
 import 'package:our_space_mobile/core/engine/vault/vault_service.dart';
