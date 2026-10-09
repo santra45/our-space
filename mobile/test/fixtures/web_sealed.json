@@ -1,0 +1,3064 @@
+{
+  "generatedBy": "mobile/tool/interop.mjs",
+  "passphrase": "our space interop passphrase 2026",
+  "salt": "CzBVep/E6Q4zWH2ix+wRNg==",
+  "kdfIterations": 600000,
+  "keyBits": "INHQGmx6ORFCDNLT5tOd47Ke4K0vnX88MlZEy8T0mpY=",
+  "vaultMeta": {
+    "id": "config",
+    "salt": "CzBVep/E6Q4zWH2ix+wRNg==",
+    "canary": "XhuO3imu82hrdXVSqefUbAxJXBpsdka4IUqGlsdsfBxRz3+OS6qXptOQj7viwoKzILUNgqGY4dImf6Wkucd52dLibIYZ9NLs83vSg07DEnDCkLL5tmc7bAwkeGnkPSIsNNSL+hgUrHgtvdA1ImabZlompPxfazLTQVnmsLe4L9MP/DjvrMhrGwO3uUEvh/SBOpolO0XzfnxlJUAzNDWTTUEX1jAnMiK6Aco=",
+    "canaryIv": "/5XTdwIdsOdb4TOr",
+    "kdfIterations": 600000,
+    "updatedAt": 1759999996000
+  },
+  "canaryConfig": {
+    "coupleNames": "Sam & Alex ✨",
+    "startDate": "2021-06-14",
+    "createdAt": 1759999995000,
+    "updatedAt": 1759999996000
+  },
+  "constants": {
+    "recordSchemaVersion": 2,
+    "minPassphraseLength": 16,
+    "pbkdf2Iterations": 600000,
+    "maxImageBlobBytes": 9437184,
+    "maxSingleRecordBytes": 16777216,
+    "maxBatchPayloadBytes": 524288,
+    "maxObjectBytes": 16777216,
+    "syncedTables": [
+      "memories",
+      "milestones",
+      "dateIdeas",
+      "letters",
+      "bucketList",
+      "loveBursts",
+      "dailyAnswers",
+      "people"
+    ],
+    "exportedTables": [
+      "vaultMeta",
+      "memories",
+      "milestones",
+      "dateIdeas",
+      "letters",
+      "bucketList",
+      "loveBursts",
+      "dailyAnswers",
+      "people"
+    ]
+  },
+  "derived": {
+    "mailboxId": "77cb9b13f4a58917a01ae4308964457ddfba7cc8fa6b74b93007d8e0b775ee05",
+    "personSlots": [
+      "50d7c78ca6a07ecddc2e96b8",
+      "8ce4e7dfce007ec59b87e1f6"
+    ],
+    "questionOrder": [
+      "b1-155",
+      "b1-008",
+      "b1-143",
+      "b1-035",
+      "b1-105",
+      "b1-138",
+      "b1-028",
+      "b1-131",
+      "b1-160",
+      "b1-167",
+      "b1-151",
+      "b1-142",
+      "b1-178",
+      "b1-090",
+      "b1-032",
+      "b1-011",
+      "b1-003",
+      "b1-091",
+      "b1-159",
+      "b1-059",
+      "b1-079",
+      "b1-113",
+      "b1-135",
+      "b1-110",
+      "b1-094",
+      "b1-115",
+      "b1-141",
+      "b1-101",
+      "b1-119",
+      "b1-128",
+      "b1-010",
+      "b1-180",
+      "b1-097",
+      "b1-130",
+      "b1-033",
+      "b1-148",
+      "b1-136",
+      "b1-054",
+      "b1-047",
+      "b1-107",
+      "b1-037",
+      "b1-121",
+      "b1-034",
+      "b1-006",
+      "b1-022",
+      "b1-048",
+      "b1-031",
+      "b1-172",
+      "b1-139",
+      "b1-043",
+      "b1-039",
+      "b1-171",
+      "b1-029",
+      "b1-009",
+      "b1-078",
+      "b1-074",
+      "b1-106",
+      "b1-177",
+      "b1-064",
+      "b1-165",
+      "b1-117",
+      "b1-004",
+      "b1-021",
+      "b1-150",
+      "b1-070",
+      "b1-027",
+      "b1-063",
+      "b1-166",
+      "b1-146",
+      "b1-055",
+      "b1-102",
+      "b1-042",
+      "b1-100",
+      "b1-056",
+      "b1-044",
+      "b1-016",
+      "b1-173",
+      "b1-085",
+      "b1-154",
+      "b1-161",
+      "b1-053",
+      "b1-129",
+      "b1-125",
+      "b1-168",
+      "b1-002",
+      "b1-024",
+      "b1-057",
+      "b1-108",
+      "b1-157",
+      "b1-137",
+      "b1-062",
+      "b1-066",
+      "b1-163",
+      "b1-176",
+      "b1-020",
+      "b1-098",
+      "b1-123",
+      "b1-114",
+      "b1-093",
+      "b1-071",
+      "b1-065",
+      "b1-103",
+      "b1-067",
+      "b1-089",
+      "b1-164",
+      "b1-118",
+      "b1-145",
+      "b1-162",
+      "b1-058",
+      "b1-174",
+      "b1-007",
+      "b1-005",
+      "b1-124",
+      "b1-036",
+      "b1-147",
+      "b1-153",
+      "b1-083",
+      "b1-086",
+      "b1-127",
+      "b1-015",
+      "b1-104",
+      "b1-038",
+      "b1-013",
+      "b1-175",
+      "b1-061",
+      "b1-081",
+      "b1-025",
+      "b1-082",
+      "b1-014",
+      "b1-040",
+      "b1-041",
+      "b1-051",
+      "b1-156",
+      "b1-060",
+      "b1-133",
+      "b1-012",
+      "b1-144",
+      "b1-134",
+      "b1-001",
+      "b1-049",
+      "b1-023",
+      "b1-116",
+      "b1-050",
+      "b1-019",
+      "b1-088",
+      "b1-126",
+      "b1-076",
+      "b1-111",
+      "b1-084",
+      "b1-092",
+      "b1-073",
+      "b1-096",
+      "b1-122",
+      "b1-152",
+      "b1-109",
+      "b1-018",
+      "b1-087",
+      "b1-030",
+      "b1-120",
+      "b1-099",
+      "b1-132",
+      "b1-179",
+      "b1-080",
+      "b1-069",
+      "b1-112",
+      "b1-075",
+      "b1-072",
+      "b1-170",
+      "b1-052",
+      "b1-077",
+      "b1-169",
+      "b1-158",
+      "b1-046",
+      "b1-095",
+      "b1-068",
+      "b1-149",
+      "b1-045",
+      "b1-017",
+      "b1-140",
+      "b1-026"
+    ],
+    "questionForDay": [
+      {
+        "when": 0,
+        "id": "b1-155",
+        "day": "1970-01-01",
+        "index": 0,
+        "dayIndex": 0
+      },
+      {
+        "when": 86399999,
+        "id": "b1-155",
+        "day": "1970-01-01",
+        "index": 0,
+        "dayIndex": 0
+      },
+      {
+        "when": 86400000,
+        "id": "b1-008",
+        "day": "1970-01-02",
+        "index": 1,
+        "dayIndex": 1
+      },
+      {
+        "when": 1760000000000,
+        "id": "b1-010",
+        "day": "2025-10-09",
+        "index": 30,
+        "dayIndex": 20370
+      },
+      {
+        "when": 1767225600000,
+        "id": "b1-147",
+        "day": "2026-01-01",
+        "index": 114,
+        "dayIndex": 20454
+      },
+      {
+        "when": -86400001,
+        "id": "b1-140",
+        "day": "1969-12-30",
+        "index": 178,
+        "dayIndex": -2
+      },
+      {
+        "when": 1790000000000,
+        "id": "b1-091",
+        "day": "2026-09-21",
+        "index": 17,
+        "dayIndex": 20717
+      }
+    ],
+    "recordKeys": [
+      {
+        "id": "letter-apart-1",
+        "key": "bGV0dGVyLWFwYXJ0LTE"
+      },
+      {
+        "id": "ans-2026-09-a/b+c=d",
+        "key": "YW5zLTIwMjYtMDktYS9iK2M9ZA"
+      },
+      {
+        "id": "ñ✨ unicode id",
+        "key": "w7HinKggdW5pY29kZSBpZA"
+      },
+      {
+        "id": "x",
+        "key": "eA"
+      },
+      {
+        "id": "person-0123456789abcdef01234567",
+        "key": "cGVyc29uLTAxMjM0NTY3ODlhYmNkZWYwMTIzNDU2Nw"
+      }
+    ]
+  },
+  "questions": [
+    {
+      "id": "b1-001",
+      "tone": "light",
+      "text": "What is the most useless thing you know a lot about?"
+    },
+    {
+      "id": "b1-002",
+      "tone": "light",
+      "text": "If you had to describe me to a stranger using only three words, which three?"
+    },
+    {
+      "id": "b1-003",
+      "tone": "light",
+      "text": "What food would you happily eat every single day for a year?"
+    },
+    {
+      "id": "b1-004",
+      "tone": "light",
+      "text": "What is something everyone seems to love that you quietly do not?"
+    },
+    {
+      "id": "b1-005",
+      "tone": "light",
+      "text": "What song have you had on repeat lately, and be honest about how many times."
+    },
+    {
+      "id": "b1-006",
+      "tone": "light",
+      "text": "If we had to enter a competition together tomorrow, what should it be?"
+    },
+    {
+      "id": "b1-007",
+      "tone": "light",
+      "text": "What is the pettiest thing you have ever held a grudge about?"
+    },
+    {
+      "id": "b1-008",
+      "tone": "light",
+      "text": "What would the title of a documentary about your week be?"
+    },
+    {
+      "id": "b1-009",
+      "tone": "light",
+      "text": "What is a compliment you have received that you still think about?"
+    },
+    {
+      "id": "b1-010",
+      "tone": "light",
+      "text": "What is something you are weirdly good at that never comes up?"
+    },
+    {
+      "id": "b1-011",
+      "tone": "light",
+      "text": "If you could instantly master one skill tonight, what are you picking?"
+    },
+    {
+      "id": "b1-012",
+      "tone": "light",
+      "text": "What is the last thing that made you laugh out loud, alone?"
+    },
+    {
+      "id": "b1-013",
+      "tone": "light",
+      "text": "What is your most irrational fear?"
+    },
+    {
+      "id": "b1-014",
+      "tone": "light",
+      "text": "What would you spend an unexpected free day doing, with no one watching?"
+    },
+    {
+      "id": "b1-015",
+      "tone": "light",
+      "text": "What is something small that instantly improves your mood?"
+    },
+    {
+      "id": "b1-016",
+      "tone": "light",
+      "text": "Which fictional character do you think I am most like?"
+    },
+    {
+      "id": "b1-017",
+      "tone": "light",
+      "text": "What is the worst haircut or outfit you have ever committed to?"
+    },
+    {
+      "id": "b1-018",
+      "tone": "light",
+      "text": "What is an opinion of yours that most people argue with?"
+    },
+    {
+      "id": "b1-019",
+      "tone": "light",
+      "text": "What is the best thing you have eaten in the last month?"
+    },
+    {
+      "id": "b1-020",
+      "tone": "light",
+      "text": "If our relationship had a theme song, what would you pick and why?"
+    },
+    {
+      "id": "b1-021",
+      "tone": "light",
+      "text": "What is something you pretend to understand but genuinely do not?"
+    },
+    {
+      "id": "b1-022",
+      "tone": "light",
+      "text": "What would you want your last meal to be, if you had to decide today?"
+    },
+    {
+      "id": "b1-023",
+      "tone": "light",
+      "text": "What is a rule you follow that nobody asked you to follow?"
+    },
+    {
+      "id": "b1-024",
+      "tone": "light",
+      "text": "What is the most embarrassing thing in your search history this week?"
+    },
+    {
+      "id": "b1-025",
+      "tone": "light",
+      "text": "If you had to give up one sense to keep another sharper, how would you trade?"
+    },
+    {
+      "id": "b1-026",
+      "tone": "light",
+      "text": "What is something you own that you would be genuinely sad to lose?"
+    },
+    {
+      "id": "b1-027",
+      "tone": "light",
+      "text": "What is a habit of mine you find funny?"
+    },
+    {
+      "id": "b1-028",
+      "tone": "light",
+      "text": "What is the strangest dream you remember having?"
+    },
+    {
+      "id": "b1-029",
+      "tone": "light",
+      "text": "If you could send one message to yourself five years ago, what would it say?"
+    },
+    {
+      "id": "b1-030",
+      "tone": "light",
+      "text": "What is something you would do if you knew nobody would judge you for it?"
+    },
+    {
+      "id": "b1-031",
+      "tone": "light",
+      "text": "What is your comfort film, book or show, the one you return to?"
+    },
+    {
+      "id": "b1-032",
+      "tone": "light",
+      "text": "What is a small luxury you think is completely worth the money?"
+    },
+    {
+      "id": "b1-033",
+      "tone": "light",
+      "text": "What animal do you think you would be, and do not pick a flattering one."
+    },
+    {
+      "id": "b1-034",
+      "tone": "light",
+      "text": "What is the nicest thing a stranger has ever done for you?"
+    },
+    {
+      "id": "b1-035",
+      "tone": "light",
+      "text": "What is something you are looking forward to this week, however small?"
+    },
+    {
+      "id": "b1-036",
+      "tone": "light",
+      "text": "What is a word or phrase you use far too often?"
+    },
+    {
+      "id": "b1-037",
+      "tone": "memory",
+      "text": "What do you actually remember about the first time we spoke?"
+    },
+    {
+      "id": "b1-038",
+      "tone": "memory",
+      "text": "What did you think of me before you knew me properly?"
+    },
+    {
+      "id": "b1-039",
+      "tone": "memory",
+      "text": "What is a message from me you have gone back and read again?"
+    },
+    {
+      "id": "b1-040",
+      "tone": "memory",
+      "text": "When did you first realise this was going somewhere?"
+    },
+    {
+      "id": "b1-041",
+      "tone": "memory",
+      "text": "What is something I said early on that you have not forgotten?"
+    },
+    {
+      "id": "b1-042",
+      "tone": "memory",
+      "text": "What was happening in your life when we first started talking?"
+    },
+    {
+      "id": "b1-043",
+      "tone": "memory",
+      "text": "What is a conversation of ours you wish you could listen to again?"
+    },
+    {
+      "id": "b1-044",
+      "tone": "memory",
+      "text": "When did you last feel proud of me?"
+    },
+    {
+      "id": "b1-045",
+      "tone": "memory",
+      "text": "What is the first thing you noticed about how I talk?"
+    },
+    {
+      "id": "b1-046",
+      "tone": "memory",
+      "text": "What is a day with me that you would happily relive exactly as it was?"
+    },
+    {
+      "id": "b1-047",
+      "tone": "memory",
+      "text": "What did you assume about me that turned out to be completely wrong?"
+    },
+    {
+      "id": "b1-048",
+      "tone": "memory",
+      "text": "What is the funniest misunderstanding we have ever had?"
+    },
+    {
+      "id": "b1-049",
+      "tone": "memory",
+      "text": "When were you most nervous talking to me, and why?"
+    },
+    {
+      "id": "b1-050",
+      "tone": "memory",
+      "text": "What is something I did that mattered more than I probably realised?"
+    },
+    {
+      "id": "b1-051",
+      "tone": "memory",
+      "text": "What is a version of me you have seen that nobody else has?"
+    },
+    {
+      "id": "b1-052",
+      "tone": "memory",
+      "text": "What was the moment you stopped worrying about how you sounded around me?"
+    },
+    {
+      "id": "b1-053",
+      "tone": "memory",
+      "text": "What is a photo of us, or of me, that you keep coming back to?"
+    },
+    {
+      "id": "b1-054",
+      "tone": "memory",
+      "text": "What is the first thing you ever told someone else about me?"
+    },
+    {
+      "id": "b1-055",
+      "tone": "memory",
+      "text": "What did you hope for from this, back at the beginning?"
+    },
+    {
+      "id": "b1-056",
+      "tone": "memory",
+      "text": "What is something you were scared to tell me that turned out fine?"
+    },
+    {
+      "id": "b1-057",
+      "tone": "memory",
+      "text": "When did I last surprise you?"
+    },
+    {
+      "id": "b1-058",
+      "tone": "memory",
+      "text": "What is a small thing I have said that you now say too?"
+    },
+    {
+      "id": "b1-059",
+      "tone": "memory",
+      "text": "What is the longest we have gone without speaking, and how was that?"
+    },
+    {
+      "id": "b1-060",
+      "tone": "memory",
+      "text": "What is something about the way we started that you would not change?"
+    },
+    {
+      "id": "b1-061",
+      "tone": "memory",
+      "text": "What is a moment where you nearly said something and did not?"
+    },
+    {
+      "id": "b1-062",
+      "tone": "memory",
+      "text": "What has been the best day of this year for you so far?"
+    },
+    {
+      "id": "b1-063",
+      "tone": "memory",
+      "text": "What did you use to be embarrassed about that you are not any more?"
+    },
+    {
+      "id": "b1-064",
+      "tone": "memory",
+      "text": "What is a compliment I gave you that you did not believe at the time?"
+    },
+    {
+      "id": "b1-065",
+      "tone": "memory",
+      "text": "When did you first tell someone you were serious about me?"
+    },
+    {
+      "id": "b1-066",
+      "tone": "memory",
+      "text": "What is something we did early on that we should start doing again?"
+    },
+    {
+      "id": "b1-067",
+      "tone": "deep",
+      "text": "What is something you want me to understand about you but struggle to explain?"
+    },
+    {
+      "id": "b1-068",
+      "tone": "deep",
+      "text": "What do you think I underestimate about myself?"
+    },
+    {
+      "id": "b1-069",
+      "tone": "deep",
+      "text": "What is something you are afraid of that you have never said out loud?"
+    },
+    {
+      "id": "b1-070",
+      "tone": "deep",
+      "text": "When do you feel most like yourself?"
+    },
+    {
+      "id": "b1-071",
+      "tone": "deep",
+      "text": "What is a way you have changed in the last year that you are glad about?"
+    },
+    {
+      "id": "b1-072",
+      "tone": "deep",
+      "text": "What do you need from me that you have never actually asked for?"
+    },
+    {
+      "id": "b1-073",
+      "tone": "deep",
+      "text": "What is the hardest thing you have forgiven someone for?"
+    },
+    {
+      "id": "b1-074",
+      "tone": "deep",
+      "text": "What part of yourself are you still working on?"
+    },
+    {
+      "id": "b1-075",
+      "tone": "deep",
+      "text": "What does feeling safe with someone look like, concretely, for you?"
+    },
+    {
+      "id": "b1-076",
+      "tone": "deep",
+      "text": "What is something you believe now that you would have argued with at eighteen?"
+    },
+    {
+      "id": "b1-077",
+      "tone": "deep",
+      "text": "When was the last time you cried, and would you tell me about it?"
+    },
+    {
+      "id": "b1-078",
+      "tone": "deep",
+      "text": "What is a compliment you wish people gave you more often?"
+    },
+    {
+      "id": "b1-079",
+      "tone": "deep",
+      "text": "What do you do when you are struggling and do not want to say so?"
+    },
+    {
+      "id": "b1-080",
+      "tone": "deep",
+      "text": "What is something about your family that shaped you more than you would like?"
+    },
+    {
+      "id": "b1-081",
+      "tone": "deep",
+      "text": "What does love look like to you when nothing dramatic is happening?"
+    },
+    {
+      "id": "b1-082",
+      "tone": "deep",
+      "text": "What is a mistake you made that you are quietly grateful for?"
+    },
+    {
+      "id": "b1-083",
+      "tone": "deep",
+      "text": "What do you find hardest to believe when I say it about you?"
+    },
+    {
+      "id": "b1-084",
+      "tone": "deep",
+      "text": "What is something you are carrying right now that you have not put down?"
+    },
+    {
+      "id": "b1-085",
+      "tone": "deep",
+      "text": "When do you feel most distant from me, even when nothing is wrong?"
+    },
+    {
+      "id": "b1-086",
+      "tone": "deep",
+      "text": "What is a boundary you wish you were better at holding?"
+    },
+    {
+      "id": "b1-087",
+      "tone": "deep",
+      "text": "What would you want said about you by the people who know you best?"
+    },
+    {
+      "id": "b1-088",
+      "tone": "deep",
+      "text": "What is something you have never been able to be honest about with anyone?"
+    },
+    {
+      "id": "b1-089",
+      "tone": "deep",
+      "text": "What is the kindest thing you have done that nobody knows about?"
+    },
+    {
+      "id": "b1-090",
+      "tone": "deep",
+      "text": "What makes you feel genuinely chosen?"
+    },
+    {
+      "id": "b1-091",
+      "tone": "deep",
+      "text": "What is a fear you have about us, even a small one?"
+    },
+    {
+      "id": "b1-092",
+      "tone": "deep",
+      "text": "What do you think you are like to love?"
+    },
+    {
+      "id": "b1-093",
+      "tone": "deep",
+      "text": "When did you last feel lonely, and what would have helped?"
+    },
+    {
+      "id": "b1-094",
+      "tone": "deep",
+      "text": "What is something you have outgrown but still catch yourself doing?"
+    },
+    {
+      "id": "b1-095",
+      "tone": "deep",
+      "text": "What do you want to be true about you in ten years that is not yet?"
+    },
+    {
+      "id": "b1-096",
+      "tone": "deep",
+      "text": "What is the difference between how you seem and how you actually are?"
+    },
+    {
+      "id": "b1-097",
+      "tone": "deep",
+      "text": "What is something you would want me to do if you went quiet for a while?"
+    },
+    {
+      "id": "b1-098",
+      "tone": "deep",
+      "text": "What has been the loneliest period of your life, and what got you through?"
+    },
+    {
+      "id": "b1-099",
+      "tone": "deep",
+      "text": "What do you think is the most misunderstood thing about you?"
+    },
+    {
+      "id": "b1-100",
+      "tone": "deep",
+      "text": "What is something I do that makes you feel looked after?"
+    },
+    {
+      "id": "b1-101",
+      "tone": "deep",
+      "text": "What would you like to be braver about?"
+    },
+    {
+      "id": "b1-102",
+      "tone": "deep",
+      "text": "What is something you have never asked me but have wondered about?"
+    },
+    {
+      "id": "b1-103",
+      "tone": "future",
+      "text": "What is the first thing you want to do when we are finally in the same place?"
+    },
+    {
+      "id": "b1-104",
+      "tone": "future",
+      "text": "What does an ordinary Tuesday with me look like, in your head?"
+    },
+    {
+      "id": "b1-105",
+      "tone": "future",
+      "text": "What is something you want us to be better at?"
+    },
+    {
+      "id": "b1-106",
+      "tone": "future",
+      "text": "Where do you want to wake up on your fortieth birthday?"
+    },
+    {
+      "id": "b1-107",
+      "tone": "future",
+      "text": "What is a tradition you want us to have that we do not have yet?"
+    },
+    {
+      "id": "b1-108",
+      "tone": "future",
+      "text": "What kind of home do you want, not the house, the feeling of it?"
+    },
+    {
+      "id": "b1-109",
+      "tone": "future",
+      "text": "What is something you want to learn, and would you want me learning it too?"
+    },
+    {
+      "id": "b1-110",
+      "tone": "future",
+      "text": "What do you want more of in your life in six months?"
+    },
+    {
+      "id": "b1-111",
+      "tone": "future",
+      "text": "What is a trip you want to take that has nothing to do with the destination?"
+    },
+    {
+      "id": "b1-112",
+      "tone": "future",
+      "text": "What do you hope has not changed about us in ten years?"
+    },
+    {
+      "id": "b1-113",
+      "tone": "future",
+      "text": "What is a goal of yours I could actually help with?"
+    },
+    {
+      "id": "b1-114",
+      "tone": "future",
+      "text": "What does a good argument between us look like?"
+    },
+    {
+      "id": "b1-115",
+      "tone": "future",
+      "text": "What is something you want to stop putting off?"
+    },
+    {
+      "id": "b1-116",
+      "tone": "future",
+      "text": "How do you want to be looked after when you are ill or exhausted?"
+    },
+    {
+      "id": "b1-117",
+      "tone": "future",
+      "text": "What is a version of your life you have quietly given up on, and should you have?"
+    },
+    {
+      "id": "b1-118",
+      "tone": "future",
+      "text": "What would you want our first shared space to have in it?"
+    },
+    {
+      "id": "b1-119",
+      "tone": "future",
+      "text": "What is something you want to do together that most couples would find boring?"
+    },
+    {
+      "id": "b1-120",
+      "tone": "future",
+      "text": "What do you want to be known for?"
+    },
+    {
+      "id": "b1-121",
+      "tone": "future",
+      "text": "What is a promise you would like us to make and actually keep?"
+    },
+    {
+      "id": "b1-122",
+      "tone": "future",
+      "text": "What is something you want me to remind you of when you forget it?"
+    },
+    {
+      "id": "b1-123",
+      "tone": "future",
+      "text": "What does supporting each other look like when one of us is failing at something?"
+    },
+    {
+      "id": "b1-124",
+      "tone": "future",
+      "text": "What is a small thing you want to start doing every day?"
+    },
+    {
+      "id": "b1-125",
+      "tone": "future",
+      "text": "What would you want a normal weekend with me to be like?"
+    },
+    {
+      "id": "b1-126",
+      "tone": "future",
+      "text": "What do you want to have said yes to by this time next year?"
+    },
+    {
+      "id": "b1-127",
+      "tone": "future",
+      "text": "What is something about the future that genuinely excites you?"
+    },
+    {
+      "id": "b1-128",
+      "tone": "future",
+      "text": "What would make you feel most secure about where this is going?"
+    },
+    {
+      "id": "b1-129",
+      "tone": "future",
+      "text": "What is a hard conversation we will need to have eventually?"
+    },
+    {
+      "id": "b1-130",
+      "tone": "future",
+      "text": "What do you want your relationship with your work to look like?"
+    },
+    {
+      "id": "b1-131",
+      "tone": "future",
+      "text": "What is something you would want us to do on a really bad day?"
+    },
+    {
+      "id": "b1-132",
+      "tone": "future",
+      "text": "What would you want me to have learned about you a year from now?"
+    },
+    {
+      "id": "b1-133",
+      "tone": "future",
+      "text": "What is a place you want to show me, and what will you show me first?"
+    },
+    {
+      "id": "b1-134",
+      "tone": "future",
+      "text": "What kind of old person do you want to be?"
+    },
+    {
+      "id": "b1-135",
+      "tone": "apart",
+      "text": "What is the hardest part of the day when we are apart?"
+    },
+    {
+      "id": "b1-136",
+      "tone": "apart",
+      "text": "What do you miss that is not the obvious thing?"
+    },
+    {
+      "id": "b1-137",
+      "tone": "apart",
+      "text": "What is something you wanted to show me today but could not?"
+    },
+    {
+      "id": "b1-138",
+      "tone": "apart",
+      "text": "What does a good day apart look like, honestly?"
+    },
+    {
+      "id": "b1-139",
+      "tone": "apart",
+      "text": "What do you do when you miss me and cannot say so right then?"
+    },
+    {
+      "id": "b1-140",
+      "tone": "apart",
+      "text": "What is something about distance that has been unexpectedly good for us?"
+    },
+    {
+      "id": "b1-141",
+      "tone": "apart",
+      "text": "When during the day do you think about me without meaning to?"
+    },
+    {
+      "id": "b1-142",
+      "tone": "apart",
+      "text": "What would you want me to send you on a bad day, with no explanation?"
+    },
+    {
+      "id": "b1-143",
+      "tone": "apart",
+      "text": "What is a small thing I could do from here that would actually help?"
+    },
+    {
+      "id": "b1-144",
+      "tone": "apart",
+      "text": "What do you wish I could see about your day-to-day life?"
+    },
+    {
+      "id": "b1-145",
+      "tone": "apart",
+      "text": "What is the worst thing about explaining us to other people?"
+    },
+    {
+      "id": "b1-146",
+      "tone": "apart",
+      "text": "What do you find yourself saving up to tell me?"
+    },
+    {
+      "id": "b1-147",
+      "tone": "apart",
+      "text": "What is something you have learned about yourself from being apart?"
+    },
+    {
+      "id": "b1-148",
+      "tone": "apart",
+      "text": "What does your room look like right now, honestly, no tidying first?"
+    },
+    {
+      "id": "b1-149",
+      "tone": "apart",
+      "text": "What is something ordinary about your day you have never described to me?"
+    },
+    {
+      "id": "b1-150",
+      "tone": "apart",
+      "text": "When do you feel closest to me, despite everything?"
+    },
+    {
+      "id": "b1-151",
+      "tone": "apart",
+      "text": "What do you worry I do not know about your life here?"
+    },
+    {
+      "id": "b1-152",
+      "tone": "apart",
+      "text": "What is a sound or smell where you are that I would not recognise?"
+    },
+    {
+      "id": "b1-153",
+      "tone": "apart",
+      "text": "What is the last thing you thought about before sleeping last night?"
+    },
+    {
+      "id": "b1-154",
+      "tone": "apart",
+      "text": "What would you want to do together if we had exactly one hour, right now?"
+    },
+    {
+      "id": "b1-155",
+      "tone": "apart",
+      "text": "What is something you have stopped telling me because it felt too small?"
+    },
+    {
+      "id": "b1-156",
+      "tone": "apart",
+      "text": "Who in your life knows the most about me, and what have you told them?"
+    },
+    {
+      "id": "b1-157",
+      "tone": "apart",
+      "text": "What is the thing you most want me to be there for?"
+    },
+    {
+      "id": "b1-158",
+      "tone": "apart",
+      "text": "What do you do differently when you know we are about to talk?"
+    },
+    {
+      "id": "b1-159",
+      "tone": "apart",
+      "text": "What is something you have wanted to ask me but keep not asking?"
+    },
+    {
+      "id": "b1-160",
+      "tone": "apart",
+      "text": "What is a part of your day I would find boring but you would want me there for?"
+    },
+    {
+      "id": "b1-161",
+      "tone": "apart",
+      "text": "What does missing someone feel like, physically, for you?"
+    },
+    {
+      "id": "b1-162",
+      "tone": "apart",
+      "text": "What is something you are protecting me from knowing?"
+    },
+    {
+      "id": "b1-163",
+      "tone": "apart",
+      "text": "What would you want me to notice about you that a screen does not show?"
+    },
+    {
+      "id": "b1-164",
+      "tone": "apart",
+      "text": "What has this distance taught you that you would not have learned otherwise?"
+    },
+    {
+      "id": "b1-165",
+      "tone": "apart",
+      "text": "What is the first thing you check when you wake up, and be honest."
+    },
+    {
+      "id": "b1-166",
+      "tone": "apart",
+      "text": "What is something you do that you would be embarrassed for me to walk in on?"
+    },
+    {
+      "id": "b1-167",
+      "tone": "apart",
+      "text": "What do you wish we could do at the same time, from where we each are?"
+    },
+    {
+      "id": "b1-168",
+      "tone": "apart",
+      "text": "What is a moment today you would have wanted me to see?"
+    },
+    {
+      "id": "b1-169",
+      "tone": "apart",
+      "text": "What is the hardest thing about not being able to just show up?"
+    },
+    {
+      "id": "b1-170",
+      "tone": "apart",
+      "text": "What would you want said to you tonight, in someone else’s words or mine?"
+    },
+    {
+      "id": "b1-171",
+      "tone": "apart",
+      "text": "What is something you have been putting off telling me?"
+    },
+    {
+      "id": "b1-172",
+      "tone": "apart",
+      "text": "What does home mean to you right now?"
+    },
+    {
+      "id": "b1-173",
+      "tone": "apart",
+      "text": "What is a way I could make an ordinary Wednesday feel like something?"
+    },
+    {
+      "id": "b1-174",
+      "tone": "apart",
+      "text": "What is the best thing anyone said to you this week?"
+    },
+    {
+      "id": "b1-175",
+      "tone": "apart",
+      "text": "What do you need more of from me lately?"
+    },
+    {
+      "id": "b1-176",
+      "tone": "apart",
+      "text": "What is something you would rather I asked you directly?"
+    },
+    {
+      "id": "b1-177",
+      "tone": "apart",
+      "text": "What is a small ritual of ours that you would miss if it stopped?"
+    },
+    {
+      "id": "b1-178",
+      "tone": "apart",
+      "text": "What is the kindest thing I have done from this far away?"
+    },
+    {
+      "id": "b1-179",
+      "tone": "apart",
+      "text": "What do you want me to know before you go to sleep tonight?"
+    },
+    {
+      "id": "b1-180",
+      "tone": "apart",
+      "text": "What has today actually been like, past the version you would normally give?"
+    }
+  ],
+  "rows": {
+    "memories": [
+      {
+        "row": {
+          "id": "mem-interop-1",
+          "updatedAt": 1760000001000,
+          "deleted": false,
+          "v": 2,
+          "ciphertext": "qd5ekKmsoONaO8ESstnH/56SRnXDlGIBdBl+ueXbJxZvk5k5j8eD4TzcnyLSiLQhhME3bJ6CLJsbbpC22QmIjc6Jz0kAMZNQp873M/kObPIv5DkRzUBgFQm6GGvb6hkz7f8GxxHfl9OomZz/0aCl7qsWq3jKMIOsh0wXs4KPKPObk3TqX8dVBd6nNNdcYvLS3FmAAZc+12G3ZtJqkjpTQfSuZwaH3VdS4sfmXg7/tQUbIMbdFGbZsyG8/UHo2pGoFn97PlXxtQ2O9ThrRfY0/wm+kw3zmOhpB3T5jj1tNO9jMg7RpfZ+Lyu2eZ6b",
+          "iv": "rrbhStyZp5auJRgM",
+          "imageBlobBase64": "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",
+          "_del": 0
+        },
+        "expected": {
+          "id": "mem-interop-1",
+          "date": "2026-02-14",
+          "caption": "Our first trip ✨",
+          "mime": "image/webp",
+          "updatedAt": 1760000001000,
+          "deleted": false,
+          "imageBlob": {
+            "$bytes": "POQriEafbkguvT0IPZSlNFVPDD0aVBwlGNgTGKWo1MfEXlhB8l+54w+Ln/crBQVSPzLkQCTKQgz3fUyqU01vOUr5qeLjQXGDSaw7FJIfPIDxtDPLSqhBUeI3ZwRm/6B4mI+Pcb8/eRv23CuCYNyQXy3hQ7NFyRLR598uKLGgJF3TN8p18Va4flYy1VLiRzdzufSH6wKYWunqlhZU5lvPieVw8ftMuhqkVkd3CUT3fI/ZdUDewKf4F8ih/RK43Hun1g9IDKDiUJb14PjyMAW9/r3OXcjRpDdoFIJaTgln9E8FMvMgo9vVQ/EXJdhX//aNKHeeNQo2N+MeyWLKReM9gys/p2+wAO7+26FcRAaxXttc2oEyeks5UmtfO9uwDo8VIS9zpzQt90JquR+0D9TaMOqwaFoYjFTdIpk17+sMaPeesqzGtQ8ex4RGaeBGMyoKHVL3U2EWCvp1CnBvZs8a18xLjDQBKcMj9jMqNRe2gHvmmMU2rQj42SHZLXfQD92BcskhAtShstwHyjeKzyDlh1ItywLR5+tZrdBfnFjDAHP346fekpj+cw35d7KioP94iOpSSKT22pu5vZZUvoiqw0irkAaUix2SpyIpEXuvYJ048+LdUeEs2DqwQbGUEazU01VwsyRynVlznRlu/gv9hrEBJDm+vpQ1SR69LUK4lU1mIyrkuDiumgeT3ZLDa0naAgujJiVn47Y938rtvZeuW9iMiaIJrZhri0snon5lzmhdVV5IsuyeNLPUc3EKR9RL+lCBZZ6DO0/42E2AwzKKu0xMj0HBYuHR5VL3bD4Yb7m4n2PDbr9aEyc+CDzKhfA7Sld6GOhZZ12TFIje83S170oxqUkP1lAWINoJK6TDc16lO7oX6XWiwmwOlZvSfKUZvlEa0QRdwP/zcY9kP4pP+b98xfMVIcdnDnU3rWiCMGlkXSw6gbRhpcOugoZw2Qf8uzibc7FEM3+ci/dZUt7B3b7ZQafVMvORMbOhOgikxbqeE1K0APtY5UPWpITV5XrZ3PF152U5Za6RcJzAfLIR65DaCnH/9HwcI3cKC1s1U9WzETaLsbZ2uxezAnfBDx6BLC4Pkj3TeYnNb6Jrqb8JvXsRhfustjB/flIKb7YsNMuWa46stNxlTepjFU5sYTOWeZo/up1fr5xaehMO/pTe7g4nI0ljF1BVDQVI06Zl+dv3oO73hcY9bG+baMIspkUYOrFRPQdPkX/UsCNmNNWuN6ZGFuTpf67xa5QfdARSEb9iIQQ1YVFBperBCieRvPRqvfToTeVTr5ouHywJ5p+5ww/kUoF830VaaxZv/G+u9/xLxlXRLWyzLq/caFREsHmIIlofYljvcsUPsNTqZUyT0vE5rlSg4OOh4IzUYsKDcPklUNo31R/Dqc5ZL6i90jxmisVl3YqNy2fGRC1k/mCO0XGWHMzPy7lbpM6Efvgzp3NmV8hkFdKFjgN7W+3h2qjamvb4odlx+Y5iLb8FUolyyCwtzlCjRXEzXQFaQLLbvxoIk6WqC9P4O8TMaCqa/d+66wVVhewjVohVS1ZbTbM9q8bQUFJDKdEnMO5ornFsbLl/3szmpFsGOeZMsFXR2B7TDfIO6+T8hro4ccbHRmx6sQFs7UjKKjE+ialqGfBMfdHp8aqi55MrrifQaAkl+P2FGCwqTppykRnQHy3LwjRF8CB2YWi8e27aUMa+Qemy9ornaiSFkB/xijQqx4Su/p3P7j9zJcSnRmtPmp4Qn3Q4Frw7MZL+gUz3bJlQZxYZHxq8yGRqWpUJfAFQWNptCxhoVdGBHh00IgfEZnt/nhx3bc/dqziddGO+0P2iAVPNr49NDfA9cLyhct3nj2pCPqyb+2JyBQIs0CGq0RSFTn+PUQG12uE8u+SI7AjmHbc36k5RQs1JfsMAjzOB1wASx6TyBOiYP4TKgmsCnxuqx8Rmqo5SNvqLDEkxa4Wxq4+ygDUQSKoTOCffxsoAIEaHo+UJa5Ukbw5TmGknuHLr2vk3lwn0Q7Quez2ISrBfZSCyd7KKmk8u/tSJehZajwvw1TRhqTw32hTnm06VVHYF+bi0wISoVC7Ff2J2ScOK6/e4gE9TQXRu6qZn1Qk2vKzVOhFNq8xJXy1aPLDZi2a462/ro+9SW+k14JNMl+3uk+lnAKHh44pm7DFyXHle6G4Zen6oOPZk/Jwl+WWygz9c/0CLRcRncH/sNBwJlcpchMxbnhuj3TW4iyHviS/yn1L6NxVuNbieFHXOqc9qCmfuNKuF5O57+HdVTmtoR5U66J4F5fE7WtZJYhHb3yGBXHsWyCi0+qERJadi495Gw5Ycfs0SjZ1Dagq/QcyWRybTslTxf3rW8Aqoj0t0IgCqRW8RmvLmBg+i7dyYvotMdLCGUmZgAuklehSd+vFPVkOafQlSSStlyy0o+4m8qE/gGXB3YXoLwvjjmJgA4S6JV7V1AuN5eZOZCWpxaeWfPNz/ziZzNZJxbC/iegHEKdGPXEuOa+y4CArvwmSlJhV/dxBl3m8LfwW3vV7Ehwk7ymc4+Nb9PejLhtr6Lwk2mXwc9pNmEZfSOmrvqWDATZeJMf8j0n7j6impauZ9CSflt+lVqNQeZjrL96iMUgrySoR2+5sqOgSM7G5oIzV3go0tBOObG05GVxWqWlleRBE8iPHELMJLcPngwBctsBPaTuDXR1PA2dYtOhEHcb18U1cdRWh0MJ6k7Mg5kUjVJEM30JryxAfWRzEHj45d10Hpca1BAM4PVFcGt9zxucDZItWeb46eKKEAR7xZnoPSAoVO08ajNiHReL09+FUbVe1wlzYkfMArEE8p4c5XR9ZsfeheEfNtCDSMjXdA5ozedw9QdnF2sv6AJxHFIwg3g4Dydj92nMRuXOoIzCp4OM0MOcaPBUA6Kuh6VJvD2DzJ0mvmDlz/1qxHRjuqUVFp6Eu5sI18JxKzVn4QiniEVGnO/huPOe/3w6lXLaWURgx4suB97+4IBI83kcg00tC6sIsm+fjrcL3fMKL2/TgIk9qeDOAEcPw0+yofUGW/Ug3Q/A7vVf8CDgnreV35+bFhTYnYm3MqLCb9iRmwvUk4FMGKcklkudBDhIICZ2lIYYEHq++l0lEqiwkCoFXs6k8aupB8Y2ookdcGjR6xpBb2dTuaOO3Q56D6xNCN7Rg3vmy2BRGBrwt+aIoHainUJq1q1c1YBKQ/PrHW/7AOku8aWYxVJvHXsa+GuHWbliqfqLI5hZlI+UQXUo+0ms1isMWViQZTqa9QBOVYP9iAA6WO/vDeXSwGX3Z42yB0BcgbxZpASuxrSYyhB9B/QYgRbbtvSNunDA9VlBMltoRj/mpYVv08feYZy6GP1XceSBZf08Ya+FCc6C2a9MA0/FFmPOd9mBKlE51aclVeb8UwqPa6lVMbXfAfIg0LaNWpIsZJozOmCymGxXbFId+3n73dJx29AlSwPevR/RvgJkujWyXOUl/cXC0o7ImdS0qExcHH04+KWwAUKBCV4+HrRszPtzcYdhScgf2Hc20t1grUEm2qqv84/ShFTQrrjNq4D/w7SKs3dtTNybTfXETfk16SSfCdPbY8Axwz2ub5rVhcde7SUbPC8X5ZlHPz9jLEqvMOAg0x4lQWeD96fgaPDYfG/3jGSeiHf43MSgjuRusK0ZcHftwbiyecbR7ay/gQVToo2FJjAy3uRXIp0pcj3MogF1vWbJGNv2oqBYfloJssgGTLC/PM6ckgF13coBuGFviB2DEx/sWwmYgpURbP+toLq/YZb6zwhMgwOTkv8PJcbuNcE9ok0OjOAIQpt20Hk/gxqOScXbxZhEHJMLu2fulSU3qu7Hvl5uOznMbr2jKFNUVi449rZDa7lvOAICfu1E3QP7bITRzTINEFypZhKrHeqbQ3mc0+7blW4xZZZBOoXxtL+8ZDSbOCy3cYwISv4EXCd0LE9MgdMLPdZEd7RJRWo3k+gZ9zmIC7nRcid9NqTwQQ4AEQoxgd9ak8sSb1rfxMgxs2fl6UNCysuheAtHj+DuAcRp/w7JKJvopNCXoCK9fm5g=="
+          },
+          "_schemaVersion": 2,
+          "_binaryTampered": false,
+          "_binaryUnverified": false,
+          "_tableUnverified": false,
+          "_tableTampered": false,
+          "_headerTampered": false
+        }
+      },
+      {
+        "row": {
+          "id": "mem-interop-2",
+          "updatedAt": 1760000002000,
+          "deleted": false,
+          "v": 2,
+          "ciphertext": "vL037X+ID3js3GfmeWE9/VHwVLFPDrDfQ63GzFDRy4h2CO0xeInK2oxR7tUNv1Jwn1kDo1lo15rYzvo7e0rnlmI7cTV51RFQTCYUHwVCBduAdbJs1ak17dNs2IrBxiQZfy1M68+AM9VAdCuJIsk5pqbnbiBL1Y/+3VaE3QPETjsRdy95J4HK+AHxSkPUn89se2TU4+IBfzOyVI0laGaJxb96C9QtwIhMR8+io/qV1jN77NrKIAv1mjrYXYWOxMLiuDOLxwD6ZrbZbB0BqzNVakSO5mo6AsdDUQhJBBQGR+NUeGzlpbEQbfeCazk7llU=",
+          "iv": "l/LsG7bs+jQxNCvV",
+          "imageBlobBase64": "6yMT/w6WoZfRyfGW/iHGKw81srBInTtKySijMZnpF3u7DWcr7dUbVxg4Z6JTuUjogYhOg7TCRCpf/PfR+AKraQ6bNNG53snq0XSRTiDD8TYKP5FdYqmSBQmJhyaYfYxjS0kj1osinYJTFsxnKQFqD3HDEuUtiYYsQRiEZk3Hfkk=",
+          "_del": 0
+        },
+        "expected": {
+          "id": "mem-interop-2",
+          "date": "2025-12-24",
+          "caption": "Precious moment 💕",
+          "mime": "image/jpeg",
+          "updatedAt": 1760000002000,
+          "deleted": false,
+          "imageBlob": {
+            "$bytes": "6yMT/w6WoZfRyfGW/iHGKw81srBInTtKySijMZnpF3u7DWcr7dUbVxg4Z6JTuUjogYhOg7TCRCpf/PfR+AKraQ6bNNG53snq0XSRTiDD8TYKP5FdYqmSBQmJhyaYfYxjS0kj1osinYJTFsxnKQFqD3HDEuUtiYYsQRiEZk3Hfkk="
+          },
+          "_schemaVersion": 2,
+          "_binaryTampered": false,
+          "_binaryUnverified": false,
+          "_tableUnverified": false,
+          "_tableTampered": false,
+          "_headerTampered": false
+        }
+      }
+    ],
+    "milestones": [
+      {
+        "row": {
+          "id": "ms-interop-1",
+          "updatedAt": 1760000003000,
+          "deleted": false,
+          "v": 2,
+          "ciphertext": "leyfezgUeueb/fRFDGIL+fBJ6rOUbM0hVNHzQfCOPOOJuD3qKBFqaNkynI6Zijry+VMys4paULG/DkSZ8ycZ+K1hokLLy56TRiAVF6Mlz1jUdaBF4wDZbDjWgKdG5ZAIiXmj8jKiZWRHB1WBf3oaO0Zdsd8a4Pjhe4tOcNzcHJeUtvTEa0WC0doRdJjhGyxnGomH2eZ5",
+          "iv": "5YbjSg633KkqRnr3",
+          "_del": 0
+        },
+        "expected": {
+          "id": "ms-interop-1",
+          "title": "First date",
+          "date": "2021-06-14",
+          "updatedAt": 1760000003000,
+          "deleted": false,
+          "_schemaVersion": 2,
+          "_binaryTampered": false,
+          "_binaryUnverified": false,
+          "_tableUnverified": false,
+          "_tableTampered": false,
+          "_headerTampered": false
+        }
+      },
+      {
+        "row": {
+          "id": "ms-interop-gone",
+          "updatedAt": 1791544899566,
+          "deleted": true,
+          "v": 2,
+          "ciphertext": "nm3lCkCW+tgiux7efkSiRdRPLALwLbytXiQBymmNKEN/d+7PfpB82Ktu4WeB1YjXa8sGlC5xN4Uf1tozZ6GMKoNuMvTw54n+thyXND9QedjBWgTQll20eK2JAaZ39AmQhDmxOggSSqsCvnnbh/vr",
+          "iv": "EDnada7Of+V4DjSV",
+          "_del": 1
+        },
+        "expected": {
+          "id": "ms-interop-gone",
+          "updatedAt": 1791544899566,
+          "deleted": true,
+          "_schemaVersion": 2,
+          "_binaryTampered": false,
+          "_binaryUnverified": false,
+          "_tableUnverified": false,
+          "_tableTampered": false,
+          "_headerTampered": false
+        }
+      }
+    ],
+    "dateIdeas": [
+      {
+        "row": {
+          "id": "roulette-current",
+          "updatedAt": 1760000005000,
+          "deleted": false,
+          "v": 2,
+          "ciphertext": "S36vY7NSz4GL1vF1QJtPtfbSniaf+nZe7GFyDYgcyyyjhglEKFhutRSqi4x1TU3pKA6ZK3GxK73n+w2vAfi+ehUuqZ81CqjbH1mU16N/6n8IAgWODrF62wK8K6Hn0shWK1/b1OgZ9ppckfxOt4ppaEn0ZgPVnVZln+xYVZckXtM03/OU1/o172uVvacHNu3xpylnoMhnP76BhMzjDa/qKg==",
+          "iv": "Yee0ZGCZRLXzOR/g",
+          "_del": 0
+        },
+        "expected": {
+          "id": "roulette-current",
+          "ideaId": "d3",
+          "category": "food",
+          "revealed": true,
+          "updatedAt": 1760000005000,
+          "deleted": false,
+          "_schemaVersion": 2,
+          "_binaryTampered": false,
+          "_binaryUnverified": false,
+          "_tableUnverified": false,
+          "_tableTampered": false,
+          "_headerTampered": false
+        }
+      }
+    ],
+    "letters": [
+      {
+        "row": {
+          "id": "let-interop-open",
+          "updatedAt": 1760000006000,
+          "deleted": false,
+          "v": 2,
+          "ciphertext": "AjprAEX5z4XcMR0YseKd8VwHTfLRVkE4IYsEacxQ10zRRKnAefyg2Dpbo9CFycA3lBW2aII0cw7rDBAJjuiY7J+hq6YFd43GVWZ0Av1wdXqXH8Wkb6VKJ02l9tRpoO/1hB0klw6lou8ECOygTdccnp70kF76ajQ1yffD7Fa/0B/Vs9TkhiNQUUr22SYxi+6ZxhO/G7sSi9ICNtamf9pIfk3EjujpwgW0VtFFNUrfHbvPz3re9DG2ddF+5ZldzaMOJWc0HMBbN84ZMtexsxJdCsDoKfoT9C/Nfl3l7uYJ9R9VwliNjfu2ARzjYu3WHhHgn/NqGmGoo2GbTrrhcA==",
+          "iv": "CkNS2piL1MkrCv5G",
+          "_del": 0
+        },
+        "expected": {
+          "id": "let-interop-open",
+          "title": "Read me now",
+          "unlockDate": null,
+          "isOpened": false,
+          "createdAt": 1759999999900,
+          "updatedAt": 1760000006000,
+          "deleted": false,
+          "content": "I miss you every single day.\nSee you soon 💌",
+          "_schemaVersion": 2,
+          "_binaryTampered": false,
+          "_binaryUnverified": false,
+          "_tableUnverified": false,
+          "_tableTampered": false,
+          "_headerTampered": false
+        }
+      },
+      {
+        "row": {
+          "id": "let-interop-past",
+          "updatedAt": 1760000007000,
+          "deleted": false,
+          "v": 2,
+          "ciphertext": "vRVtaoHFQ69Lka0epmT55l4XwweJ0yxYIZ7k8KngnjLoAq4YkV+CAO4ug/BMjj1WhhGEKMo3PAZiSbB3g7PqYNhBXw4E/gWV03ffz3mo7NhBGDVM+7J6CVN43FEz2B5rt1RU2LM1WcuXAF3ieSEShurqt9wutWg8K/mUd8UNug88T8/TZqHYypc1AHJFvWe8o8z2pbGvzUyEj66PW5WKiRZaIgrOpsr3T3ox6/YNKN/vPVvlMhxFRcnK/E02fNPoPwpqgNfzGlTzzr+rOrtV8pa7+CBscStDrLBkW2amFsHZr4HB8V6gUuxrIG6wn87N7mpR+H3XlkeT/x8WZCzQvOKfEIXx46m1EmRZ3Mua6ogDCf7uXMybdXCijFhswmI6QsG8gzm6THFdy8E4r+ASbphutdgiN1aeEgaT3h6hBSBy+Ku0j/VZzhSn1g+bAlJ1/ZJTQARvoOO/zmEaSKF+NJ/jLsmIaCVTCLoaqgu6uytNgKqduwS4hmZtgbxXlc0FS/v2w9TxqBWftMTJZosi6Tqw9ErzhQ6LHSua1Jpa/fowevDzNHmcpW0oAteiXFK7zvNbmiCqKQ8REGeF12XDe0R1CW9V7riVvs12Xq8ELpGc32HXO2IQTSpKKzZk133y9tBUgzgHNjADTtiz+H7NwaMHQ9kDYvV9bxKE99ribzW4odoP32n05OPJKffIpkiMjC+zASehjvwzMIjFvkaXibWt5kxfxClu7MrqrKGS6UPGQEK75xT/tUbkrRQeITc=",
+          "iv": "FGDcWeOthKu5Ac7h",
+          "_del": 0
+        },
+        "expected": {
+          "id": "let-interop-past",
+          "title": "A letter from last year",
+          "unlockDate": "2020-01-01",
+          "isOpened": true,
+          "openedAt": 1759999999950,
+          "createdAt": 1759999999800,
+          "updatedAt": 1760000007000,
+          "deleted": false,
+          "sealedContent": {
+            "lockVersion": 1,
+            "unlockDate": "2020-01-01",
+            "lockSalt": "0rWRZ+EcXKvDZzPikkhqBA==",
+            "lockIv": "o9tY11c0Qehnkzev",
+            "wrapIv": "tisGpYvyvhcbNDgl",
+            "wrappedKey": "PLz39KqijXqJ0lywk844yGAf9sZSStjjhiISbpVOsncTZx+Gh81/A0Q1fvLr1Mkt",
+            "ciphertext": "Ol8nS3fxvStRj2sGYuBXygC9CkcYSe86ci3PHCFt9jJ3wEv3Sxo5Qokm0dPATHM=",
+            "iv": "PGCD/o03aoFhByEy"
+          },
+          "_schemaVersion": 2,
+          "_binaryTampered": false,
+          "_binaryUnverified": false,
+          "_tableUnverified": false,
+          "_tableTampered": false,
+          "_headerTampered": false
+        }
+      },
+      {
+        "row": {
+          "id": "let-interop-future",
+          "updatedAt": 1760000008000,
+          "deleted": false,
+          "v": 2,
+          "ciphertext": "uH/ecEo0AUCmp5C/UwAtGkSxweh50sMxJSJl2t5004wvCrIWJ7GYfjgWf+JwRvazhkfx89RaGzDl+7knzQAOhq8fEfCPBknOzxT1krq1n1/+O7MkTQtkAtwp/U8P67tn4aVnOP4V2lBbakCZdE+PT2cBY2FLlaBmJzaJTh8nBedh5FE1fuirNOQn1cNc9YJE0wj+oW/q487KRdMI/FBc8/22aBEAYIT3GQey3toeFlSmyEQuac+2Qc0fsBZQU5kkjcm/8YwToBoWIN3x4WGIenJdOqA3AqRp2N6CNtZN3O5KlvsDcJhwvaFlxrBerMSO2NNuZyInkMbmixYysw+tFV6uaHgsvAm9Q03Q9T5pjdH2gfzxyzJth7B4fndHMbxs8ko/IW5vbqfpHhTisVm/SsTtXLQiaG1yDBxCQHWPbUa4RZzzqWfVCDK4pBOzGvAkB9duCjPiZWQHPDvHtSN7LxwLLbcal3345e7khB64GwOH1Lo1e2fuZZFMXvwM8iy9XtnjEsRcZsjW8XTYbdLR+AJhEpmV0cqXP8gqzr4tIPVA64c7OBrQr6ySrNvv/yVUuuxvcKEGqk4jA86O12qypyZ4M6k6ncjoof7sXKxBP5hx3TZbxpWrpOJBNtZMqZldZiVMZ0q0mju5McVNDniNfH4TOlxYcLK/o+Ul8sanOJ2mpxxd27aoXJzbeg3f5jzcuQ2g6X8=",
+          "iv": "D3+yMng444dIjujV",
+          "_del": 0
+        },
+        "expected": {
+          "id": "let-interop-future",
+          "title": "Open on our anniversary",
+          "unlockDate": "2099-12-31",
+          "isOpened": false,
+          "createdAt": 1759999999700,
+          "updatedAt": 1760000008000,
+          "deleted": false,
+          "sealedContent": {
+            "lockVersion": 1,
+            "unlockDate": "2099-12-31",
+            "lockSalt": "Wroiz9LK4qbEq9XCUCvlZw==",
+            "lockIv": "QqllKgsJTjxU2GIz",
+            "wrapIv": "8TUM4pDW7yPKWY8C",
+            "wrappedKey": "JRssj8YQngwHvpEhzFo0b921IogGOiiyp8MrBvVUesLePNZGYgTsNpVV3zOCQGle",
+            "ciphertext": "Hf5/69mivgb+SPC8EJjKdQz0/5PC6DsfA0VJM53pQSf9",
+            "iv": "nNtBj15i757AlwH2"
+          },
+          "_schemaVersion": 2,
+          "_binaryTampered": false,
+          "_binaryUnverified": false,
+          "_tableUnverified": false,
+          "_tableTampered": false,
+          "_headerTampered": false
+        }
+      }
+    ],
+    "bucketList": [
+      {
+        "row": {
+          "id": "bkt-interop-1",
+          "updatedAt": 1760000009000,
+          "deleted": false,
+          "v": 2,
+          "ciphertext": "qAyL0TiWtailfTNRp2IryG/pMjibBRlCC61nDcdIpqhoXFlb5aty+fjdCyhCDTcC+3o8Dy+TcOPyQhmraS7sI6STC5sQkRE4eBzRd5nePeh38B8017f6Ltnu1fh/ZTv2gZKFQ9gaG7MhSihZKw/HxXMu0c9Tx1cjvh0EF7GNnh3bd5dVlenY/W5KVJQQihtBtBqZf57PCsF95YstfxdyYvZQ7bPWmBueTtwC84mO0luKJHJv8BqLYgBTSJrfgtobugdwFBn0Eoaf8RF/1t8mQvxA6J0HW0AJHBkjPoXsJc9T3ByR/g5InkZjbZaTdYqB",
+          "iv": "Bb6evdMFw/q6Uu+E",
+          "_del": 0
+        },
+        "expected": {
+          "id": "bkt-interop-1",
+          "text": "Fly to Japan during cherry blossom season",
+          "category": "Travel",
+          "completed": true,
+          "completedAt": 1759999999990,
+          "createdAt": 3,
+          "updatedAt": 1760000009000,
+          "deleted": false,
+          "_schemaVersion": 2,
+          "_binaryTampered": false,
+          "_binaryUnverified": false,
+          "_tableUnverified": false,
+          "_tableTampered": false,
+          "_headerTampered": false
+        }
+      }
+    ],
+    "loveBursts": [
+      {
+        "row": {
+          "id": "burst-webdevice-0001",
+          "updatedAt": 1760000010000,
+          "deleted": false,
+          "v": 2,
+          "ciphertext": "bAZB67YVdtIpCyHHvzbldigPOZ0sbrW9eRWdKfKZ1VuYZcazRIhrM1dgFYM9/JsLDSzwiKF3sCsl0eJNaDDmpmd30cdFH4akmQ9M15QcvhwyDL2dzU61pxbGStg7Y7V9YVqCZ83x9frpOYiSX3F5hhMAby0Or42P8gIPGGLsCflKcxTAUEGTx+3DnTwuqNsacI39lOzI1Gk/Bg==",
+          "iv": "r+uzl5qigDu++BVV",
+          "_del": 0
+        },
+        "expected": {
+          "id": "burst-webdevice-0001",
+          "count": 7,
+          "lastSentAt": 1759999999980,
+          "updatedAt": 1760000010000,
+          "deleted": false,
+          "_schemaVersion": 2,
+          "_binaryTampered": false,
+          "_binaryUnverified": false,
+          "_tableUnverified": false,
+          "_tableTampered": false,
+          "_headerTampered": false
+        }
+      }
+    ],
+    "dailyAnswers": [
+      {
+        "row": {
+          "id": "ans-2026-10-50d7c78ca6a07ecddc2e96b8",
+          "updatedAt": 1760000011000,
+          "deleted": false,
+          "v": 2,
+          "ciphertext": "Dt3xYnUGPQJHjHh6D702FofxpLhjeKxCvJLgUgu3ayp0gjx7xgMPixx2x2L68s81PA24JfflODaqGIHc/9S7/kHbn43BloQM1FE/chmUhmfJ1y1LJaLJK02+Y3s4YRbptmzZyvU7yVNGgkSoECmjCgnuKYhRpxb06auYgWqOq2YKvDiQ39+XNaRALV35NtrAi0ufHM1sJaAfUeOLNDgvtbVJpz7q76pFBCSbR1CVRdPyOsNJoyliocDCEYpBYaaz4bI+n62Hn0c3Jt4gKM2w5Z9WFC46bNBPqmBoF5LH0Yh6mzttBSCaQbWrrRX+x7Wx116UZjDxce9yl/RLrSZ6pbneGAG/QSAyPKpThPosIyfS8klYUibrKcrg0iZjLr2aEsCBnG9IVwEZKjnPd68IR1sYE3jeRa6QdmC+nbMJ8UnchjHghQ1ijjNySW9O4EcARv/rxLLB4/IXeZkHIVwpOuWIf++jeSFxJOGpnLJ1TF6DU7mRY4oqnKwHNe1JnWpQICQh3pu5P+FEKJGh4RQK2RApLQ==",
+          "iv": "QW7Xr/idQQke872H",
+          "_del": 0
+        },
+        "expected": {
+          "id": "ans-2026-10-50d7c78ca6a07ecddc2e96b8",
+          "ownerId": "50d7c78ca6a07ecddc2e96b8",
+          "month": "2026-10",
+          "answers": {
+            "2026-10-08": {
+              "questionId": "b1-001",
+              "text": "Way too much about volcanoes.",
+              "answeredAt": 1759999999970
+            },
+            "2026-10-09": {
+              "questionId": "b1-002",
+              "text": "Kind, stubborn, glowing.",
+              "answeredAt": 1759999999975
+            }
+          },
+          "updatedAt": 1760000011000,
+          "deleted": false,
+          "_schemaVersion": 2,
+          "_binaryTampered": false,
+          "_binaryUnverified": false,
+          "_tableUnverified": false,
+          "_tableTampered": false,
+          "_headerTampered": false
+        }
+      }
+    ],
+    "people": [
+      {
+        "row": {
+          "id": "person-50d7c78ca6a07ecddc2e96b8",
+          "updatedAt": 1760000012000,
+          "deleted": false,
+          "v": 2,
+          "ciphertext": "XJ9xFlJNUD+RNGpDMt4rXiL/0fQLnqvZDAZXSB3zF8IGXWHJI4W7lY49AWPX8jlNcBg186evEYtKM+pqD3BmM6eS5bLX4JWtYz10NYdrwoiyXLXiOQXx1TVRntnI4Zln5I0rbthGGAiG9T0oIJWItG5NbwbP3S+QFtLht0tEAkw3iyG0JjzTboiX6sml0wowU1OIwhF0seYdIgLsRPL2VThNW+8leOR4bqdnm4NXzP12OvAUkXDrAXxJVMBTlj1DwYax4O39wgE7COIYpkcfCKAALgSfF/WS6uDaGMgI00SYmVZf7TJV/eEtQcdnCZazS/Kwb7l36w==",
+          "iv": "Xsjpq0V2w28h9xTU",
+          "_del": 0
+        },
+        "expected": {
+          "id": "person-50d7c78ca6a07ecddc2e96b8",
+          "personId": "50d7c78ca6a07ecddc2e96b8",
+          "name": "Sam",
+          "pronoun": "he",
+          "deviceIds": [
+            "webdevice-0001"
+          ],
+          "createdAt": 1791544899579,
+          "updatedAt": 1760000012000,
+          "deleted": false,
+          "_schemaVersion": 2,
+          "_binaryTampered": false,
+          "_binaryUnverified": false,
+          "_tableUnverified": false,
+          "_tableTampered": false,
+          "_headerTampered": false
+        }
+      },
+      {
+        "row": {
+          "id": "person-8ce4e7dfce007ec59b87e1f6",
+          "updatedAt": 1760000013000,
+          "deleted": false,
+          "v": 2,
+          "ciphertext": "6nW3JZEGttJKf5T+t8BoIw3N29w0khFBaKe7LvEum9Fyjn6ab9KE597ZXlFHJqbDFS+CQAl/TW4kJaAOXdYntmqK7rSHxr2WK5rVmaftvbdJDF4kP6M+15eAx9xflp2zC0l/7XE0fXsWlb/ln1pe2U5FNUE8XowLQUlBF6iQtky72Z9uqxeAWO9ZktejCT4QRfUjH1zu+OC8cwUtn/3sinj0z4OD8ke4N6TfYZe4YUMvtA4x5HKNMMwOWjcM7RoKkVnlTogMgaDKNBXHtg12+H7t/RLw/DudFk04TA8c3k1OE8Oj58l4bgU=",
+          "iv": "vKYJ2iQHIs1KPzEZ",
+          "_del": 0
+        },
+        "expected": {
+          "id": "person-8ce4e7dfce007ec59b87e1f6",
+          "personId": "8ce4e7dfce007ec59b87e1f6",
+          "name": "Alex",
+          "pronoun": "she",
+          "deviceIds": [],
+          "createdAt": 1791544899580,
+          "updatedAt": 1760000013000,
+          "deleted": false,
+          "_schemaVersion": 2,
+          "_binaryTampered": false,
+          "_binaryUnverified": false,
+          "_tableUnverified": false,
+          "_tableTampered": false,
+          "_headerTampered": false
+        }
+      },
+      {
+        "row": {
+          "id": "presence-50d7c78ca6a07ecddc2e96b8",
+          "updatedAt": 1760000014000,
+          "deleted": false,
+          "v": 2,
+          "ciphertext": "c0or6SJLekj8+cwLWzDEEV1mS+2sgRyjZ5uxJ5nCWjcjZK8U41a6EUeta3jxl09Vmgj7gK9djkZUbLx3ZPxfSaIhP5PzwpxgsM7b0NJ0Wuuy7hEgzimsOZuZcnaSWBj2IHZmqr6v9bC01+kDpqBJZyWou9D9yYNU3KfI1J/9PeYHAkkJQgBkE+gsej3n8OThmAC+BdA0gFrH2b8HWw36XsSkjdwh9e/N76w5okj+YK0nYhtRK0BACS1yFgO0+w7eWA==",
+          "iv": "9C0qSeqZwopzVFKN",
+          "_del": 0
+        },
+        "expected": {
+          "id": "presence-50d7c78ca6a07ecddc2e96b8",
+          "personId": "50d7c78ca6a07ecddc2e96b8",
+          "lastActiveAt": 1759999999985,
+          "updatedAt": 1760000014000,
+          "deleted": false,
+          "_schemaVersion": 2,
+          "_binaryTampered": false,
+          "_binaryUnverified": false,
+          "_tableUnverified": false,
+          "_tableTampered": false,
+          "_headerTampered": false
+        }
+      }
+    ]
+  },
+  "tampered": [
+    {
+      "name": "header updatedAt edited",
+      "table": "milestones",
+      "row": {
+        "id": "ms-interop-1",
+        "updatedAt": 1760000003001,
+        "deleted": false,
+        "v": 2,
+        "ciphertext": "leyfezgUeueb/fRFDGIL+fBJ6rOUbM0hVNHzQfCOPOOJuD3qKBFqaNkynI6Zijry+VMys4paULG/DkSZ8ycZ+K1hokLLy56TRiAVF6Mlz1jUdaBF4wDZbDjWgKdG5ZAIiXmj8jKiZWRHB1WBf3oaO0Zdsd8a4Pjhe4tOcNzcHJeUtvTEa0WC0doRdJjhGyxnGomH2eZ5",
+        "iv": "5YbjSg633KkqRnr3",
+        "_del": 0
+      },
+      "expected": {
+        "id": "ms-interop-1",
+        "title": "First date",
+        "date": "2021-06-14",
+        "updatedAt": 1760000003000,
+        "deleted": false,
+        "_schemaVersion": 2,
+        "_binaryTampered": false,
+        "_binaryUnverified": false,
+        "_tableUnverified": false,
+        "_tableTampered": false,
+        "_headerTampered": true
+      }
+    },
+    {
+      "name": "header id edited",
+      "table": "milestones",
+      "row": {
+        "id": "ms-someone-else",
+        "updatedAt": 1760000003000,
+        "deleted": false,
+        "v": 2,
+        "ciphertext": "leyfezgUeueb/fRFDGIL+fBJ6rOUbM0hVNHzQfCOPOOJuD3qKBFqaNkynI6Zijry+VMys4paULG/DkSZ8ycZ+K1hokLLy56TRiAVF6Mlz1jUdaBF4wDZbDjWgKdG5ZAIiXmj8jKiZWRHB1WBf3oaO0Zdsd8a4Pjhe4tOcNzcHJeUtvTEa0WC0doRdJjhGyxnGomH2eZ5",
+        "iv": "5YbjSg633KkqRnr3",
+        "_del": 0
+      },
+      "expected": {
+        "id": "ms-interop-1",
+        "title": "First date",
+        "date": "2021-06-14",
+        "updatedAt": 1760000003000,
+        "deleted": false,
+        "_schemaVersion": 2,
+        "_binaryTampered": false,
+        "_binaryUnverified": false,
+        "_tableUnverified": false,
+        "_tableTampered": false,
+        "_headerTampered": true
+      }
+    },
+    {
+      "name": "header deleted flipped",
+      "table": "milestones",
+      "row": {
+        "id": "ms-interop-1",
+        "updatedAt": 1760000003000,
+        "deleted": true,
+        "v": 2,
+        "ciphertext": "leyfezgUeueb/fRFDGIL+fBJ6rOUbM0hVNHzQfCOPOOJuD3qKBFqaNkynI6Zijry+VMys4paULG/DkSZ8ycZ+K1hokLLy56TRiAVF6Mlz1jUdaBF4wDZbDjWgKdG5ZAIiXmj8jKiZWRHB1WBf3oaO0Zdsd8a4Pjhe4tOcNzcHJeUtvTEa0WC0doRdJjhGyxnGomH2eZ5",
+        "iv": "5YbjSg633KkqRnr3",
+        "_del": 0
+      },
+      "expected": {
+        "id": "ms-interop-1",
+        "title": "First date",
+        "date": "2021-06-14",
+        "updatedAt": 1760000003000,
+        "deleted": false,
+        "_schemaVersion": 2,
+        "_binaryTampered": false,
+        "_binaryUnverified": false,
+        "_tableUnverified": false,
+        "_tableTampered": false,
+        "_headerTampered": true
+      }
+    },
+    {
+      "name": "sealed for another table",
+      "table": "milestones",
+      "row": {
+        "id": "let-interop-open",
+        "updatedAt": 1760000006000,
+        "deleted": false,
+        "v": 2,
+        "ciphertext": "AjprAEX5z4XcMR0YseKd8VwHTfLRVkE4IYsEacxQ10zRRKnAefyg2Dpbo9CFycA3lBW2aII0cw7rDBAJjuiY7J+hq6YFd43GVWZ0Av1wdXqXH8Wkb6VKJ02l9tRpoO/1hB0klw6lou8ECOygTdccnp70kF76ajQ1yffD7Fa/0B/Vs9TkhiNQUUr22SYxi+6ZxhO/G7sSi9ICNtamf9pIfk3EjujpwgW0VtFFNUrfHbvPz3re9DG2ddF+5ZldzaMOJWc0HMBbN84ZMtexsxJdCsDoKfoT9C/Nfl3l7uYJ9R9VwliNjfu2ARzjYu3WHhHgn/NqGmGoo2GbTrrhcA==",
+        "iv": "CkNS2piL1MkrCv5G",
+        "_del": 0
+      },
+      "expected": {
+        "id": "let-interop-open",
+        "title": "Read me now",
+        "unlockDate": null,
+        "isOpened": false,
+        "createdAt": 1759999999900,
+        "updatedAt": 1760000006000,
+        "deleted": false,
+        "content": "I miss you every single day.\nSee you soon 💌",
+        "_schemaVersion": 2,
+        "_binaryTampered": false,
+        "_binaryUnverified": false,
+        "_tableUnverified": false,
+        "_tableTampered": true,
+        "_headerTampered": true
+      }
+    },
+    {
+      "name": "photo bytes swapped",
+      "table": "memories",
+      "row": {
+        "id": "mem-interop-1",
+        "updatedAt": 1760000001000,
+        "deleted": false,
+        "v": 2,
+        "ciphertext": "qd5ekKmsoONaO8ESstnH/56SRnXDlGIBdBl+ueXbJxZvk5k5j8eD4TzcnyLSiLQhhME3bJ6CLJsbbpC22QmIjc6Jz0kAMZNQp873M/kObPIv5DkRzUBgFQm6GGvb6hkz7f8GxxHfl9OomZz/0aCl7qsWq3jKMIOsh0wXs4KPKPObk3TqX8dVBd6nNNdcYvLS3FmAAZc+12G3ZtJqkjpTQfSuZwaH3VdS4sfmXg7/tQUbIMbdFGbZsyG8/UHo2pGoFn97PlXxtQ2O9ThrRfY0/wm+kw3zmOhpB3T5jj1tNO9jMg7RpfZ+Lyu2eZ6b",
+        "iv": "rrbhStyZp5auJRgM",
+        "imageBlobBase64": "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",
+        "_del": 0
+      },
+      "expected": {
+        "id": "mem-interop-1",
+        "date": "2026-02-14",
+        "caption": "Our first trip ✨",
+        "mime": "image/webp",
+        "updatedAt": 1760000001000,
+        "deleted": false,
+        "imageBlob": {
+          "$bytes": "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"
+        },
+        "_schemaVersion": 2,
+        "_binaryTampered": true,
+        "_binaryUnverified": false,
+        "_tableUnverified": false,
+        "_tableTampered": false,
+        "_headerTampered": true
+      }
+    },
+    {
+      "name": "photo removed",
+      "table": "memories",
+      "row": {
+        "id": "mem-interop-1",
+        "updatedAt": 1760000001000,
+        "deleted": false,
+        "v": 2,
+        "ciphertext": "qd5ekKmsoONaO8ESstnH/56SRnXDlGIBdBl+ueXbJxZvk5k5j8eD4TzcnyLSiLQhhME3bJ6CLJsbbpC22QmIjc6Jz0kAMZNQp873M/kObPIv5DkRzUBgFQm6GGvb6hkz7f8GxxHfl9OomZz/0aCl7qsWq3jKMIOsh0wXs4KPKPObk3TqX8dVBd6nNNdcYvLS3FmAAZc+12G3ZtJqkjpTQfSuZwaH3VdS4sfmXg7/tQUbIMbdFGbZsyG8/UHo2pGoFn97PlXxtQ2O9ThrRfY0/wm+kw3zmOhpB3T5jj1tNO9jMg7RpfZ+Lyu2eZ6b",
+        "iv": "rrbhStyZp5auJRgM",
+        "_del": 0
+      },
+      "expected": {
+        "id": "mem-interop-1",
+        "date": "2026-02-14",
+        "caption": "Our first trip ✨",
+        "mime": "image/webp",
+        "updatedAt": 1760000001000,
+        "deleted": false,
+        "_schemaVersion": 2,
+        "_binaryTampered": true,
+        "_binaryUnverified": false,
+        "_tableUnverified": false,
+        "_tableTampered": false,
+        "_headerTampered": true
+      }
+    },
+    {
+      "name": "legacy row without bindings",
+      "table": "memories",
+      "row": {
+        "id": "mem-legacy",
+        "updatedAt": 5,
+        "deleted": false,
+        "v": 2,
+        "ciphertext": "VsoE82YVGUGv01HmGgrFqejeyQ/fltY/G9TGd3KWxum6lg9fnq088GwG5P8arysdG5mOH/VhWt+MCp6gNvWgMZc2Z391MVx5pMWan4QohdKUSLSuP2tSau7GE2pqTUtm1GU=",
+        "iv": "PUnPV4dBYqC5JB1T",
+        "imageBlobBase64": "ByZFZIOiweD/Hj1ce5q52A=="
+      },
+      "expected": {
+        "id": "mem-legacy",
+        "caption": "from before bindings",
+        "updatedAt": 5,
+        "deleted": false,
+        "imageBlob": {
+          "$bytes": "ByZFZIOiweD/Hj1ce5q52A=="
+        },
+        "_schemaVersion": 2,
+        "_binaryTampered": false,
+        "_binaryUnverified": true,
+        "_tableUnverified": true,
+        "_tableTampered": false,
+        "_headerTampered": false
+      }
+    },
+    {
+      "name": "sealed with another key",
+      "table": "milestones",
+      "row": {
+        "id": "ms-forged",
+        "updatedAt": 5,
+        "deleted": false,
+        "v": 2,
+        "ciphertext": "/7Xkp/pFYB918udO2U9OopJI+ZacQRRzKNewNMm947JOCwcVAuE/4z5rFGV1tQbHnoFcJYr9x4CUw9TnOp8J6eL3G/SwmcP1yZDAUhwOHAzFKt33bk+YK5F2/Ob6NQ==",
+        "iv": "bvLJATXAakXYv4pe"
+      },
+      "expected": "throws"
+    },
+    {
+      "name": "ciphertext bit flipped",
+      "table": "milestones",
+      "row": {
+        "id": "ms-interop-1",
+        "updatedAt": 1760000003000,
+        "deleted": false,
+        "v": 2,
+        "ciphertext": "leyfejgUeueb/fRFDGIL+fBJ6rOUbM0hVNHzQfCOPOOJuD3qKBFqaNkynI6Zijry+VMys4paULG/DkSZ8ycZ+K1hokLLy56TRiAVF6Mlz1jUdaBF4wDZbDjWgKdG5ZAIiXmj8jKiZWRHB1WBf3oaO0Zdsd8a4Pjhe4tOcNzcHJeUtvTEa0WC0doRdJjhGyxnGomH2eZ5",
+        "iv": "5YbjSg633KkqRnr3",
+        "_del": 0
+      },
+      "expected": "throws"
+    },
+    {
+      "name": "not an envelope",
+      "table": "milestones",
+      "row": {
+        "id": "ms-plain",
+        "updatedAt": 1,
+        "deleted": false,
+        "title": "plaintext"
+      },
+      "expected": "throws"
+    }
+  ],
+  "manifest": {
+    "plain": {
+      "memories": [
+        {
+          "id": "mem-interop-1",
+          "updatedAt": 1760000001000,
+          "deleted": false
+        },
+        {
+          "id": "mem-interop-2",
+          "updatedAt": 1760000002000,
+          "deleted": false
+        }
+      ],
+      "milestones": [
+        {
+          "id": "ms-interop-1",
+          "updatedAt": 1760000003000,
+          "deleted": false
+        },
+        {
+          "id": "ms-interop-gone",
+          "updatedAt": 1791544899566,
+          "deleted": true
+        }
+      ],
+      "dateIdeas": [
+        {
+          "id": "roulette-current",
+          "updatedAt": 1760000005000,
+          "deleted": false
+        }
+      ],
+      "letters": [
+        {
+          "id": "let-interop-open",
+          "updatedAt": 1760000006000,
+          "deleted": false
+        },
+        {
+          "id": "let-interop-past",
+          "updatedAt": 1760000007000,
+          "deleted": false
+        },
+        {
+          "id": "let-interop-future",
+          "updatedAt": 1760000008000,
+          "deleted": false
+        }
+      ],
+      "bucketList": [
+        {
+          "id": "bkt-interop-1",
+          "updatedAt": 1760000009000,
+          "deleted": false
+        }
+      ],
+      "loveBursts": [
+        {
+          "id": "burst-webdevice-0001",
+          "updatedAt": 1760000010000,
+          "deleted": false
+        }
+      ],
+      "dailyAnswers": [
+        {
+          "id": "ans-2026-10-50d7c78ca6a07ecddc2e96b8",
+          "updatedAt": 1760000011000,
+          "deleted": false
+        }
+      ],
+      "people": [
+        {
+          "id": "person-50d7c78ca6a07ecddc2e96b8",
+          "updatedAt": 1760000012000,
+          "deleted": false
+        },
+        {
+          "id": "person-8ce4e7dfce007ec59b87e1f6",
+          "updatedAt": 1760000013000,
+          "deleted": false
+        },
+        {
+          "id": "presence-50d7c78ca6a07ecddc2e96b8",
+          "updatedAt": 1760000014000,
+          "deleted": false
+        }
+      ]
+    },
+    "sealed": {
+      "ciphertext": "FWyps6k9+4zKCkhbqqf6wAEZOxsAaQ0800j+cqo7skbf6TGSuq0hOibwV+wHFPDYOcJcxEOE9JoIK3JZUZClq9M79pEh2jdeKRryCuEDQKE8G5YKjpAEONidGkXyWoS9/NsX/2jNCEzmpFjP7fyn3oEqDrc+nsbVQOt1sZOuRpkqfUfHOKac0uTu+TVNUvTrzjbN4Vle+8FWSOEZFk6kCl0j9zXR+N6v2/Pyv4p9+ahWwKOdhFvgtesUKmo7IziXQ3y13C6I8bfMZ+6sBapt200MakMs4FQ1BMb1JjS0GEPyhHWLRk/alqkWUWNzYjb5T9kcL606Z73QH+7/f7RjJ5V91oAToPyLfByq9Abkh8EuKSaTXJr8uJQ1CJz+n5usnOioGs31SJheat4a9ukdi8mx/INipuqu8gNH/eURfzzPybnm+jr05p9MlANW5JQL7GNl5rnqOs27RQlpBB1JReFzBol4oQKsIG/6L4+lXcjmqaSLwBgO08cjO4+N9etMrv4N4i8gCjKDl+nlf0ngMXA6peagq3aJffyDwkak8MA1P6Y8g3qbnLvgDh/yQMoDQYfqVqt8x4M1/f4FT0BSsUtPc8xHPsQNksm2t0d9kT//bkyQ/ADZDbo/8LAw/lHplTXIS8VqyAgdaKTS8E2ypb5Rv6vQ7c1fugLHIeCBv2KkIVINChAZajGTUXyHz9CQA4Vbf2EOZf5wYTk99nY5tLlmyovLFf+/BQfZhdL4VbCPeiygN80UGOHzBvjsGbeniG98Ej9qw5Ap+BNyiQzYKkQkJdCjgkEo9sHEG6fFDLDW9lDaANkfKn+0hAY2AdJKVBB/a+oPGLHUChcxPoQj0ZEU02hXH7xkgCbb1snC4uTHdwXqjBb0hf+wQGzRZvJonZLwG4MJ3rNjvEGsOUhurzoeeUEkNpPGqwKUFcgVw3KqPyhF1BVtY9vFDsU67TdhU6MZ3wleapHSkvjy4/h55pZwj8CcLFvrHQ6SkEfg6WwJN7uL2rwmW5GUuG51cr7aDqM/QzmzunjFBXHP7REEXc4ina6YXZWGNDmxKl2MnjOmNFAcxYEaP7p9CHs62y+V0302yXnF4xNUa3h4YusGTruk7aE+RuQWNSgLjG++FRRgiwpqHzT11ll+eZBRHbdEekBJLI2pGVNgtJ6p3VbJwHo0CHbYyxJXVVXdncGqswqKR6T6c5fL+PiRlDB20eIBCVzYdeGhPWuEoRng0G7bG1fbmW8YE1n76LWA0Yqic0ex3jSj37qo4JDr7LFBtZZxNzg2bxzEhqBK0mX1Znnbi5zSYc2X3a5BU+qQ7d1mTBHyGFyU9Zlh8wdT7ADUu+lVNi76FTOmrK4R0JPcgzBtHBiiKMdwi+6cg+3iDgiBb27xL0r7dLPrITPjg4CPaOXCkX+4j1wV+UbkfgTE526hAgMWm29D92OZ08opc5msnxGMdBku+lbZPl3z5OpnJWRR7pNviOAXK3/MOVO8QEgdpKn/Fcjm7H+Mtvr5gpkZh8y7ZQw=",
+      "iv": "JHKH9Qfj0xZTS/ur"
+    }
+  },
+  "blob": {
+    "plain": "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",
+    "packed": "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"
+  },
+  "timeLocks": [
+    {
+      "plain": "A small secret for later.",
+      "unlockDate": "2020-05-05",
+      "context": "ctx-1",
+      "sealed": {
+        "lockVersion": 1,
+        "unlockDate": "2020-05-05",
+        "lockSalt": "5Vx9zdt/QL9DlFbQiL4JMg==",
+        "lockIv": "1rk0EiHdbkmro16D",
+        "wrapIv": "+eEX/fNtYJia/T11",
+        "wrappedKey": "FiEONEBa/Y60DmNM59zRAcUkF1iYWSDRFgwOxlVHV8DgwZQXXCDBFif2C05vuuVi",
+        "ciphertext": "3BYn9uMH/JYyvL2+WIyHMSKWM6FqTHREKeH9R811lGh4sMgsertspUI=",
+        "iv": "3WufgI2KzmAqZKkv"
+      },
+      "boundaryLocal": 1588617000000
+    },
+    {
+      "plain": "No context at all.",
+      "unlockDate": "2019-02-28",
+      "context": "",
+      "sealed": {
+        "lockVersion": 1,
+        "unlockDate": "2019-02-28",
+        "lockSalt": "NoEoO7tkXuDuTtXek+diQw==",
+        "lockIv": "zq4VJpUzd2tb2IR7",
+        "wrapIv": "M3FKCBqS0VCQMQzK",
+        "wrappedKey": "x10vAtTcFW9iRtYL8vojwqFkzaKBOWW7mZkfvRbBtn7xtnSfXkb7POcl1Ct1Qrz0",
+        "ciphertext": "PB/6KRFj2Wu1m6XfzpD3PF+9fi6N259F+peMu9xKg8XKCw==",
+        "iv": "CjDWYcmybBH95dSU"
+      },
+      "boundaryLocal": 1551292200000
+    },
+    {
+      "plain": "An ISO boundary in UTC.",
+      "unlockDate": "2021-01-01T10:00:00Z",
+      "context": "let-iso",
+      "sealed": {
+        "lockVersion": 1,
+        "unlockDate": "2021-01-01T10:00:00Z",
+        "lockSalt": "mXlf3iJBTLTRcuFsZDN64A==",
+        "lockIv": "V60e+JzIa+k4eq8Q",
+        "wrapIv": "00OiF+G1qk6FaJR4",
+        "wrappedKey": "kvwWWmajmsvkJcc5e7ycy7ysghvCh1VZfwdOXP5WWd0d4vq9ZwByzEKlMrGoxA3+",
+        "ciphertext": "PL/50mtUHYZsanI+n3Z8o1G0sEoMDgMzqvM4BSLxJdxauuDnMtF4",
+        "iv": "pc1ucsIq+6SFqr2p"
+      },
+      "boundaryLocal": 1609495200000
+    },
+    {
+      "plain": "Still locked.",
+      "unlockDate": "2099-01-01",
+      "context": "let-locked",
+      "sealed": {
+        "lockVersion": 1,
+        "unlockDate": "2099-01-01",
+        "lockSalt": "SLpwcVkLLDjBUwkvDRSdvA==",
+        "lockIv": "TUO3dI2mml63bmBP",
+        "wrapIv": "hhcrJybWY4Yzehe7",
+        "wrappedKey": "Cc6iXs52+lyXPLTOENLd0nMhpMz7rzMeBEg3lT7lyHhhvQC4cxlobc9m+h/ZOPpq",
+        "ciphertext": "r+Jv59S23dqJ5jAxGq5h4RL/6DssUIxAsbCBX6s=",
+        "iv": "caamcxmobAl8xkXj"
+      },
+      "boundaryLocal": 4070889000000
+    }
+  ],
+  "texts": [
+    {
+      "plain": "plain text, no aad",
+      "aad": null,
+      "ciphertext": "9C1n1+v2CwOGkOW3RmmPc+4+pWEmubiTlI74L0V65hVLXg==",
+      "iv": "4+p6vdP1i5y6WTBV"
+    },
+    {
+      "plain": "text bound to a string ✨",
+      "aad": "our-space/some-binding",
+      "ciphertext": "AY33rRJXV2dEc6dFQmYlmLE/qjgXUZDiiy7mdUpdEwNSQmxyViHphosh",
+      "iv": "XybpnTFjEo/dGs11"
+    },
+    {
+      "plain": "",
+      "aad": null,
+      "ciphertext": "v8FKqFMpmG1dn9eWDdn5Sw==",
+      "iv": "a8+SuEvipizS2itP"
+    }
+  ],
+  "normalizeVectors": [
+    {
+      "input": "plain ascii passphrase here",
+      "output": "plain ascii passphrase here"
+    },
+    {
+      "input": "  padded with spaces passphrase  ",
+      "output": "padded with spaces passphrase"
+    },
+    {
+      "input": "ｆｕｌｌｗｉｄｔｈ ｐａｓｓｐｈｒａｓｅ ｈｅｒｅ",
+      "output": "fullwidth passphrase here"
+    },
+    {
+      "input": "é combining accents in my passphrase",
+      "output": "é combining accents in my passphrase"
+    },
+    {
+      "input": "ligature ﬁ and ① circled passphrase",
+      "output": "ligature fi and 1 circled passphrase"
+    },
+    {
+      "input": " nbsp and ideographic　space passphrase　",
+      "output": "nbsp and ideographic space passphrase"
+    },
+    {
+      "input": "next line is not trimmed by js",
+      "output": "next line is not trimmed by js"
+    },
+    {
+      "input": "﻿tab\tand bom passphrase here\t",
+      "output": "tab\tand bom passphrase here"
+    }
+  ],
+  "kdfVectors": [
+    {
+      "passphrase": "ｆｕｌｌｗｉｄｔｈ ｐａｓｓｐｈｒａｓｅ ｈｅｒｅ",
+      "salt": "CzBVep/E6Q4zWH2ix+wRNg==",
+      "iterations": 1000,
+      "normalize": true,
+      "bits": "EKCfKokSmN3eh65KaG578z+KIlqwGryQrVDaz7dZE3k="
+    },
+    {
+      "passphrase": "ｆｕｌｌｗｉｄｔｈ ｐａｓｓｐｈｒａｓｅ ｈｅｒｅ",
+      "salt": "CzBVep/E6Q4zWH2ix+wRNg==",
+      "iterations": 1000,
+      "normalize": false,
+      "bits": "vYRqwCEszAPL4TlVDQ7MrH5k7THk3AuPGejoc10T0E0="
+    },
+    {
+      "passphrase": "  a passphrase with outer spaces  ",
+      "salt": "AAECAwQFBgcICQoLDA0ODw",
+      "iterations": 1,
+      "normalize": true,
+      "bits": "xd9YZefCKrfcc+/2LjlL1nItMpyVg/vS8jetkiODipU="
+    },
+    {
+      "passphrase": "short-salted passphrase for test",
+      "salt": "-_-_-_-_-_-_-_-_-_-_-w",
+      "iterations": 2000,
+      "normalize": true,
+      "bits": "9TSPBHSY3BCmFiLMH6OKVO1ivcdJs7qfciPZdctKmqs="
+    }
+  ],
+  "rawVault": {
+    "passphrase": "  ｒａｗ passphrase saved before normalising  ",
+    "salt": "CzBVep/E6Q4zWH2ix+wRNg==",
+    "kdfIterations": 1000,
+    "canary": "l2xlIZKBomhAukA6/gLlpvobqRv2OIhjgdp3WvlBtTNoHx+LQVHxYCMnZkJy3W8gzZs/O0zFC4T0rgurIh6Pl0I/UgI9/UUjncoh5eHicpKW0IBdcHauuLeMIWGw4Zyf/a/e39HfZFrBhLy1X5s9vyyQxJD+xkY1lvNz/GedwPKaP9Z0FYPC",
+    "canaryIv": "AlENaNTB3Xu1IqOA"
+  },
+  "base64Vectors": [
+    {
+      "input": "AAEC",
+      "valid": true,
+      "validSalt": false,
+      "bytes": "AAEC"
+    },
+    {
+      "input": "AAE",
+      "valid": true,
+      "validSalt": false,
+      "bytes": "AAE="
+    },
+    {
+      "input": "AA",
+      "valid": true,
+      "validSalt": false,
+      "bytes": "AA=="
+    },
+    {
+      "input": "A",
+      "valid": false,
+      "validSalt": false,
+      "bytes": null
+    },
+    {
+      "input": "-_8",
+      "valid": true,
+      "validSalt": false,
+      "bytes": "+/8="
+    },
+    {
+      "input": "AB==",
+      "valid": true,
+      "validSalt": false,
+      "bytes": "AA=="
+    },
+    {
+      "input": "AQ==",
+      "valid": true,
+      "validSalt": false,
+      "bytes": "AQ=="
+    },
+    {
+      "input": "AQ=",
+      "valid": true,
+      "validSalt": false,
+      "bytes": "AQ=="
+    },
+    {
+      "input": "not base64!!",
+      "valid": false,
+      "validSalt": false,
+      "bytes": null
+    },
+    {
+      "input": "",
+      "valid": false,
+      "validSalt": false,
+      "bytes": ""
+    },
+    {
+      "input": "AAECAwQFBgcICQoLDA0ODw==",
+      "valid": true,
+      "validSalt": true,
+      "bytes": "AAECAwQFBgcICQoLDA0ODw=="
+    },
+    {
+      "input": "AAECAwQFBgcICQoLDA0ODw",
+      "valid": true,
+      "validSalt": true,
+      "bytes": "AAECAwQFBgcICQoLDA0ODw=="
+    },
+    {
+      "input": "AAECAwQFBgcICQoLDA0ODxA=",
+      "valid": true,
+      "validSalt": false,
+      "bytes": "AAECAwQFBgcICQoLDA0ODxA="
+    }
+  ],
+  "invites": {
+    "built": [
+      {
+        "peerId": "love-0123456789abcdef",
+        "salt": "CzBVep/E6Q4zWH2ix+wRNg==",
+        "options": {
+          "baseUrl": "https://sameskytonight.vercel.app/",
+          "startDate": "2021-06-14",
+          "coupleNames": "Sam & Alex ✨"
+        },
+        "url": "https://sameskytonight.vercel.app/#connect=love-0123456789abcdef&salt=CzBVep_E6Q4zWH2ix-wRNg&start=2021-06-14&names=Sam+%26+Alex+%E2%9C%A8",
+        "parsed": {
+          "partnerPeerId": "love-0123456789abcdef",
+          "salt": "CzBVep/E6Q4zWH2ix+wRNg==",
+          "startDate": "2021-06-14",
+          "coupleNames": "Sam & Alex ✨",
+          "canary": null,
+          "canaryIv": null
+        }
+      },
+      {
+        "peerId": "love-0123456789abcdef",
+        "salt": "CzBVep/E6Q4zWH2ix+wRNg==",
+        "options": {
+          "baseUrl": "https://sameskytonight.vercel.app/",
+          "startDate": "2021-06-14",
+          "coupleNames": "Sam + Alex = us/2",
+          "canary": "XhuO3imu82hrdXVSqefUbAxJXBpsdka4IUqGlsdsfBxRz3+OS6qXptOQj7viwoKzILUNgqGY4dImf6Wkucd52dLibIYZ9NLs83vSg07DEnDCkLL5tmc7bAwkeGnkPSIsNNSL+hgUrHgtvdA1ImabZlompPxfazLTQVnmsLe4L9MP/DjvrMhrGwO3uUEvh/SBOpolO0XzfnxlJUAzNDWTTUEX1jAnMiK6Aco=",
+          "canaryIv": "/5XTdwIdsOdb4TOr"
+        },
+        "url": "https://sameskytonight.vercel.app/#connect=love-0123456789abcdef&salt=CzBVep_E6Q4zWH2ix-wRNg&start=2021-06-14&names=Sam+%2B+Alex+%3D+us%2F2&canary=XhuO3imu82hrdXVSqefUbAxJXBpsdka4IUqGlsdsfBxRz3-OS6qXptOQj7viwoKzILUNgqGY4dImf6Wkucd52dLibIYZ9NLs83vSg07DEnDCkLL5tmc7bAwkeGnkPSIsNNSL-hgUrHgtvdA1ImabZlompPxfazLTQVnmsLe4L9MP_DjvrMhrGwO3uUEvh_SBOpolO0XzfnxlJUAzNDWTTUEX1jAnMiK6Aco&civ=_5XTdwIdsOdb4TOr",
+        "parsed": {
+          "partnerPeerId": "love-0123456789abcdef",
+          "salt": "CzBVep/E6Q4zWH2ix+wRNg==",
+          "startDate": "2021-06-14",
+          "coupleNames": "Sam + Alex = us/2",
+          "canary": "XhuO3imu82hrdXVSqefUbAxJXBpsdka4IUqGlsdsfBxRz3+OS6qXptOQj7viwoKzILUNgqGY4dImf6Wkucd52dLibIYZ9NLs83vSg07DEnDCkLL5tmc7bAwkeGnkPSIsNNSL+hgUrHgtvdA1ImabZlompPxfazLTQVnmsLe4L9MP/DjvrMhrGwO3uUEvh/SBOpolO0XzfnxlJUAzNDWTTUEX1jAnMiK6Aco=",
+          "canaryIv": "/5XTdwIdsOdb4TOr"
+        }
+      },
+      {
+        "peerId": "love-0123456789abcdef",
+        "salt": "CzBVep/E6Q4zWH2ix+wRNg==",
+        "options": "https://example.test/app",
+        "url": "https://example.test/app#connect=love-0123456789abcdef&salt=CzBVep_E6Q4zWH2ix-wRNg",
+        "parsed": {
+          "partnerPeerId": "love-0123456789abcdef",
+          "salt": "CzBVep/E6Q4zWH2ix+wRNg==",
+          "startDate": null,
+          "coupleNames": null,
+          "canary": null,
+          "canaryIv": null
+        }
+      },
+      {
+        "peerId": "love-0123456789abcdef",
+        "salt": null,
+        "options": {
+          "baseUrl": "https://x.test/"
+        },
+        "url": "https://x.test/#connect=love-0123456789abcdef",
+        "parsed": {
+          "partnerPeerId": "love-0123456789abcdef",
+          "salt": null,
+          "startDate": null,
+          "coupleNames": null,
+          "canary": null,
+          "canaryIv": null
+        }
+      }
+    ],
+    "parsed": [
+      {
+        "input": "https://sameskytonight.vercel.app/#connect=love-0123456789abcdef&salt=CzBVep_E6Q4zWH2ix-wRNg&start=2021-06-14&names=Sam+%26+Alex+%E2%9C%A8",
+        "result": {
+          "partnerPeerId": "love-0123456789abcdef",
+          "salt": "CzBVep/E6Q4zWH2ix+wRNg==",
+          "startDate": "2021-06-14",
+          "coupleNames": "Sam & Alex ✨",
+          "canary": null,
+          "canaryIv": null
+        }
+      },
+      {
+        "input": "https://sameskytonight.vercel.app/#connect=love-0123456789abcdef&salt=CzBVep_E6Q4zWH2ix-wRNg&start=2021-06-14&names=Sam+%2B+Alex+%3D+us%2F2&canary=XhuO3imu82hrdXVSqefUbAxJXBpsdka4IUqGlsdsfBxRz3-OS6qXptOQj7viwoKzILUNgqGY4dImf6Wkucd52dLibIYZ9NLs83vSg07DEnDCkLL5tmc7bAwkeGnkPSIsNNSL-hgUrHgtvdA1ImabZlompPxfazLTQVnmsLe4L9MP_DjvrMhrGwO3uUEvh_SBOpolO0XzfnxlJUAzNDWTTUEX1jAnMiK6Aco&civ=_5XTdwIdsOdb4TOr",
+        "result": {
+          "partnerPeerId": "love-0123456789abcdef",
+          "salt": "CzBVep/E6Q4zWH2ix+wRNg==",
+          "startDate": "2021-06-14",
+          "coupleNames": "Sam + Alex = us/2",
+          "canary": "XhuO3imu82hrdXVSqefUbAxJXBpsdka4IUqGlsdsfBxRz3+OS6qXptOQj7viwoKzILUNgqGY4dImf6Wkucd52dLibIYZ9NLs83vSg07DEnDCkLL5tmc7bAwkeGnkPSIsNNSL+hgUrHgtvdA1ImabZlompPxfazLTQVnmsLe4L9MP/DjvrMhrGwO3uUEvh/SBOpolO0XzfnxlJUAzNDWTTUEX1jAnMiK6Aco=",
+          "canaryIv": "/5XTdwIdsOdb4TOr"
+        }
+      },
+      {
+        "input": "https://sameskytonight.vercel.app/?x=1#connect=love-0123456789abcdef&salt=CzBVep%2FE6Q4zWH2ix%2BwRNg%3D%3D&start=2021-02-30&names=+Spaced+Names+",
+        "result": {
+          "partnerPeerId": "love-0123456789abcdef",
+          "salt": "CzBVep/E6Q4zWH2ix+wRNg==",
+          "startDate": "2021-02-30",
+          "coupleNames": "Spaced Names",
+          "canary": null,
+          "canaryIv": null
+        }
+      },
+      {
+        "input": "connect=love-0123456789abcdef&salt=CzBVep/E6Q4zWH2ix+wRNg==",
+        "result": {
+          "partnerPeerId": "love-0123456789abcdef",
+          "salt": null,
+          "startDate": null,
+          "coupleNames": null,
+          "canary": null,
+          "canaryIv": null
+        }
+      },
+      {
+        "input": "?connect=love-0123456789abcdef&civ=AAAA&canary=AAAA",
+        "result": {
+          "partnerPeerId": "love-0123456789abcdef",
+          "salt": null,
+          "startDate": null,
+          "coupleNames": null,
+          "canary": null,
+          "canaryIv": null
+        }
+      },
+      {
+        "input": "love-0123456789abcdef.CzBVep/E6Q4zWH2ix+wRNg==",
+        "result": {
+          "partnerPeerId": "love-0123456789abcdef",
+          "salt": "CzBVep/E6Q4zWH2ix+wRNg==",
+          "startDate": null,
+          "coupleNames": null,
+          "canary": null,
+          "canaryIv": null
+        }
+      },
+      {
+        "input": "short.CzBVep/E6Q4zWH2ix+wRNg==",
+        "result": null
+      },
+      {
+        "input": "love-0123456789abcdef",
+        "result": {
+          "partnerPeerId": "love-0123456789abcdef",
+          "salt": null,
+          "startDate": null,
+          "coupleNames": null,
+          "canary": null,
+          "canaryIv": null
+        }
+      },
+      {
+        "input": "   love-trimmed-id   ",
+        "result": {
+          "partnerPeerId": "love-trimmed-id",
+          "salt": null,
+          "startDate": null,
+          "coupleNames": null,
+          "canary": null,
+          "canaryIv": null
+        }
+      },
+      {
+        "input": "http://not.a.peer/id",
+        "result": null
+      },
+      {
+        "input": "bad id with spaces",
+        "result": null
+      },
+      {
+        "input": "",
+        "result": null
+      },
+      {
+        "input": "#connect=love-hash-only&salt=AAECAwQFBgcICQoLDA0ODw&start=2026-13-01",
+        "result": {
+          "partnerPeerId": "love-hash-only",
+          "salt": "AAECAwQFBgcICQoLDA0ODw==",
+          "startDate": null,
+          "coupleNames": null,
+          "canary": null,
+          "canaryIv": null
+        }
+      },
+      {
+        "input": "#salt=AAECAwQFBgcICQoLDA0ODw",
+        "result": null
+      },
+      {
+        "input": "https://sameskytonight.vercel.app/#connect=love-0123456789abcdef&names=nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn&salt=bad",
+        "result": {
+          "partnerPeerId": "love-0123456789abcdef",
+          "salt": null,
+          "startDate": null,
+          "coupleNames": "nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn",
+          "canary": null,
+          "canaryIv": null
+        }
+      }
+    ]
+  },
+  "dayVectors": [
+    {
+      "when": 0,
+      "dayKey": "1970-01-01",
+      "monthKey": "1970-01",
+      "dayIndex": 0
+    },
+    {
+      "when": 86399999,
+      "dayKey": "1970-01-01",
+      "monthKey": "1970-01",
+      "dayIndex": 0
+    },
+    {
+      "when": 86400000,
+      "dayKey": "1970-01-02",
+      "monthKey": "1970-01",
+      "dayIndex": 1
+    },
+    {
+      "when": 1760000000000,
+      "dayKey": "2025-10-09",
+      "monthKey": "2025-10",
+      "dayIndex": 20370
+    },
+    {
+      "when": 1767225600000,
+      "dayKey": "2026-01-01",
+      "monthKey": "2026-01",
+      "dayIndex": 20454
+    },
+    {
+      "when": -86400001,
+      "dayKey": "1969-12-30",
+      "monthKey": "1969-12",
+      "dayIndex": -2
+    },
+    {
+      "when": 1790000000000,
+      "dayKey": "2026-09-21",
+      "monthKey": "2026-09",
+      "dayIndex": 20717
+    }
+  ],
+  "dailyDomain": {
+    "rows": [
+      {
+        "id": "ans-2026-10-50d7c78ca6a07ecddc2e96b8",
+        "ownerId": "50d7c78ca6a07ecddc2e96b8",
+        "month": "2026-10",
+        "answers": {
+          "2026-10-08": {
+            "questionId": "b1-001",
+            "text": "mine one",
+            "answeredAt": 10
+          },
+          "2026-10-09": {
+            "questionId": "b1-002",
+            "text": "mine two",
+            "answeredAt": 30
+          }
+        },
+        "updatedAt": 1
+      },
+      {
+        "id": "ans-2026-10-old-device-tag",
+        "ownerId": "old-device-tag",
+        "month": "2026-10",
+        "answers": {
+          "2026-10-09": {
+            "questionId": "b1-002",
+            "text": "mine from old device",
+            "answeredAt": 40
+          },
+          "2026-10-07": {
+            "questionId": "b1-003",
+            "text": "older",
+            "answeredAt": 5
+          }
+        },
+        "updatedAt": 2
+      },
+      {
+        "id": "ans-2026-10-8ce4e7dfce007ec59b87e1f6",
+        "ownerId": "8ce4e7dfce007ec59b87e1f6",
+        "month": "2026-10",
+        "answers": {
+          "2026-10-09": {
+            "questionId": "b1-002",
+            "text": "theirs two",
+            "answeredAt": 35
+          },
+          "2026-10-06": {
+            "questionId": "b1-004",
+            "text": "theirs only",
+            "answeredAt": 1
+          },
+          "2026-10-05": {
+            "text": ""
+          }
+        },
+        "updatedAt": 3
+      },
+      {
+        "id": "ans-2026-10-mismatch",
+        "ownerId": "8ce4e7dfce007ec59b87e1f6",
+        "month": "2026-10",
+        "answers": {
+          "2026-10-04": {
+            "questionId": "b1-005",
+            "text": "wrong id",
+            "answeredAt": 1
+          }
+        },
+        "updatedAt": 4
+      }
+    ],
+    "ownerId": "50d7c78ca6a07ecddc2e96b8",
+    "ownerIds": [
+      "50d7c78ca6a07ecddc2e96b8",
+      "old-device-tag"
+    ],
+    "readDay": [
+      {
+        "when": 1791558000000,
+        "result": {
+          "day": "2026-10-09",
+          "mine": {
+            "questionId": "b1-002",
+            "text": "mine from old device",
+            "answeredAt": 40
+          },
+          "partnerHasAnswered": true,
+          "partnerAnswer": {
+            "questionId": "b1-002",
+            "text": "theirs two",
+            "answeredAt": 35
+          }
+        }
+      },
+      {
+        "when": 1791471600000,
+        "result": {
+          "day": "2026-10-08",
+          "mine": {
+            "questionId": "b1-001",
+            "text": "mine one",
+            "answeredAt": 10
+          },
+          "partnerHasAnswered": false,
+          "partnerAnswer": null
+        }
+      },
+      {
+        "when": 1791298800000,
+        "result": {
+          "day": "2026-10-06",
+          "mine": null,
+          "partnerHasAnswered": true,
+          "partnerAnswer": null
+        }
+      },
+      {
+        "when": 1790866800000,
+        "result": {
+          "day": "2026-10-01",
+          "mine": null,
+          "partnerHasAnswered": false,
+          "partnerAnswer": null
+        }
+      }
+    ],
+    "archive": [
+      {
+        "day": "2026-10-09",
+        "question": {
+          "id": "b1-002",
+          "tone": "light",
+          "text": "If you had to describe me to a stranger using only three words, which three?"
+        },
+        "mine": {
+          "questionId": "b1-002",
+          "text": "mine from old device",
+          "answeredAt": 40
+        },
+        "theirs": {
+          "questionId": "b1-002",
+          "text": "theirs two",
+          "answeredAt": 35
+        },
+        "partnerHasAnswered": true,
+        "missed": false
+      },
+      {
+        "day": "2026-10-08",
+        "question": {
+          "id": "b1-001",
+          "tone": "light",
+          "text": "What is the most useless thing you know a lot about?"
+        },
+        "mine": {
+          "questionId": "b1-001",
+          "text": "mine one",
+          "answeredAt": 10
+        },
+        "theirs": null,
+        "partnerHasAnswered": false,
+        "missed": false
+      },
+      {
+        "day": "2026-10-07",
+        "question": {
+          "id": "b1-003",
+          "tone": "light",
+          "text": "What food would you happily eat every single day for a year?"
+        },
+        "mine": {
+          "questionId": "b1-003",
+          "text": "older",
+          "answeredAt": 5
+        },
+        "theirs": null,
+        "partnerHasAnswered": false,
+        "missed": false
+      },
+      {
+        "day": "2026-10-06",
+        "question": {
+          "id": "b1-004",
+          "tone": "light",
+          "text": "What is something everyone seems to love that you quietly do not?"
+        },
+        "mine": null,
+        "theirs": null,
+        "partnerHasAnswered": true,
+        "missed": true
+      }
+    ],
+    "answered": [
+      {
+        "day": "2026-10-09",
+        "question": {
+          "id": "b1-002",
+          "tone": "light",
+          "text": "If you had to describe me to a stranger using only three words, which three?"
+        },
+        "mine": {
+          "questionId": "b1-002",
+          "text": "mine from old device",
+          "answeredAt": 40
+        },
+        "theirs": {
+          "questionId": "b1-002",
+          "text": "theirs two",
+          "answeredAt": 35
+        }
+      },
+      {
+        "day": "2026-10-08",
+        "question": {
+          "id": "b1-001",
+          "tone": "light",
+          "text": "What is the most useless thing you know a lot about?"
+        },
+        "mine": {
+          "questionId": "b1-001",
+          "text": "mine one",
+          "answeredAt": 10
+        },
+        "theirs": null
+      },
+      {
+        "day": "2026-10-07",
+        "question": {
+          "id": "b1-003",
+          "tone": "light",
+          "text": "What food would you happily eat every single day for a year?"
+        },
+        "mine": {
+          "questionId": "b1-003",
+          "text": "older",
+          "answeredAt": 5
+        },
+        "theirs": null
+      }
+    ],
+    "theirArchive": [
+      {
+        "day": "2026-10-09",
+        "question": {
+          "id": "b1-002",
+          "tone": "light",
+          "text": "If you had to describe me to a stranger using only three words, which three?"
+        },
+        "mine": {
+          "questionId": "b1-002",
+          "text": "theirs two",
+          "answeredAt": 35
+        },
+        "theirs": {
+          "questionId": "b1-002",
+          "text": "mine from old device",
+          "answeredAt": 40
+        },
+        "partnerHasAnswered": true,
+        "missed": false
+      },
+      {
+        "day": "2026-10-08",
+        "question": {
+          "id": "b1-001",
+          "tone": "light",
+          "text": "What is the most useless thing you know a lot about?"
+        },
+        "mine": null,
+        "theirs": null,
+        "partnerHasAnswered": true,
+        "missed": true
+      }
+    ],
+    "swap": {
+      "since": 20,
+      "rows": [
+        {
+          "id": "ans-2026-10-50d7c78ca6a07ecddc2e96b8",
+          "ownerId": "50d7c78ca6a07ecddc2e96b8",
+          "month": "2026-10",
+          "answers": {
+            "2026-10-08": {
+              "questionId": "b1-001",
+              "text": "mine one",
+              "answeredAt": 10
+            },
+            "2026-10-09": {
+              "questionId": "b1-002",
+              "text": "theirs two",
+              "answeredAt": 35
+            }
+          },
+          "updatedAt": 777
+        },
+        {
+          "id": "ans-2026-10-8ce4e7dfce007ec59b87e1f6",
+          "ownerId": "8ce4e7dfce007ec59b87e1f6",
+          "month": "2026-10",
+          "answers": {
+            "2026-10-06": {
+              "questionId": "b1-004",
+              "text": "theirs only",
+              "answeredAt": 1
+            },
+            "2026-10-09": {
+              "questionId": "b1-002",
+              "text": "mine two",
+              "answeredAt": 30
+            }
+          },
+          "updatedAt": 777
+        }
+      ]
+    }
+  },
+  "identity": {
+    "cases": [
+      {
+        "deviceId": "dev-aaaaaaaa",
+        "hint": null,
+        "status": "ready",
+        "me": "50d7c78ca6a07ecddc2e96b8",
+        "partner": "8ce4e7dfce007ec59b87e1f6",
+        "hintAfter": "50d7c78ca6a07ecddc2e96b8"
+      },
+      {
+        "deviceId": "dev-cccccccc",
+        "hint": null,
+        "status": "ready",
+        "me": "8ce4e7dfce007ec59b87e1f6",
+        "partner": "50d7c78ca6a07ecddc2e96b8",
+        "hintAfter": "8ce4e7dfce007ec59b87e1f6"
+      },
+      {
+        "deviceId": "dev-unknown1",
+        "hint": null,
+        "status": "unclaimed",
+        "me": null,
+        "partner": null,
+        "hintAfter": null
+      },
+      {
+        "deviceId": "dev-unknown1",
+        "hint": "8ce4e7dfce007ec59b87e1f6",
+        "status": "ready",
+        "me": "8ce4e7dfce007ec59b87e1f6",
+        "partner": "50d7c78ca6a07ecddc2e96b8",
+        "hintAfter": "8ce4e7dfce007ec59b87e1f6"
+      },
+      {
+        "deviceId": "dev-cccccccc",
+        "hint": "50d7c78ca6a07ecddc2e96b8",
+        "status": "ready",
+        "me": "8ce4e7dfce007ec59b87e1f6",
+        "partner": "50d7c78ca6a07ecddc2e96b8",
+        "hintAfter": "8ce4e7dfce007ec59b87e1f6"
+      },
+      {
+        "deviceId": "dev-aaaaaaaa",
+        "hint": "not-a-person-tag",
+        "status": "ready",
+        "me": "50d7c78ca6a07ecddc2e96b8",
+        "partner": "8ce4e7dfce007ec59b87e1f6",
+        "hintAfter": "50d7c78ca6a07ecddc2e96b8"
+      }
+    ],
+    "people": [
+      {
+        "personId": "8ce4e7dfce007ec59b87e1f6",
+        "name": "Alex",
+        "pronoun": "they",
+        "deviceIds": [
+          "dev-cccccccc"
+        ],
+        "lastActiveAt": 999,
+        "createdAt": 50,
+        "updatedAt": 2
+      },
+      {
+        "personId": "50d7c78ca6a07ecddc2e96b8",
+        "name": "Sam the man",
+        "pronoun": "he",
+        "deviceIds": [
+          "dev-aaaaaaaa",
+          "dev-bbbbbbbb"
+        ],
+        "lastActiveAt": null,
+        "createdAt": 100,
+        "updatedAt": 1
+      }
+    ],
+    "slots": [
+      "50d7c78ca6a07ecddc2e96b8",
+      "8ce4e7dfce007ec59b87e1f6"
+    ]
+  },
+  "sanitizeNames": [
+    {
+      "input": "  Sam  ",
+      "output": "Sam",
+      "possessive": "Sam's"
+    },
+    {
+      "input": "Ale\n\nx",
+      "output": "Ale x",
+      "possessive": "Ale x's"
+    },
+    {
+      "input": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "output": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "possessive": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx's"
+    },
+    {
+      "input": "   ",
+      "output": "",
+      "possessive": "your partner's"
+    },
+    {
+      "input": 42,
+      "output": "",
+      "possessive": "your partner's"
+    },
+    {
+      "input": "Chris",
+      "output": "Chris",
+      "possessive": "Chris'"
+    },
+    {
+      "input": "JAMES",
+      "output": "JAMES",
+      "possessive": "JAMES'"
+    },
+    {
+      "input": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  b",
+      "output": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "possessive": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa's"
+    }
+  ],
+  "burstVectors": [
+    {
+      "total": 0,
+      "connected": false,
+      "name": "Sam",
+      "text": ""
+    },
+    {
+      "total": 1,
+      "connected": false,
+      "name": "Sam",
+      "text": "Sam sent you a love burst while you were away 💕"
+    },
+    {
+      "total": 2,
+      "connected": true,
+      "name": "  Alex  ",
+      "text": "Alex sent you 2 love bursts! 💕"
+    },
+    {
+      "total": 150,
+      "connected": false,
+      "name": "",
+      "text": "Your partner sent you 99+ love bursts while you were away 💕"
+    },
+    {
+      "total": 99,
+      "connected": true,
+      "name": null,
+      "text": "Your partner sent you 99 love bursts! 💕"
+    },
+    {
+      "total": 100,
+      "connected": false,
+      "name": "your partner",
+      "text": "your partner sent you 99+ love bursts while you were away 💕"
+    }
+  ],
+  "dateVectors": [
+    {
+      "kind": "formatDatePretty",
+      "input": "2026-02-14",
+      "output": "Feb 14, 2026"
+    },
+    {
+      "kind": "formatDatePretty",
+      "input": "2021-06-04",
+      "output": "Jun 4, 2021"
+    },
+    {
+      "kind": "formatDatePretty",
+      "input": "",
+      "output": ""
+    },
+    {
+      "kind": "formatLastSeen",
+      "input": 1759999970000,
+      "output": "Just now"
+    },
+    {
+      "kind": "formatLastSeen",
+      "input": 1759999700000,
+      "output": "5m ago"
+    },
+    {
+      "kind": "formatLastSeen",
+      "input": 1759989200000,
+      "output": "3h ago"
+    },
+    {
+      "kind": "formatLastSeen",
+      "input": 1759892000000,
+      "output": "Yesterday"
+    },
+    {
+      "kind": "formatLastSeen",
+      "input": 1759740800000,
+      "output": "3d ago"
+    },
+    {
+      "kind": "formatLastConnected",
+      "input": 1759999941000,
+      "output": "Just now"
+    },
+    {
+      "kind": "formatLastConnected",
+      "input": 1759481599999,
+      "output": "6d ago"
+    }
+  ],
+  "backup": {
+    "passphrase": "a different passphrase for the backup file",
+    "container": {
+      "magic": "OUR_SPACE_ENCRYPTED_VAULT_V1",
+      "version": 2,
+      "salt": "UzGMvOOtH//+1K3Q7RzIOA==",
+      "kdfIterations": 600000,
+      "iv": "mqkSKq71URVa9d1K",
+      "ciphertext": "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",
+      "exportedAt": "2026-10-09T11:21:40.607Z"
+    }
+  },
+  "mailbox": {
+    "config": {
+      "url": "https://mailbox.interop.test",
+      "token": "interop-token-0123456789"
+    },
+    "origin": "https://sameskytonight.vercel.app",
+    "ownerId": "50d7c78ca6a07ecddc2e96b8",
+    "published": {
+      "ok": true,
+      "uploaded": 14,
+      "skipped": 0
+    },
+    "kv": {
+      "77cb9b13f4a58917a01ae4308964457ddfba7cc8fa6b74b93007d8e0b775ee05/50d7c78ca6a07ecddc2e96b8/rec/milestones/bXMtaW50ZXJvcC0x": "{\"id\":\"ms-interop-1\",\"updatedAt\":1760000003000,\"deleted\":false,\"v\":2,\"ciphertext\":\"leyfezgUeueb/fRFDGIL+fBJ6rOUbM0hVNHzQfCOPOOJuD3qKBFqaNkynI6Zijry+VMys4paULG/DkSZ8ycZ+K1hokLLy56TRiAVF6Mlz1jUdaBF4wDZbDjWgKdG5ZAIiXmj8jKiZWRHB1WBf3oaO0Zdsd8a4Pjhe4tOcNzcHJeUtvTEa0WC0doRdJjhGyxnGomH2eZ5\",\"iv\":\"5YbjSg633KkqRnr3\"}",
+      "77cb9b13f4a58917a01ae4308964457ddfba7cc8fa6b74b93007d8e0b775ee05/50d7c78ca6a07ecddc2e96b8/rec/milestones/bXMtaW50ZXJvcC1nb25l": "{\"id\":\"ms-interop-gone\",\"updatedAt\":1791544899566,\"deleted\":true,\"v\":2,\"ciphertext\":\"nm3lCkCW+tgiux7efkSiRdRPLALwLbytXiQBymmNKEN/d+7PfpB82Ktu4WeB1YjXa8sGlC5xN4Uf1tozZ6GMKoNuMvTw54n+thyXND9QedjBWgTQll20eK2JAaZ39AmQhDmxOggSSqsCvnnbh/vr\",\"iv\":\"EDnada7Of+V4DjSV\"}",
+      "77cb9b13f4a58917a01ae4308964457ddfba7cc8fa6b74b93007d8e0b775ee05/50d7c78ca6a07ecddc2e96b8/rec/dateIdeas/cm91bGV0dGUtY3VycmVudA": "{\"id\":\"roulette-current\",\"updatedAt\":1760000005000,\"deleted\":false,\"v\":2,\"ciphertext\":\"S36vY7NSz4GL1vF1QJtPtfbSniaf+nZe7GFyDYgcyyyjhglEKFhutRSqi4x1TU3pKA6ZK3GxK73n+w2vAfi+ehUuqZ81CqjbH1mU16N/6n8IAgWODrF62wK8K6Hn0shWK1/b1OgZ9ppckfxOt4ppaEn0ZgPVnVZln+xYVZckXtM03/OU1/o172uVvacHNu3xpylnoMhnP76BhMzjDa/qKg==\",\"iv\":\"Yee0ZGCZRLXzOR/g\"}",
+      "77cb9b13f4a58917a01ae4308964457ddfba7cc8fa6b74b93007d8e0b775ee05/50d7c78ca6a07ecddc2e96b8/rec/letters/bGV0LWludGVyb3Atb3Blbg": "{\"id\":\"let-interop-open\",\"updatedAt\":1760000006000,\"deleted\":false,\"v\":2,\"ciphertext\":\"AjprAEX5z4XcMR0YseKd8VwHTfLRVkE4IYsEacxQ10zRRKnAefyg2Dpbo9CFycA3lBW2aII0cw7rDBAJjuiY7J+hq6YFd43GVWZ0Av1wdXqXH8Wkb6VKJ02l9tRpoO/1hB0klw6lou8ECOygTdccnp70kF76ajQ1yffD7Fa/0B/Vs9TkhiNQUUr22SYxi+6ZxhO/G7sSi9ICNtamf9pIfk3EjujpwgW0VtFFNUrfHbvPz3re9DG2ddF+5ZldzaMOJWc0HMBbN84ZMtexsxJdCsDoKfoT9C/Nfl3l7uYJ9R9VwliNjfu2ARzjYu3WHhHgn/NqGmGoo2GbTrrhcA==\",\"iv\":\"CkNS2piL1MkrCv5G\"}",
+      "77cb9b13f4a58917a01ae4308964457ddfba7cc8fa6b74b93007d8e0b775ee05/50d7c78ca6a07ecddc2e96b8/rec/letters/bGV0LWludGVyb3AtcGFzdA": "{\"id\":\"let-interop-past\",\"updatedAt\":1760000007000,\"deleted\":false,\"v\":2,\"ciphertext\":\"vRVtaoHFQ69Lka0epmT55l4XwweJ0yxYIZ7k8KngnjLoAq4YkV+CAO4ug/BMjj1WhhGEKMo3PAZiSbB3g7PqYNhBXw4E/gWV03ffz3mo7NhBGDVM+7J6CVN43FEz2B5rt1RU2LM1WcuXAF3ieSEShurqt9wutWg8K/mUd8UNug88T8/TZqHYypc1AHJFvWe8o8z2pbGvzUyEj66PW5WKiRZaIgrOpsr3T3ox6/YNKN/vPVvlMhxFRcnK/E02fNPoPwpqgNfzGlTzzr+rOrtV8pa7+CBscStDrLBkW2amFsHZr4HB8V6gUuxrIG6wn87N7mpR+H3XlkeT/x8WZCzQvOKfEIXx46m1EmRZ3Mua6ogDCf7uXMybdXCijFhswmI6QsG8gzm6THFdy8E4r+ASbphutdgiN1aeEgaT3h6hBSBy+Ku0j/VZzhSn1g+bAlJ1/ZJTQARvoOO/zmEaSKF+NJ/jLsmIaCVTCLoaqgu6uytNgKqduwS4hmZtgbxXlc0FS/v2w9TxqBWftMTJZosi6Tqw9ErzhQ6LHSua1Jpa/fowevDzNHmcpW0oAteiXFK7zvNbmiCqKQ8REGeF12XDe0R1CW9V7riVvs12Xq8ELpGc32HXO2IQTSpKKzZk133y9tBUgzgHNjADTtiz+H7NwaMHQ9kDYvV9bxKE99ribzW4odoP32n05OPJKffIpkiMjC+zASehjvwzMIjFvkaXibWt5kxfxClu7MrqrKGS6UPGQEK75xT/tUbkrRQeITc=\",\"iv\":\"FGDcWeOthKu5Ac7h\"}",
+      "77cb9b13f4a58917a01ae4308964457ddfba7cc8fa6b74b93007d8e0b775ee05/50d7c78ca6a07ecddc2e96b8/rec/letters/bGV0LWludGVyb3AtZnV0dXJl": "{\"id\":\"let-interop-future\",\"updatedAt\":1760000008000,\"deleted\":false,\"v\":2,\"ciphertext\":\"uH/ecEo0AUCmp5C/UwAtGkSxweh50sMxJSJl2t5004wvCrIWJ7GYfjgWf+JwRvazhkfx89RaGzDl+7knzQAOhq8fEfCPBknOzxT1krq1n1/+O7MkTQtkAtwp/U8P67tn4aVnOP4V2lBbakCZdE+PT2cBY2FLlaBmJzaJTh8nBedh5FE1fuirNOQn1cNc9YJE0wj+oW/q487KRdMI/FBc8/22aBEAYIT3GQey3toeFlSmyEQuac+2Qc0fsBZQU5kkjcm/8YwToBoWIN3x4WGIenJdOqA3AqRp2N6CNtZN3O5KlvsDcJhwvaFlxrBerMSO2NNuZyInkMbmixYysw+tFV6uaHgsvAm9Q03Q9T5pjdH2gfzxyzJth7B4fndHMbxs8ko/IW5vbqfpHhTisVm/SsTtXLQiaG1yDBxCQHWPbUa4RZzzqWfVCDK4pBOzGvAkB9duCjPiZWQHPDvHtSN7LxwLLbcal3345e7khB64GwOH1Lo1e2fuZZFMXvwM8iy9XtnjEsRcZsjW8XTYbdLR+AJhEpmV0cqXP8gqzr4tIPVA64c7OBrQr6ySrNvv/yVUuuxvcKEGqk4jA86O12qypyZ4M6k6ncjoof7sXKxBP5hx3TZbxpWrpOJBNtZMqZldZiVMZ0q0mju5McVNDniNfH4TOlxYcLK/o+Ul8sanOJ2mpxxd27aoXJzbeg3f5jzcuQ2g6X8=\",\"iv\":\"D3+yMng444dIjujV\"}",
+      "77cb9b13f4a58917a01ae4308964457ddfba7cc8fa6b74b93007d8e0b775ee05/50d7c78ca6a07ecddc2e96b8/rec/bucketList/Ymt0LWludGVyb3AtMQ": "{\"id\":\"bkt-interop-1\",\"updatedAt\":1760000009000,\"deleted\":false,\"v\":2,\"ciphertext\":\"qAyL0TiWtailfTNRp2IryG/pMjibBRlCC61nDcdIpqhoXFlb5aty+fjdCyhCDTcC+3o8Dy+TcOPyQhmraS7sI6STC5sQkRE4eBzRd5nePeh38B8017f6Ltnu1fh/ZTv2gZKFQ9gaG7MhSihZKw/HxXMu0c9Tx1cjvh0EF7GNnh3bd5dVlenY/W5KVJQQihtBtBqZf57PCsF95YstfxdyYvZQ7bPWmBueTtwC84mO0luKJHJv8BqLYgBTSJrfgtobugdwFBn0Eoaf8RF/1t8mQvxA6J0HW0AJHBkjPoXsJc9T3ByR/g5InkZjbZaTdYqB\",\"iv\":\"Bb6evdMFw/q6Uu+E\"}",
+      "77cb9b13f4a58917a01ae4308964457ddfba7cc8fa6b74b93007d8e0b775ee05/50d7c78ca6a07ecddc2e96b8/rec/loveBursts/YnVyc3Qtd2ViZGV2aWNlLTAwMDE": "{\"id\":\"burst-webdevice-0001\",\"updatedAt\":1760000010000,\"deleted\":false,\"v\":2,\"ciphertext\":\"bAZB67YVdtIpCyHHvzbldigPOZ0sbrW9eRWdKfKZ1VuYZcazRIhrM1dgFYM9/JsLDSzwiKF3sCsl0eJNaDDmpmd30cdFH4akmQ9M15QcvhwyDL2dzU61pxbGStg7Y7V9YVqCZ83x9frpOYiSX3F5hhMAby0Or42P8gIPGGLsCflKcxTAUEGTx+3DnTwuqNsacI39lOzI1Gk/Bg==\",\"iv\":\"r+uzl5qigDu++BVV\"}",
+      "77cb9b13f4a58917a01ae4308964457ddfba7cc8fa6b74b93007d8e0b775ee05/50d7c78ca6a07ecddc2e96b8/rec/dailyAnswers/YW5zLTIwMjYtMTAtNTBkN2M3OGNhNmEwN2VjZGRjMmU5NmI4": "{\"id\":\"ans-2026-10-50d7c78ca6a07ecddc2e96b8\",\"updatedAt\":1760000011000,\"deleted\":false,\"v\":2,\"ciphertext\":\"Dt3xYnUGPQJHjHh6D702FofxpLhjeKxCvJLgUgu3ayp0gjx7xgMPixx2x2L68s81PA24JfflODaqGIHc/9S7/kHbn43BloQM1FE/chmUhmfJ1y1LJaLJK02+Y3s4YRbptmzZyvU7yVNGgkSoECmjCgnuKYhRpxb06auYgWqOq2YKvDiQ39+XNaRALV35NtrAi0ufHM1sJaAfUeOLNDgvtbVJpz7q76pFBCSbR1CVRdPyOsNJoyliocDCEYpBYaaz4bI+n62Hn0c3Jt4gKM2w5Z9WFC46bNBPqmBoF5LH0Yh6mzttBSCaQbWrrRX+x7Wx116UZjDxce9yl/RLrSZ6pbneGAG/QSAyPKpThPosIyfS8klYUibrKcrg0iZjLr2aEsCBnG9IVwEZKjnPd68IR1sYE3jeRa6QdmC+nbMJ8UnchjHghQ1ijjNySW9O4EcARv/rxLLB4/IXeZkHIVwpOuWIf++jeSFxJOGpnLJ1TF6DU7mRY4oqnKwHNe1JnWpQICQh3pu5P+FEKJGh4RQK2RApLQ==\",\"iv\":\"QW7Xr/idQQke872H\"}",
+      "77cb9b13f4a58917a01ae4308964457ddfba7cc8fa6b74b93007d8e0b775ee05/50d7c78ca6a07ecddc2e96b8/rec/people/cGVyc29uLTUwZDdjNzhjYTZhMDdlY2RkYzJlOTZiOA": "{\"id\":\"person-50d7c78ca6a07ecddc2e96b8\",\"updatedAt\":1760000012000,\"deleted\":false,\"v\":2,\"ciphertext\":\"XJ9xFlJNUD+RNGpDMt4rXiL/0fQLnqvZDAZXSB3zF8IGXWHJI4W7lY49AWPX8jlNcBg186evEYtKM+pqD3BmM6eS5bLX4JWtYz10NYdrwoiyXLXiOQXx1TVRntnI4Zln5I0rbthGGAiG9T0oIJWItG5NbwbP3S+QFtLht0tEAkw3iyG0JjzTboiX6sml0wowU1OIwhF0seYdIgLsRPL2VThNW+8leOR4bqdnm4NXzP12OvAUkXDrAXxJVMBTlj1DwYax4O39wgE7COIYpkcfCKAALgSfF/WS6uDaGMgI00SYmVZf7TJV/eEtQcdnCZazS/Kwb7l36w==\",\"iv\":\"Xsjpq0V2w28h9xTU\"}",
+      "77cb9b13f4a58917a01ae4308964457ddfba7cc8fa6b74b93007d8e0b775ee05/50d7c78ca6a07ecddc2e96b8/rec/people/cGVyc29uLThjZTRlN2RmY2UwMDdlYzU5Yjg3ZTFmNg": "{\"id\":\"person-8ce4e7dfce007ec59b87e1f6\",\"updatedAt\":1760000013000,\"deleted\":false,\"v\":2,\"ciphertext\":\"6nW3JZEGttJKf5T+t8BoIw3N29w0khFBaKe7LvEum9Fyjn6ab9KE597ZXlFHJqbDFS+CQAl/TW4kJaAOXdYntmqK7rSHxr2WK5rVmaftvbdJDF4kP6M+15eAx9xflp2zC0l/7XE0fXsWlb/ln1pe2U5FNUE8XowLQUlBF6iQtky72Z9uqxeAWO9ZktejCT4QRfUjH1zu+OC8cwUtn/3sinj0z4OD8ke4N6TfYZe4YUMvtA4x5HKNMMwOWjcM7RoKkVnlTogMgaDKNBXHtg12+H7t/RLw/DudFk04TA8c3k1OE8Oj58l4bgU=\",\"iv\":\"vKYJ2iQHIs1KPzEZ\"}",
+      "77cb9b13f4a58917a01ae4308964457ddfba7cc8fa6b74b93007d8e0b775ee05/50d7c78ca6a07ecddc2e96b8/rec/people/cHJlc2VuY2UtNTBkN2M3OGNhNmEwN2VjZGRjMmU5NmI4": "{\"id\":\"presence-50d7c78ca6a07ecddc2e96b8\",\"updatedAt\":1760000014000,\"deleted\":false,\"v\":2,\"ciphertext\":\"c0or6SJLekj8+cwLWzDEEV1mS+2sgRyjZ5uxJ5nCWjcjZK8U41a6EUeta3jxl09Vmgj7gK9djkZUbLx3ZPxfSaIhP5PzwpxgsM7b0NJ0Wuuy7hEgzimsOZuZcnaSWBj2IHZmqr6v9bC01+kDpqBJZyWou9D9yYNU3KfI1J/9PeYHAkkJQgBkE+gsej3n8OThmAC+BdA0gFrH2b8HWw36XsSkjdwh9e/N76w5okj+YK0nYhtRK0BACS1yFgO0+w7eWA==\",\"iv\":\"9C0qSeqZwopzVFKN\"}",
+      "77cb9b13f4a58917a01ae4308964457ddfba7cc8fa6b74b93007d8e0b775ee05/50d7c78ca6a07ecddc2e96b8/rec/memories/bWVtLWludGVyb3AtMQ": "{\"id\":\"mem-interop-1\",\"updatedAt\":1760000001000,\"deleted\":false,\"v\":2,\"ciphertext\":\"qd5ekKmsoONaO8ESstnH/56SRnXDlGIBdBl+ueXbJxZvk5k5j8eD4TzcnyLSiLQhhME3bJ6CLJsbbpC22QmIjc6Jz0kAMZNQp873M/kObPIv5DkRzUBgFQm6GGvb6hkz7f8GxxHfl9OomZz/0aCl7qsWq3jKMIOsh0wXs4KPKPObk3TqX8dVBd6nNNdcYvLS3FmAAZc+12G3ZtJqkjpTQfSuZwaH3VdS4sfmXg7/tQUbIMbdFGbZsyG8/UHo2pGoFn97PlXxtQ2O9ThrRfY0/wm+kw3zmOhpB3T5jj1tNO9jMg7RpfZ+Lyu2eZ6b\",\"iv\":\"rrbhStyZp5auJRgM\",\"imageBlobBase64\":\"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\"}",
+      "77cb9b13f4a58917a01ae4308964457ddfba7cc8fa6b74b93007d8e0b775ee05/50d7c78ca6a07ecddc2e96b8/rec/memories/bWVtLWludGVyb3AtMg": "{\"id\":\"mem-interop-2\",\"updatedAt\":1760000002000,\"deleted\":false,\"v\":2,\"ciphertext\":\"vL037X+ID3js3GfmeWE9/VHwVLFPDrDfQ63GzFDRy4h2CO0xeInK2oxR7tUNv1Jwn1kDo1lo15rYzvo7e0rnlmI7cTV51RFQTCYUHwVCBduAdbJs1ak17dNs2IrBxiQZfy1M68+AM9VAdCuJIsk5pqbnbiBL1Y/+3VaE3QPETjsRdy95J4HK+AHxSkPUn89se2TU4+IBfzOyVI0laGaJxb96C9QtwIhMR8+io/qV1jN77NrKIAv1mjrYXYWOxMLiuDOLxwD6ZrbZbB0BqzNVakSO5mo6AsdDUQhJBBQGR+NUeGzlpbEQbfeCazk7llU=\",\"iv\":\"l/LsG7bs+jQxNCvV\",\"imageBlobBase64\":\"6yMT/w6WoZfRyfGW/iHGKw81srBInTtKySijMZnpF3u7DWcr7dUbVxg4Z6JTuUjogYhOg7TCRCpf/PfR+AKraQ6bNNG53snq0XSRTiDD8TYKP5FdYqmSBQmJhyaYfYxjS0kj1osinYJTFsxnKQFqD3HDEuUtiYYsQRiEZk3Hfkk=\"}",
+      "77cb9b13f4a58917a01ae4308964457ddfba7cc8fa6b74b93007d8e0b775ee05/50d7c78ca6a07ecddc2e96b8/manifest": "{\"ciphertext\":\"2iFqKI+CKY1UWxy4O1w9RONTRPCZ/giKEu8lxW+hB7FexA37swPXy4Yde0cR6QZujVMO83+taanAUuJ6J/6BT3J+HmmMc8P5qvTBahl0PbRIg6GQ5Ftvic2+6S5T1t7yiqf0M0JzE58yH1tJkl/16nf5CqZD+SWJnjGMTmmFWLFSKVtB2hIHE9JXkeI9nD2WtIM+5dU1ZsQXIXdUoeM3Qm7G9H7tnHGgR9yE/gADmuYRqhkfcVPpGVv7vL2/RyZFJp6MlGSgmbpeOLr9le1XjD9dYLVicCykaEVozReYzk5k2ohxUQyqlKElqhA92pXTg+5jCchrfWWCE0JZ0p27xG/kbeq0Q0TBc3T1th3jVWdCkW3y8uQ21G3pdiAQjiiUAonynA5Wj9OBj6ZcBplaUegChI1GMCx8+nYdm/12dWqubGn0OAQ92y3OX91w4JH5UOKfPbIEQDyGgPdtghFfBvg3nyiy5hqZRYKBEbLqUtrMAHwtDLPfmaNPN478qUfeM1eFPS+jwp1FvHj4xaSDGalxIhQn348G00bJd5I0Eyn5SgXoSyQ1FDel+wFdVONvF72STR8HMYJXs+8WllbCy74MhvAMGgYW6nJDEIMnrm7MU7I3uS9g8rdbpGlnbcWo9TLddWa2U5kqC5B76Tx0Y85K8o0DgCYvJ5Ges4ZPrc4J9iqbG8TdwuR6nxHHx99pMKElYyczxO1qnBKkrLDw/OyfrOB1Qvffxp6Hup55x3vKxdNt62Ubwlx38u7C9W4V9Yvd3iq7jVoiwn3OOy2HNSqOVM76y+JD5XDahwJcp8m2wGqWWjkf44A+HWSNoFu0fvQXDD4kcQezLaVkazHvu0mGpLCQbyeL8vYISWINNupok8fohbohlkKOb6hejI+HlPZhM5suyxk+sp2A1RaPK83gMQE+P3+O/z33XgHDV8fiIymMBdeYeAMnUDp1KRzHby6ebrEgvlOigOKBoE3xzGWCRw5CWd9s4BxMCUblofIhMklGc56Z460YGIPgYkVUm3AH/mKzdqVg6uPGxgUBrMF1FAOnRHMMDb3rwvv5Nf/ENyJ22t0WzVTKTBHdXvlnNCwXb5YscWWAYaVUdfZuRuZzkONTFI3iLkvfwn9A4x6cUJtlslvsLNfg3CAJEbNMB+VfpGIexxS0bu7d4Bke5bjCBHpQ+akh/JACb3bAXfm8KTDXlmJekHCikedvvew6BJPvgEdhLHaEdmG/Ckl8lAeUyriM3FY57EkuE98M/XlfwMfia2WupJQJTDfGGEvOzraW3YcTohIHiCuP3yqGqPGZbcVFawaXWT53GKA3/wSx8LM6kZWlCokGlZ9H8+RpDNNq2xmNN7ofJyK5wqv1b3KB/fpreprQQ/K3rOsk4RgTqtFQoq4lK6Bzmr2nH5kHURkG55vjOHgYuZ2afc+e62w4NUwZtR5le8M1kU9Go/8e6d4wFfub4rsFb78OSE8u6COR5bNhiWhBs2nAdtwjrbt5dn/Qm3r/F8EsSKo7ZfhbXbE=\",\"iv\":\"efXqu+hLiXTmPZgn\"}"
+    },
+    "liveIds": {
+      "memories": [
+        "mem-interop-1",
+        "mem-interop-2"
+      ],
+      "milestones": [
+        "ms-interop-1"
+      ],
+      "dateIdeas": [
+        "roulette-current"
+      ],
+      "letters": [
+        "let-interop-future",
+        "let-interop-open",
+        "let-interop-past"
+      ],
+      "bucketList": [
+        "bkt-interop-1"
+      ],
+      "loveBursts": [
+        "burst-webdevice-0001"
+      ],
+      "dailyAnswers": [
+        "ans-2026-10-50d7c78ca6a07ecddc2e96b8"
+      ],
+      "people": [
+        "person-50d7c78ca6a07ecddc2e96b8",
+        "person-8ce4e7dfce007ec59b87e1f6",
+        "presence-50d7c78ca6a07ecddc2e96b8"
+      ]
+    },
+    "tombstones": [
+      {
+        "table": "milestones",
+        "id": "ms-interop-gone",
+        "liveRow": {
+          "id": "ms-interop-gone",
+          "updatedAt": 1760000004000,
+          "deleted": false,
+          "v": 2,
+          "ciphertext": "uVICG3MAcHkD9sZgZL4WynG/YIZFd2P7z4EB2up7/ytFHp1k8d5N/lCrUqPYENOX6PNMPqn3wLB7d3p6OXtDB0XUYICmIVHePzJjBfbTZCZVz8pP5LZFVQNXW7+j4HYUxK8ANJOppbZBaxGWeR6Rhakm2Zj1nY45wR0yyo1nCUSbMA7WGeYnh94Lt2qQxLUGe2pKu69tkT3VPMhFHvo=",
+          "iv": "PpFRIXfiCQyMOp1t",
+          "_del": 0
+        }
+      }
+    ]
+  }
+}
