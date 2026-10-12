@@ -44,11 +44,16 @@ bool mailboxIsSettled(SyncService sync) {
   return state == MailboxRunState.ok || state == MailboxRunState.failed;
 }
 
+const Set<String> stillSyncingPeerStates = {'connecting', 'handshaking', 'authorized', 'syncing'};
+
+bool partnerIsSettling(SyncService sync) => stillSyncingPeerStates.contains(sync.peer?.status.state);
+
 PeopleSetupView peopleSetupView({
   required IdentityStatus status,
   required bool mailboxSettled,
   required bool waitedOut,
   required bool dismissed,
+  bool partnerSettling = false,
 }) {
   switch (status) {
     case IdentityStatus.loading:
@@ -58,7 +63,7 @@ PeopleSetupView peopleSetupView({
     case IdentityStatus.unclaimed:
       return PeopleSetupView.claim;
     case IdentityStatus.empty:
-      final stillLooking = !waitedOut && !mailboxSettled;
+      final stillLooking = !waitedOut && (!mailboxSettled || partnerSettling);
       return dismissed || stillLooking ? PeopleSetupView.hidden : PeopleSetupView.name;
   }
 }
@@ -152,7 +157,8 @@ class _PeopleSetupState extends State<PeopleSetup> {
   @override
   Widget build(BuildContext context) {
     final identity = context.watch<IdentityController>();
-    final settled = mailboxIsSettled(context.watch<SyncService>());
+    final sync = context.watch<SyncService>();
+    final settled = mailboxIsSettled(sync);
     final status = identity.status;
     _follow(identity, status, settled);
 
@@ -161,6 +167,7 @@ class _PeopleSetupState extends State<PeopleSetup> {
       mailboxSettled: settled,
       waitedOut: _waitedOut,
       dismissed: _dismissed,
+      partnerSettling: partnerIsSettling(sync),
     );
     if (view == PeopleSetupView.hidden) return const SizedBox.shrink();
     return PeopleSetupFrame(child: view == PeopleSetupView.claim ? _claimBody(identity) : _nameBody(identity));

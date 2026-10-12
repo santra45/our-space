@@ -101,6 +101,24 @@ void main() {
       expect(view(settled: true, waited: true, dismissed: true), PeopleSetupView.hidden);
     });
 
+    test('a phone-to-phone link that is still syncing holds the names form back, like the web', () async {
+      expect(stillSyncingPeerStates, {'connecting', 'handshaking', 'authorized', 'syncing'});
+      PeopleSetupView view({required bool settling, required bool waited}) => peopleSetupView(
+            status: IdentityStatus.empty,
+            mailboxSettled: true,
+            waitedOut: waited,
+            dismissed: false,
+            partnerSettling: settling,
+          );
+      expect(view(settling: true, waited: false), PeopleSetupView.hidden);
+      expect(view(settling: true, waited: true), PeopleSetupView.name);
+      expect(view(settling: false, waited: false), PeopleSetupView.name);
+
+      final space = await openPeopleSpace();
+      expect(partnerIsSettling(space.sync), isFalse);
+      await space.close();
+    });
+
     test('the mailbox counts as settled when it is off or has had its look', () async {
       final off = await openPeopleSpace();
       expect(mailboxIsSettled(off.sync), isTrue);
