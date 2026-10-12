@@ -75,7 +75,10 @@ class FlutterRtcSession implements RtcSession {
 
   @override
   Future<RtcChannel> createDataChannel(String label, {required bool ordered}) async {
-    final init = RTCDataChannelInit()..ordered = ordered;
+    final init = RTCDataChannelInit()
+      ..ordered = ordered
+      ..id = -1
+      ..protocol = '';
     final channel = FlutterRtcChannel(await _pc.createDataChannel(label, init));
     _channels.add(channel);
     return channel;
