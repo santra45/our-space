@@ -53,7 +53,7 @@ class Solo {
 
   VaultKey get key => side.key;
 
-  FakeEndpoint get endpoint => network.created.last as FakeEndpoint;
+  FakeEndpoint get endpoint => network.created.last;
 
   Future<void> init() async {
     await side.init();

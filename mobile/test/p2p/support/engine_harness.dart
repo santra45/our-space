@@ -12,7 +12,6 @@ import 'package:our_space_mobile/core/engine/storage/vault_store.dart';
 
 import '../../support/harness.dart';
 import 'fake_clock.dart';
-import 'fake_peer.dart';
 
 Future<void> settle([int rounds = 30]) async {
   for (var i = 0; i < rounds; i++) {

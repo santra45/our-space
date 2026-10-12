@@ -109,10 +109,10 @@ Future<void> replay(String role) async {
   late FakeLink link;
   if (role == 'B') {
     link = FakeLink(peers['A']!, owner: role);
-    (network.created.single as FakeEndpoint).incoming(link);
+    network.created.single.incoming(link);
   } else {
     await side.engine.connectToPartner(peers['B']);
-    link = (network.created.single as FakeEndpoint).dialed.single;
+    link = network.created.single.dialed.single;
   }
   link.openNow();
 
@@ -193,7 +193,7 @@ void main() {
     final side = await EngineSide.open('B', peers['B']!, keyFromBase64(keys['B']!), endpoints: network.create, clock: clock);
     await side.init();
     final link = FakeLink(peers['A']!, owner: 'B');
-    (network.created.single as FakeEndpoint).incoming(link);
+    network.created.single.incoming(link);
     link.openNow();
     link.receiveFrame(transcript.firstWhere((e) => e.from == 'A' && e.bytes != null).bytes!);
     await settle();
