@@ -22,7 +22,7 @@ export 'engine/identity/device_id.dart' show DeviceIdentity;
 export 'engine/identity/identity_controller.dart';
 export 'engine/identity/people.dart'
     show PeopleService, nameOf, possessiveOf, grammarOf, ownerIdsFor, pronouns, pronounSets, defaultPronoun, maxNameLength, sanitizeName;
-export 'engine/identity/people_repair.dart' show PeopleRepair, SwapResult;
+export 'engine/identity/people_repair.dart' show PeopleRepair, SwapResult, tradedPlacesAt;
 export 'engine/invite/invite.dart' show Invite, parseInvite, buildInviteUrl, defaultInviteBaseUrl, peerIdRegex;
 export 'engine/our_space.dart';
 export 'engine/repositories/bucket_list_repository.dart';
