@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:isolate';
 import 'dart:math' as math;
 
 import '../crypto/aes_gcm.dart';
@@ -53,6 +54,7 @@ const int routeProbeIntervalMs = 1500;
 const int routeProbeMaxAttempts = 12;
 
 const int unavailableIdRetryMs = 1200;
+const int offloadCryptoChars = 256 * 1024;
 const int signalReconnectMaxMs = 30000;
 
 final RegExp isoDateRegex = RegExp(r'^\d{4}-\d{2}-\d{2}$');
@@ -225,6 +227,9 @@ class PeerSyncEngine {
 
   bool _clockSkewWarned = false;
   num _observedRemoteMax = 0;
+
+  Future<void> _sendTail = Future<void>.value();
+  Future<void> _inboundTail = Future<void>.value();
 
   bool _hasRetriedUnavailableId = false;
   Completer<String>? _initCompleter;
@@ -918,17 +923,34 @@ class PeerSyncEngine {
     _icePeerConnection = null;
   }
 
-  Future<void> _send(Map<String, Object?> message) async {
+  Future<void> _send(Map<String, Object?> message) {
     final conn = activeConnection;
-    if (conn == null || !conn.open) throw PeerSyncFailure('No open connection to your partner');
-    final key = cryptoKey;
-    if (key == null) throw PeerSyncFailure('Vault is locked');
-
-    final payload = encryptJson(message, key);
-    if (payload.ciphertext.length > maxCiphertextLength) {
-      throw PeerSyncFailure('Message is too large to send');
+    if (conn == null || !conn.open) {
+      return Future<void>.error(PeerSyncFailure('No open connection to your partner'));
     }
-    conn.send({'protocol': peerProtocolId, 'payload': payload.toJson()});
+    final key = cryptoKey;
+    if (key == null) return Future<void>.error(PeerSyncFailure('Vault is locked'));
+
+    final run = _sendTail.then((_) async {
+      final payload = await _seal(message, key);
+      if (payload.ciphertext.length > maxCiphertextLength) {
+        throw PeerSyncFailure('Message is too large to send');
+      }
+      conn.send({'protocol': peerProtocolId, 'payload': payload.toJson()});
+    });
+    _sendTail = run.then((_) {}, onError: (Object _) {});
+    return run;
+  }
+
+  Future<SealedText> _seal(Map<String, Object?> message, VaultKey key) async {
+    final json = jsonStringify(message);
+    if (json.length < offloadCryptoChars) return encryptText(json, key);
+    return Isolate.run(() => encryptText(json, key));
+  }
+
+  Future<Object?> _open(String ciphertext, String iv, VaultKey key) async {
+    if (ciphertext.length < offloadCryptoChars) return decryptJson(ciphertext, iv, key);
+    return Isolate.run(() => decryptJson(ciphertext, iv, key));
   }
 
   Future<void> _sendAuthChallenge() async {
@@ -966,14 +988,26 @@ class PeerSyncEngine {
     final key = cryptoKey;
     if (key == null) return;
 
-    Object? decrypted;
-    try {
-      decrypted = decryptJson(ciphertext, iv, key);
-    } catch (_) {
-      _handleDecryptFailure();
-      return;
-    }
+    final started = Completer<Future<void>>();
+    _inboundTail = _inboundTail.then((_) async {
+      try {
+        Object? decrypted;
+        try {
+          decrypted = await _open(ciphertext, iv, key);
+        } catch (_) {
+          _handleDecryptFailure();
+          started.complete(Future<void>.value());
+          return;
+        }
+        started.complete(_afterDecrypt(decrypted));
+      } catch (error) {
+        if (!started.isCompleted) started.complete(Future<void>.error(error));
+      }
+    });
+    await (await started.future);
+  }
 
+  Future<void> _afterDecrypt(Object? decrypted) async {
     decryptFailures = 0;
     lastPongAt = _clock.now();
     _slotProgressed = true;
