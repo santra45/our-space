@@ -507,6 +507,7 @@ void main() {
           for (var i = 0; i < 3; i++) {'table': memoriesTable, 'id': 'mem-$i'},
         ],
       });
+      await waitFor(() => solo.sentTypes(link).where((t) => t == 'SYNC_RECORDS_BATCH').length == 3, reason: 'three batches');
       final batches = solo.sent(link).where((m) => m['type'] == 'SYNC_RECORDS_BATCH').toList();
       expect([for (final b in batches) b['seq']], [0, 1, 2]);
       expect([for (final b in batches) b['final']], [false, false, true]);
@@ -515,6 +516,49 @@ void main() {
       expect(record.keys.toList(), ['id', 'updatedAt', 'deleted', 'v', 'ciphertext', 'iv', 'imageBlobBase64']);
       expect(link.frames.length - framesBefore, greaterThan(3 * 20));
       expect(link.frames.every((f) => f.length <= 16300 + 64), isTrue);
+      await solo.close();
+    });
+  });
+
+  group('ordering with big messages', () {
+    test('a big incoming photo is applied before the small record that followed it', () async {
+      final solo = await Solo.open();
+      final key = solo.key;
+      final link = await solo.authorizedWith(partnerId);
+      final order = <String>[];
+      solo.side.engine.addDataListener((update) => order.add('${update.table}'));
+      final photo = sealedRow(key, memoriesTable, {'id': 'mem-big', 'imageBlob': randomBytes(400000), 'updatedAt': base});
+      final letter = sealedRow(key, lettersTable, {'id': 'let-small', 'title': 'After', 'updatedAt': base});
+      link.receive(seal({
+        'type': 'LIVE_RECORD_BROADCAST',
+        'record': {'table': memoriesTable, 'data': wire(photo)},
+      }, key));
+      link.receive(seal({
+        'type': 'LIVE_RECORD_BROADCAST',
+        'record': {'table': lettersTable, 'data': wire(letter)},
+      }, key));
+      await waitFor(() => order.length == 2, reason: 'both records');
+      expect(order, [memoriesTable, lettersTable]);
+      expect(await solo.side.store.getRow(memoriesTable, 'mem-big'), isNotNull);
+      await solo.close();
+    });
+
+    test('messages leave in the order they were sent, even when the first is big', () async {
+      final solo = await Solo.open();
+      final key = solo.key;
+      await solo.side.store.putRow(
+        memoriesTable,
+        sealedRow(key, memoriesTable, {'id': 'mem-big', 'imageBlob': randomBytes(400000), 'updatedAt': base}),
+      );
+      final link = await solo.authorizedWith(partnerId);
+      final live = await solo.side.store.getRow(memoriesTable, 'mem-big');
+      final sentBefore = link.sent.length;
+      final first = solo.side.engine.broadcastLiveRecord(memoriesTable, live);
+      final second = solo.side.engine.syncVaultConfig({'coupleNames': 'Second', 'startDate': '2024-02-14', 'updatedAt': base});
+      await first;
+      await second;
+      final types = solo.sentTypes(link).sublist(sentBefore);
+      expect(types, ['LIVE_RECORD_BROADCAST', 'SYNC_CONFIG']);
       await solo.close();
     });
   });
