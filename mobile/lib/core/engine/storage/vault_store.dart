@@ -29,6 +29,20 @@ class SealedWrite {
   final Row row;
 }
 
+class IncomingRow {
+  const IncomingRow(this.table, this.row, {this.unverifiedBinding = false});
+  final String table;
+  final Row row;
+  final bool unverifiedBinding;
+}
+
+class IncomingCommit {
+  const IncomingCommit(this.applied, this.stale, this.unverifiable);
+  final int applied;
+  final int stale;
+  final int unverifiable;
+}
+
 class VaultIdentityRead {
   const VaultIdentityRead({required this.ok, this.meta, this.error});
   final bool ok;
@@ -171,10 +185,20 @@ class VaultStore {
 
   final StreamController<Set<String>> _changes = StreamController<Set<String>>.broadcast();
   final StreamController<String> _localWrites = StreamController<String>.broadcast();
+  final StreamController<SealedWrite> _localRows = StreamController<SealedWrite>.broadcast();
 
   Stream<Set<String>> get changes => _changes.stream;
 
   Stream<String> get localWrites => _localWrites.stream;
+
+  Stream<SealedWrite> get localRows => _localRows.stream;
+
+  void _noteLocalRows(Iterable<SealedWrite> writes) {
+    if (_localRows.isClosed) return;
+    for (final write in writes) {
+      _localRows.add(write);
+    }
+  }
 
   void _noteLocal(Iterable<String> tables) {
     if (_localWrites.isClosed) return;
@@ -211,6 +235,7 @@ class VaultStore {
   Future<void> close() async {
     await _changes.close();
     await _localWrites.close();
+    await _localRows.close();
     await _db.close();
   }
 
@@ -318,7 +343,7 @@ class VaultStore {
 
   Future<bool> addRowsIfTableEmpty(String table, List<Row> rows) async {
     _checkTable(table);
-    var added = false;
+    final inserted = <SealedWrite>[];
     await _db.transaction((txn) async {
       final live = await txn.rawQuery('SELECT COUNT(*) AS n FROM "$table" WHERE del = 0');
       if (((live.first['n'] as int?) ?? 0) > 0) return;
@@ -326,14 +351,50 @@ class VaultStore {
         final existing = await txn.query('"$table"', columns: ['id'], where: 'id = ?', whereArgs: [row['id']]);
         if (existing.isNotEmpty) continue;
         await txn.insert('"$table"', _toSql(row));
-        added = true;
+        inserted.add(SealedWrite(table, row));
       }
     });
+    final added = inserted.isNotEmpty;
     if (added) {
       _emit([table]);
       _noteLocal([table]);
+      _noteLocalRows(inserted);
     }
     return added;
+  }
+
+  Future<IncomingCommit> commitIncomingRows(List<IncomingRow> staged) async {
+    if (staged.isEmpty) return const IncomingCommit(0, 0, 0);
+    for (final entry in staged) {
+      _checkTable(entry.table);
+    }
+    var applied = 0;
+    var stale = 0;
+    var unverifiable = 0;
+    final touched = <String>{};
+    await _db.transaction((txn) async {
+      for (final entry in staged) {
+        final found = await txn.query('"${entry.table}"', where: 'id = ?', whereArgs: [entry.row['id']], limit: 1);
+        final existing = found.isEmpty ? null : _fromSql(found.first);
+        if (!recordHasAuthenticatedHeader(entry.row)) {
+          unverifiable++;
+          continue;
+        }
+        if (existing != null && entry.unverifiedBinding) {
+          unverifiable++;
+          continue;
+        }
+        if (!incomingWins(existing, entry.row)) {
+          stale++;
+          continue;
+        }
+        await txn.insert('"${entry.table}"', _toSql(entry.row), conflictAlgorithm: ConflictAlgorithm.replace);
+        touched.add(entry.table);
+        applied++;
+      }
+    });
+    _emit(touched);
+    return IncomingCommit(applied, stale, unverifiable);
   }
 
   Future<void> clearTable(String table) async {
@@ -428,6 +489,7 @@ class VaultStore {
     await putRow(table, row);
     row['_del'] = row['deleted'] == true ? 1 : 0;
     _noteLocal([table]);
+    _noteLocalRows([SealedWrite(table, row)]);
     return row;
   }
 
@@ -447,6 +509,7 @@ class VaultStore {
       entry.row['_del'] = entry.row['deleted'] == true ? 1 : 0;
     }
     _noteLocal(sealed.map((entry) => entry.table));
+    _noteLocalRows(sealed);
     return sealed;
   }
 
@@ -488,6 +551,7 @@ class VaultStore {
     await putRow(table, row);
     row['_del'] = 1;
     _noteLocal([table]);
+    _noteLocalRows([SealedWrite(table, row)]);
     return row;
   }
 
