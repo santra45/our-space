@@ -354,7 +354,7 @@ class _SyncHubState extends State<SyncHub> {
     final sync = context.watch<SyncService>();
     final notices = context.watch<AppNotices>();
     final peer = context.watch<PeerLink?>();
-    final link = peer?.state ?? PeerLinkState.offline;
+    final link = peer?.state ?? PeerLinkView.offline;
     final myPeerId = link.myPeerId ?? _devicePeerId;
     final shareUrl = syncHubInviteLink(myPeerId: myPeerId, vault: vault);
 
@@ -514,7 +514,7 @@ class _StatusPanel extends StatelessWidget {
     required this.onUnpair,
   });
 
-  final PeerLinkState link;
+  final PeerLinkView link;
   final PeerLink? peer;
   final String partnerName;
   final int? partnerLastActive;

@@ -225,7 +225,7 @@ void main() {
     calm(tester);
     final space = await openUnlockedSpace(tester);
     final now = DateTime.now().millisecondsSinceEpoch;
-    final peer = FakePeerLink(const PeerLinkState(
+    final peer = FakePeerLink(const PeerLinkView(
       myPeerId: 'love-fromthelink',
       partnerId: 'love-partnerphone',
       authorized: true,
@@ -247,18 +247,18 @@ void main() {
     await press(tester, find.text(SyncHubCopy.syncNow));
     expect(peer.calls, ['syncNow']);
 
-    peer.state = const PeerLinkState(partnerId: 'love-partnerphone', authorized: true, route: PeerRoute.relayed);
+    peer.state = const PeerLinkView(partnerId: 'love-partnerphone', authorized: true, route: PeerRoute.relayed);
     await tester.pump();
     expect(find.text(SyncHubCopy.relayed), findsOneWidget);
     expect(find.text(SyncHubCopy.notSureBody), findsNothing);
 
-    peer.state = const PeerLinkState(partnerId: 'love-partnerphone', authorized: true, syncing: true);
+    peer.state = const PeerLinkView(partnerId: 'love-partnerphone', authorized: true, syncing: true);
     await tester.pump();
     expect(find.text(SyncHubCopy.notSure), findsOneWidget);
     expect(find.text(SyncHubCopy.notSureBody), findsOneWidget);
     expect(find.text(SyncHubCopy.syncingWithPartner), findsOneWidget);
 
-    peer.state = PeerLinkState(partnerId: 'love-partnerphone', connecting: true, lastConnectedAt: now - 5 * 60000);
+    peer.state = PeerLinkView(partnerId: 'love-partnerphone', connecting: true, lastConnectedAt: now - 5 * 60000);
     await tester.pump();
     expect(find.text(SyncHubCopy.connecting), findsOneWidget);
     expect(find.text('5m ago'), findsOneWidget);
@@ -274,12 +274,12 @@ void main() {
     await press(tester, find.text('OK'));
     expect(peer.calls.last, 'unpair');
 
-    peer.state = const PeerLinkState(handshaking: true);
+    peer.state = const PeerLinkView(handshaking: true);
     await tester.pump();
     expect(find.text(SyncHubCopy.handshaking), findsOneWidget);
     expect(find.text(SyncHubCopy.partnerLabel), findsNothing);
 
-    peer.state = const PeerLinkState(
+    peer.state = const PeerLinkView(
       partnerId: 'love-partnerphone',
       error: PeerLinkError(text: 'Your passphrases do not match.', code: PeerLinkError.passphraseMismatch),
     );
@@ -291,7 +291,7 @@ void main() {
     await press(tester, find.text(SyncHubCopy.dismiss));
     expect(peer.calls.last, 'clearError');
 
-    peer.state = const PeerLinkState(error: PeerLinkError(text: 'Lost them for a moment.'));
+    peer.state = const PeerLinkView(error: PeerLinkError(text: 'Lost them for a moment.'));
     await tester.pump();
     expect(find.text(SyncHubCopy.tryAgain), findsNothing);
     expect(find.text(SyncHubCopy.passphraseMismatchHelp), findsNothing);

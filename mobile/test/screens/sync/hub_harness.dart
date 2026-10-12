@@ -115,15 +115,15 @@ Future<void> press(WidgetTester tester, Finder finder) async {
 }
 
 class FakePeerLink extends PeerLink {
-  FakePeerLink([this._state = PeerLinkState.offline]);
+  FakePeerLink([this._state = PeerLinkView.offline]);
 
-  PeerLinkState _state;
+  PeerLinkView _state;
   final List<String> calls = [];
 
   @override
-  PeerLinkState get state => _state;
+  PeerLinkView get state => _state;
 
-  set state(PeerLinkState next) {
+  set state(PeerLinkView next) {
     _state = next;
     notifyListeners();
   }

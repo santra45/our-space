@@ -13,8 +13,8 @@ class PeerLinkError {
 }
 
 @immutable
-class PeerLinkState {
-  const PeerLinkState({
+class PeerLinkView {
+  const PeerLinkView({
     this.myPeerId,
     this.partnerId,
     this.authorized = false,
@@ -26,7 +26,7 @@ class PeerLinkState {
     this.lastConnectedAt,
   });
 
-  static const PeerLinkState offline = PeerLinkState();
+  static const PeerLinkView offline = PeerLinkView();
 
   final String? myPeerId;
   final String? partnerId;
@@ -40,7 +40,7 @@ class PeerLinkState {
 }
 
 abstract class PeerLink extends ChangeNotifier {
-  PeerLinkState get state;
+  PeerLinkView get state;
 
   void connect(String partnerPeerId);
 
