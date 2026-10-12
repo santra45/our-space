@@ -147,6 +147,7 @@ class FakeEndpoint implements PeerEndpoint {
   bool _disconnected = false;
   int reconnects = 0;
   final List<FakeLink> dialed = [];
+  PeerLink Function(String peerId)? connector;
 
   @override
   void Function(String id)? onOpen;
@@ -183,7 +184,7 @@ class FakeEndpoint implements PeerEndpoint {
     onDisconnected?.call(_id);
   }
 
-  void incoming(FakeLink link) => onConnection?.call(link);
+  void incoming(PeerLink link) => onConnection?.call(link);
 
   @override
   PeerLink? connect(String peerId, {bool reliable = true}) {
@@ -191,6 +192,8 @@ class FakeEndpoint implements PeerEndpoint {
       onError?.call(const PeerError(PeerError.disconnected));
       return null;
     }
+    final custom = connector;
+    if (custom != null) return custom(peerId);
     final link = FakeLink(peerId, owner: requestedId);
     dialed.add(link);
     network?.dial(this, link);
