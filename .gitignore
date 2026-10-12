@@ -11,8 +11,7 @@ dist
 dist-ssr
 *.local
 
-.vscode/*
-!.vscode/extensions.json
+.vscode/
 .idea
 .DS_Store
 *.suo
@@ -34,3 +33,7 @@ dist-ssr
 .agent/
 
 worker/.wrangler/
+
+.github/
+.repowise/
+.mcp.json
