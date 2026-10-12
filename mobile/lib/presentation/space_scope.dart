@@ -4,6 +4,7 @@ import 'package:flutter/widgets.dart';
 import 'package:provider/provider.dart';
 
 import '../core/engine.dart';
+import 'screens/sync/peer_link.dart';
 import 'theme/app_motion.dart';
 import 'widgets/our_feedback.dart';
 
@@ -120,6 +121,7 @@ class SpaceScope extends StatefulWidget {
 
 class _SpaceScopeState extends State<SpaceScope> {
   late AppNotices _notices = AppNotices(vault: widget.space.vault, sync: widget.space.sync);
+  late PeerLink _peer = HubPeerLink(widget.space.peer);
 
   @override
   void didUpdateWidget(covariant SpaceScope oldWidget) {
@@ -127,12 +129,15 @@ class _SpaceScopeState extends State<SpaceScope> {
     if (!identical(oldWidget.space, widget.space)) {
       _notices.dispose();
       _notices = AppNotices(vault: widget.space.vault, sync: widget.space.sync);
+      _peer.dispose();
+      _peer = HubPeerLink(widget.space.peer);
     }
   }
 
   @override
   void dispose() {
     _notices.dispose();
+    _peer.dispose();
     super.dispose();
   }
 
@@ -146,6 +151,7 @@ class _SpaceScopeState extends State<SpaceScope> {
         ChangeNotifierProvider<IdentityController>.value(value: space.identity),
         ChangeNotifierProvider<SyncService>.value(value: space.sync),
         ChangeNotifierProvider<AppNotices>.value(value: _notices),
+        ChangeNotifierProvider<PeerLink>.value(value: _peer),
       ],
       child: SpaceLifecycle(sync: space.sync, child: widget.child),
     );

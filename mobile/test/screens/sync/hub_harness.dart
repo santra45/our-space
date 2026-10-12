@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:our_space_mobile/core/engine.dart';
+import 'package:our_space_mobile/presentation/app_shell.dart';
 import 'package:our_space_mobile/presentation/files/vault_files.dart';
 import 'package:our_space_mobile/presentation/screens/sync/peer_link.dart';
 import 'package:our_space_mobile/presentation/screens/sync/sync_hub.dart';
@@ -142,7 +143,15 @@ class FakePeerLink extends PeerLink {
 
   @override
   void clearError() => calls.add('clearError');
+
+  @override
+  void confirmInvite() => calls.add('confirmInvite');
+
+  @override
+  void declineInvite() => calls.add('declineInvite');
 }
+
+Widget blankTab(BuildContext context, AppTab tab) => const SizedBox.shrink();
 
 class Launcher extends StatelessWidget {
   const Launcher({super.key, this.child});

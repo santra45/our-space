@@ -152,15 +152,7 @@ class _SyncHubState extends State<SyncHub> {
     Navigator.of(context).maybePop();
   }
 
-  void _connect(String partnerPeerId) {
-    final peer = context.read<PeerLink?>();
-    if (peer != null) {
-      peer.connect(partnerPeerId);
-      return;
-    }
-    final sync = context.read<SyncService>();
-    if (sync.mailboxEnabled) unawaited(sync.syncNow('pair'));
-  }
+  void _connect(String partnerPeerId) => context.read<PeerLink?>()?.connect(partnerPeerId);
 
   Future<void> _shareInvite(String? link) async {
     AppHaptics.tap();

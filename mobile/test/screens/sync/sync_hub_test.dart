@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:our_space_mobile/core/engine.dart';
 import 'package:our_space_mobile/main.dart';
 import 'package:our_space_mobile/presentation/files/vault_files.dart';
+import 'package:our_space_mobile/presentation/home_shell.dart';
 import 'package:our_space_mobile/presentation/screens/sync/backup_dialogs.dart';
 import 'package:our_space_mobile/presentation/screens/sync/invite_qr.dart';
 import 'package:our_space_mobile/presentation/screens/sync/peer_link.dart';
@@ -159,21 +160,23 @@ void main() {
     expect(peer.calls.last, 'connect:love-abcdefgh');
   });
 
-  testWidgets('without a direct link, pairing asks the mailbox to check instead', (tester) async {
+  testWidgets('pairing hands the code to the phone-to-phone link and shows what it says back', (tester) async {
     calm(tester);
-    final worker = FakeMailboxWorker(token: 'test-token');
-    final space = await openUnlockedSpace(
-      tester,
-      mailbox: const MailboxConfig(
-          url: 'https://mailbox.test', token: 'test-token', origin: 'https://sameskytonight.vercel.app'),
-      client: worker,
-    );
+    final space = await openUnlockedSpace(tester);
     await openHub(tester, space);
     await type(tester, fieldWithHint(SyncHubCopy.pasteHint), 'love-abcdefgh');
     await press(tester, find.text(SyncHubCopy.pair));
-    await until(tester,
-        () => space.sync.status.state != MailboxRunState.idle && space.sync.status.state != MailboxRunState.syncing);
-    expect(space.sync.status.reason, 'pair');
+    await untilFound(tester, find.text('We could not reach love-abcdefgh. Check they have Our Space open, then try again.'));
+
+    expect(space.peer.partnerId, 'love-abcdefgh');
+    expect(find.text('love-abcdefgh'), findsNWidgets(2));
+    expect(find.text(SyncHubCopy.tryAgain), findsOneWidget);
+    expect(space.sync.status.reason, isNull);
+
+    await press(tester, find.text(SyncHubCopy.dismiss));
+    expect(space.peer.syncError, isNull);
+    expect(find.text(SyncHubCopy.tryAgain), findsNothing);
+    await settle(tester);
   });
 
   testWidgets('scans a partner QR through the camera hook', (tester) async {
@@ -523,7 +526,8 @@ void main() {
   testWidgets('opens from the header pill, and locking closes the hub and every sheet above it', (tester) async {
     calm(tester);
     final space = await openUnlockedSpace(tester);
-    await tester.pumpWidget(OurSpaceApp(openSpace: () async => space));
+    await real(tester, () => space.identity.createCouple(myName: 'Sam', partnerName: 'Alex'));
+    await tester.pumpWidget(OurSpaceApp(openSpace: () async => space, shell: const HomeShell(pageBuilder: blankTab)));
     await tester.pump();
     await untilFound(tester, find.byType(SyncStatusPill));
     await tester.tap(find.byType(SyncStatusPill));
@@ -561,6 +565,9 @@ void main() {
     expect(invite.salt, space.vault.salt);
     expect(invite.startDate, '2021-06-14');
     expect(invite.coupleNames, 'Sam & Alex');
+    while (space.identity.status == IdentityStatus.loading || space.identity.status == IdentityStatus.locked) {
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+    }
     await space.close();
   });
 }
