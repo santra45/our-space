@@ -5,7 +5,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:our_space_mobile/core/engine.dart';
 import 'package:our_space_mobile/main.dart';
+import 'package:our_space_mobile/presentation/app_shell.dart';
 import 'package:our_space_mobile/presentation/deep_links.dart';
+import 'package:our_space_mobile/presentation/home_shell.dart';
 import 'package:our_space_mobile/presentation/widgets/our_widgets.dart';
 
 import '../../support/fake_mailbox_worker.dart';
@@ -46,6 +48,12 @@ Future<void> until(WidgetTester tester, bool Function() done, {int tries = 1500}
 
 Future<void> untilFound(WidgetTester tester, Finder finder) => until(tester, () => finder.evaluate().isNotEmpty);
 
+Future<void> settleIdentity(WidgetTester tester, OurSpace space) => real(tester, () async {
+      while (space.identity.status == IdentityStatus.loading || space.identity.status == IdentityStatus.locked) {
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+      }
+    });
+
 Finder fieldWithHint(String hint) => find.descendant(
       of: find.byWidgetPredicate((widget) => widget is OurTextField && widget.hint == hint),
       matching: find.byType(TextField),
@@ -80,11 +88,14 @@ void calm(WidgetTester tester) {
   addTearDown(tester.platformDispatcher.clearAccessibilityFeaturesTestValue);
 }
 
+Widget blankTab(BuildContext context, AppTab tab) => const SizedBox.shrink();
+
 Future<void> pumpOurSpace(WidgetTester tester, OurSpace space, {InviteInbox? inbox}) async {
   final links = inbox ?? InviteInbox();
   await tester.pumpWidget(OurSpaceApp(
     openSpace: () async => space,
     gate: (context, shell) => InviteLinkGate(shell: shell, inbox: links),
+    shell: const HomeShell(pageBuilder: blankTab),
   ));
   await tester.pump();
 }
