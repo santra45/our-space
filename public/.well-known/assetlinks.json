@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.ourspace.our_space_mobile",
+      "sha256_cert_fingerprints": [
+        "B7:6D:88:61:A9:84:6A:E8:40:31:A2:AB:A1:0F:E9:C0:C6:B1:A1:18:54:1F:73:AB:3F:48:F9:F5:34:E0:15:FF"
+      ]
+    }
+  }
+]
