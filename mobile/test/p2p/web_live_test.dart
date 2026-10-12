@@ -26,6 +26,9 @@ class WebPeer {
     try {
       final process = await Process.start('node', ['test/p2p/tool/web_peer_bridge.mjs']);
       final peer = WebPeer._(process);
+      unawaited(process.exitCode.then((_) {
+        if (!peer._hello.isCompleted) peer._hello.complete(false);
+      }));
       final hello = await peer._hello.future.timeout(const Duration(seconds: 20), onTimeout: () => false);
       if (!hello) {
         process.kill();
