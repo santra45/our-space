@@ -42,8 +42,12 @@ class EngineSide {
     required PeerEndpointFactory endpoints,
     required FakePeerClock clock,
     String Function(int bytes)? nonce,
+    Map<String, String> settings = const {},
   }) async {
     final store = await openTestStore(now: clock.now);
+    for (final entry in settings.entries) {
+      await store.settings.setItem(entry.key, entry.value);
+    }
     final engine = PeerSyncEngine(
       records: VaultStorePeerRecords(store),
       settings: store.settings,
