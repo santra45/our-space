@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import '../crypto/derived_ids.dart';
 import '../domain/love_bursts.dart';
 import '../identity/identity_controller.dart';
+import '../p2p/peer_hub.dart';
 import '../storage/tables.dart';
 import '../storage/vault_store.dart';
 import '../vault/vault_service.dart';
@@ -47,6 +48,7 @@ class SyncService extends ChangeNotifier {
     required this.mailbox,
     required this.loveBursts,
     this.autoSync = true,
+    this.peer,
   }) {
     mailbox.onWarning = (code, message) => _notify(SyncNotice(message, SyncNoticeKind.warning));
     store.clock.onWarning = (code, message) => _notify(SyncNotice(message, SyncNoticeKind.warning));
@@ -55,6 +57,12 @@ class SyncService extends ChangeNotifier {
       if (autoSync) schedule('local-write');
     });
     _burstSub = store.watchTable(loveBurstsTable).listen((_) => unawaited(checkLoveBursts()));
+    final hub = peer;
+    if (hub != null) {
+      hub.onNotice = (notice) =>
+          _notify(SyncNotice(notice.text, notice.warning ? SyncNoticeKind.warning : SyncNoticeKind.notice));
+      hub.addListener(notifyListeners);
+    }
   }
 
   final VaultStore store;
@@ -63,6 +71,7 @@ class SyncService extends ChangeNotifier {
   final Mailbox mailbox;
   final LoveBurstService loveBursts;
   final bool autoSync;
+  final PeerSyncHub? peer;
 
   late final StreamSubscription<String> _localSub;
   late final StreamSubscription<void> _burstSub;
@@ -84,6 +93,7 @@ class SyncService extends ChangeNotifier {
   }
 
   bool get mailboxEnabled => mailbox.isEnabled;
+  bool get peerAuthorized => peer?.isAuthorized ?? false;
   MailboxStatus get status => _status;
   String? get lastNotice => _lastNotice;
   Stream<SyncNotice> get notices => _notices.stream;
@@ -117,10 +127,12 @@ class SyncService extends ChangeNotifier {
     identity.appInForeground = true;
     unawaited(identity.touchLastActive());
     if (autoSync) schedule('foreground', const Duration(milliseconds: 500));
+    peer?.onForeground();
   }
 
   void onBackground() {
     identity.appInForeground = false;
+    peer?.onBackground();
   }
 
   void schedule(String reason, [Duration delay = const Duration(seconds: 4)]) {
@@ -177,7 +189,9 @@ class SyncService extends ChangeNotifier {
       return false;
     }
     _notify(SyncNotice(
-      'Saved 💕 ${identity.partnerName} will see it the moment you two connect.',
+      peerAuthorized
+          ? 'Love burst sent to ${identity.partnerName}! 💕'
+          : 'Saved 💕 ${identity.partnerName} will see it the moment you two connect.',
       SyncNoticeKind.notice,
     ));
     return true;
@@ -192,7 +206,7 @@ class SyncService extends ChangeNotifier {
       if (unseen.total <= 0) return 0;
       await loveBursts.markBurstsSeen(unseen.records);
       if (!_bursts.isClosed) _bursts.add(unseen.total);
-      _notify(SyncNotice(describeBursts(unseen.total, false, identity.partnerName), SyncNoticeKind.loveBurst));
+      _notify(SyncNotice(describeBursts(unseen.total, peerAuthorized, identity.partnerName), SyncNoticeKind.loveBurst));
       return unseen.total;
     } catch (_) {
       return 0;
@@ -208,6 +222,9 @@ class SyncService extends ChangeNotifier {
     vault.removeListener(_onVault);
     unawaited(_localSub.cancel());
     unawaited(_burstSub.cancel());
+    peer?.onNotice = null;
+    peer?.removeListener(notifyListeners);
+    peer?.dispose();
     unawaited(_notices.close());
     unawaited(_bursts.close());
     super.dispose();
