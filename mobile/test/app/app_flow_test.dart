@@ -275,6 +275,7 @@ void main() {
     await press(tester, find.text('Erase & Start Fresh'));
     await until(tester, () => space.vault.isUnlocked);
     expect(space.vault.salt, isNot(oldSalt));
+    await untilFound(tester, find.text("TODAY'S QUESTION"));
   });
 
   testWidgets('brings a saved copy back onto an empty phone', (tester) async {
