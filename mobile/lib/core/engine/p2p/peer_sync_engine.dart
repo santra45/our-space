@@ -356,7 +356,10 @@ class PeerSyncEngine {
 
     var peerId = (customId != null && customId.isNotEmpty) ? customId : null;
     peerId ??= _storedDevicePeerId();
-    peerId ??= _newPeerId();
+    if (peerId == null) {
+      peerId = _newPeerId();
+      _setStoredDevicePeerId(peerId);
+    }
     final chosenId = peerId;
 
     final PeerEndpoint created;
