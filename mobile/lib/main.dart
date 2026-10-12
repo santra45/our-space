@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'core/engine.dart';
+import 'presentation/deep_links.dart';
 import 'presentation/home_shell.dart';
 import 'presentation/screens/lock/lock_screen.dart';
 import 'presentation/space_scope.dart';
@@ -40,7 +41,7 @@ Stream<LicenseEntry> bundledLicenses() async* {
 
 Future<OurSpace> openOurSpace() => OurSpace.open();
 
-Widget vaultGate(BuildContext context, Widget shell) => VaultGate(shell: shell);
+Widget vaultGate(BuildContext context, Widget shell) => InviteLinkGate(shell: shell);
 
 class OurSpaceApp extends StatefulWidget {
   const OurSpaceApp({super.key, this.openSpace = openOurSpace, this.gate = vaultGate, this.shell});

@@ -1,0 +1,214 @@
+import 'dart:async';
+import 'dart:io';
+
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:our_space_mobile/core/engine.dart';
+import 'package:our_space_mobile/presentation/deep_links.dart';
+import 'package:our_space_mobile/presentation/home_shell.dart';
+import 'package:our_space_mobile/presentation/screens/lock/lock_screen.dart';
+import 'package:our_space_mobile/presentation/widgets/our_widgets.dart';
+
+import 'people_harness.dart';
+
+const String webOrigin = 'https://sameskytonight.vercel.app';
+const String sampleSalt = 'AAECAwQFBgcICQoLDA0ODw==';
+const String pasteHint = 'Paste link (e.g. https://...#connect=...)';
+const String invitedLine = 'Your partner invited you! 💕';
+const String foundLine = 'Found your partner\'s invite! Enter the passphrase you both chose.';
+const String hereLine = 'Your partner\'s invite is here. Unlock, and we\'ll offer to connect to their phone.';
+
+String inviteFor(String? salt, {String peerId = 'love-abc123xyz', String? names}) =>
+    buildInviteUrl(peerId, salt, baseUrl: '$webOrigin/', coupleNames: names, startDate: '2021-06-14');
+
+void main() {
+  group('reading invite links', () {
+    test('the links open on the deployed site, as the web builds them', () {
+      expect(inviteLinkHost, 'sameskytonight.vercel.app');
+      final link = inviteFor(sampleSalt, names: 'Sam & Alex');
+      expect(link, startsWith('$webOrigin/#connect=love-abc123xyz&salt='));
+
+      final invite = inviteFromLink(link)!;
+      expect(invite.partnerPeerId, 'love-abc123xyz');
+      expect(invite.salt, sampleSalt);
+      expect(invite.coupleNames, 'Sam & Alex');
+      expect(invite.startDate, '2021-06-14');
+      expect(invite.canJoin, isTrue);
+    });
+
+    test('anything that is not one of our invite links is left alone', () {
+      expect(inviteFromLink(null), isNull);
+      expect(inviteFromLink(''), isNull);
+      expect(inviteFromLink('$webOrigin/'), isNull);
+      expect(inviteFromLink('$webOrigin/#'), isNull);
+      expect(inviteFromLink('https://example.com/#connect=love-abc123xyz&salt=$sampleSalt'), isNull);
+      expect(inviteFromLink('http://sameskytonight.vercel.app/#connect=love-abc123xyz'), isNull);
+      expect(inviteFromLink('love-abc123xyz'), isNull);
+      expect(inviteFromLink('$webOrigin/#connect=love-abc123xyz')?.canJoin, isFalse);
+    });
+
+    test('the inbox keeps the newest invite and counts each one', () async {
+      final links = StreamController<String>();
+      final inbox = InviteInbox(links.stream);
+      var heard = 0;
+      inbox.addListener(() => heard++);
+
+      links.add('$webOrigin/');
+      links.add(inviteFor(sampleSalt));
+      links.add(inviteFor(null, peerId: 'love-second-one'));
+      await pumpEventQueue();
+
+      expect(heard, 2);
+      expect(inbox.arrivals, 2);
+      expect(inbox.pending?.partnerPeerId, 'love-second-one');
+      inbox.consume();
+      expect(inbox.pending, isNull);
+      expect(inbox.arrivals, 2);
+      expect(inbox.deliver('not a link'), isFalse);
+
+      await links.close();
+      inbox.dispose();
+    });
+
+    test('the phone claims the same address the web shares', () {
+      final manifest = File('android/app/src/main/AndroidManifest.xml').readAsStringSync();
+      expect(manifest, contains('android:scheme="https" android:host="$inviteLinkHost"'));
+      expect(manifest, contains('android.intent.action.VIEW'));
+      expect(manifest, contains('android.intent.category.BROWSABLE'));
+      expect(manifest, contains('<meta-data android:name="flutter_deeplinking_enabled" android:value="false" />'));
+    });
+  });
+
+  testWidgets('a cold start from an invite link opens straight into joining', (tester) async {
+    calm(tester);
+    final partner = await real(tester, openPeopleSpace);
+    await real(tester, () => partner.vault.create(passphrase: passphrase, coupleNames: 'Sam & Alex'));
+    final link = partner.vault.buildInviteLink(baseUrl: '$webOrigin/')!;
+
+    final launch = StreamController<String>();
+    final inbox = InviteInbox(launch.stream);
+    final phone = await real(tester, openPeopleSpace);
+    await pumpOurSpace(tester, phone, inbox: inbox);
+    await untilFound(tester, find.text('Setup Your Private Space'));
+
+    launch.add(link);
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.text('Join Partner\'s Space 💕'), findsOneWidget);
+    expect(find.text(invitedLine), findsOneWidget);
+    expect(find.text(foundLine), findsOneWidget);
+    expect(fieldWithHint(pasteHint), findsNothing);
+
+    await type(tester, fieldWithHint('Enter the secret phrase you both agreed on...'), passphrase);
+    await press(tester, find.text('Pair & Enter Our Space 💕'));
+    await until(tester, () => phone.vault.isUnlocked);
+    await untilFound(tester, find.byType(HomeShell));
+    expect(phone.vault.salt, partner.vault.salt);
+    expect(find.text('Sam & Alex'), findsOneWidget);
+    expect(inbox.pending, isNull);
+
+    phone.vault.lock();
+    await tester.pump();
+    await tester.pump();
+    expect(find.text('Locked'), findsOneWidget);
+    expect(find.text(hereLine), findsNothing);
+    await launch.close();
+  });
+
+  testWidgets('a link that was already waiting when the app opened is used', (tester) async {
+    calm(tester);
+    final inbox = InviteInbox()..deliver(inviteFor(sampleSalt));
+    final phone = await real(tester, openPeopleSpace);
+    await pumpOurSpace(tester, phone, inbox: inbox);
+    await untilFound(tester, find.text(invitedLine));
+    expect(find.text(foundLine), findsOneWidget);
+    expect(fieldWithHint(pasteHint), findsNothing);
+  });
+
+  testWidgets('a link that arrives while the lock screen is open switches it to joining', (tester) async {
+    calm(tester);
+    final inbox = InviteInbox();
+    final phone = await real(tester, openPeopleSpace);
+    await pumpOurSpace(tester, phone, inbox: inbox);
+    await untilFound(tester, find.text('Setup Your Private Space'));
+
+    await press(tester, find.text('Join Partner\'s Space'));
+    await press(tester, find.text('Create New Space'));
+    await type(tester, fieldWithHint('e.g. Romeo & Juliet'), 'Half typed');
+    expect(find.text('Setup Your Private Space'), findsOneWidget);
+
+    expect(inbox.deliver(inviteFor(sampleSalt)), isTrue);
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.text('Setup Your Private Space'), findsNothing);
+    expect(find.text(invitedLine), findsOneWidget);
+    expect(find.text(foundLine), findsOneWidget);
+    expect(fieldWithHint(pasteHint), findsNothing);
+  });
+
+  testWidgets('a link that arrives while unlocked closes everything and shows the lock screen', (tester) async {
+    calm(tester);
+    final inbox = InviteInbox();
+    final space = await real(tester, openPeopleSpace);
+    await real(tester, () async {
+      await space.vault.create(passphrase: passphrase, coupleNames: 'Us two', iterations: fastIterations);
+      await space.identity.createCouple(myName: 'Sam', partnerName: 'Alex');
+    });
+    await pumpOurSpace(tester, space, inbox: inbox);
+    await untilFound(tester, find.byType(HomeShell));
+
+    expect(inbox.deliver('$webOrigin/'), isFalse);
+    await tester.pump();
+    expect(space.vault.isUnlocked, isTrue);
+
+    unawaited(showOurModal<void>(
+      context: tester.element(find.byType(HomeShell)),
+      builder: (_) => const OurModalCard(child: Text('A little sheet')),
+    ));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(find.text('A little sheet'), findsOneWidget);
+
+    expect(inbox.deliver(inviteFor('EBESExQVFhcYGRobHB0eHw==')), isTrue);
+    await tester.pump();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+
+    expect(space.vault.isUnlocked, isFalse);
+    expect(find.text('A little sheet'), findsNothing);
+    expect(find.byType(LockScreen), findsOneWidget);
+    expect(find.text('Locked'), findsOneWidget);
+    expect(find.textContaining('That invite is for a ', findRichText: true), findsOneWidget);
+    expect(find.text(hereLine), findsNothing);
+
+    await type(tester, fieldWithHint('Enter your secret passphrase (min 16 chars)...'), passphrase);
+    await press(tester, find.text('Unlock Our Space 💕'));
+    await until(tester, () => space.vault.isUnlocked);
+    await untilFound(tester, find.byType(HomeShell));
+    expect(space.vault.salt, isNot('EBESExQVFhcYGRobHB0eHw=='));
+
+    space.vault.lock();
+    await tester.pump();
+    await tester.pump();
+    expect(find.text('Locked'), findsOneWidget);
+    expect(find.textContaining('That invite is for a ', findRichText: true), findsNothing);
+  });
+
+  testWidgets('an invite for this same space just says it is here', (tester) async {
+    calm(tester);
+    final inbox = InviteInbox();
+    final space = await real(tester, openPeopleSpace);
+    await real(tester, () => space.vault.create(passphrase: passphrase, iterations: fastIterations));
+    space.vault.lock();
+    await pumpOurSpace(tester, space, inbox: inbox);
+    await untilFound(tester, find.text('Locked'));
+
+    inbox.deliver(inviteFor(space.vault.salt));
+    await tester.pump();
+    await tester.pump();
+    expect(find.text('Locked'), findsOneWidget);
+    expect(find.text(hereLine), findsOneWidget);
+  });
+}
