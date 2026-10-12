@@ -80,6 +80,7 @@ class MemoriesRepository extends TableRepository<MemoryRecord> {
     required String mime,
     required String date,
     String caption = '',
+    void Function()? onSealed,
   }) async {
     final key = requireKey();
     final imageBlob = photo.length > 256 * 1024
@@ -88,6 +89,7 @@ class MemoriesRepository extends TableRepository<MemoryRecord> {
     if (imageBlob.length > maxImageBlobBytes) {
       throw PhotoTooLargeError(imageBlob.length);
     }
+    onSealed?.call();
     final trimmed = jsTrim(caption);
     return store.putEncrypted(
       memoriesTable,

@@ -107,7 +107,15 @@ class _AddMemoryModalState extends State<AddMemoryModal> {
       final photo = await compressPhoto(picked.bytes);
       if (!mounted) return;
       setState(() => _status = MemoriesCopy.tuckingAway);
-      await space.memories.add(photo: photo.bytes, mime: photo.mime, date: _date, caption: _caption.text);
+      await space.memories.add(
+        photo: photo.bytes,
+        mime: photo.mime,
+        date: _date,
+        caption: _caption.text,
+        onSealed: () {
+          if (mounted) setState(() => _status = MemoriesCopy.savingScrapbook);
+        },
+      );
       if (!mounted) return;
       AppHaptics.celebration();
       fireHeartConfetti(context);

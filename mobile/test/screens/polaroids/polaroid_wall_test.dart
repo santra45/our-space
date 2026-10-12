@@ -45,6 +45,28 @@ void main() {
       );
     });
 
+    test('saving walks through the web steps, the last one once the photo is sealed', () async {
+      expect(MemoriesCopy.gettingReady, 'Getting it ready...');
+      expect(MemoriesCopy.tuckingAway, 'Tucking it away safely...');
+      expect(MemoriesCopy.savingScrapbook, 'Saving to your scrapbook...');
+      final space = await openReadySpace();
+      final steps = <String>[];
+      await space.memories.add(
+        photo: tinyWebp,
+        mime: 'image/webp',
+        date: '2024-02-14',
+        caption: 'Steps',
+        onSealed: () => steps.add('sealed'),
+      );
+      steps.add('saved');
+      expect(steps, ['sealed', 'saved']);
+      expect((await space.memories.list()).single.caption, 'Steps');
+      while (space.identity.status == IdentityStatus.loading) {
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+      }
+      await space.close();
+    });
+
     test('photo cache keeps the newest few', () {
       final cache = PolaroidPhotoCache(capacity: 2);
       MemoryRecord memory(String id) => MemoryRecord({'id': id, 'updatedAt': 1}, hasPhoto: true);

@@ -43,6 +43,7 @@ abstract final class MemoriesCopy {
   static const String developingPolaroid = 'Developing Polaroid...';
   static const String gettingReady = 'Getting it ready...';
   static const String tuckingAway = 'Tucking it away safely...';
+  static const String savingScrapbook = 'Saving to your scrapbook...';
   static const String fillCaption = 'Please fill out this field.';
   static const String lockedTryAgain = 'Our Space is locked. Unlock it and try again.';
   static const String saveFailed = 'Could not save this memory. Please try again.';
