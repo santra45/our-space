@@ -150,6 +150,8 @@ void main() {
     await press(tester, find.text('Create a New Space 💕'));
     await until(tester, () => space.vault.isUnlocked);
     await untilFound(tester, find.byType(HomeShell));
+    await untilFound(tester, find.text('Already did this on the other phone'));
+    await press(tester, find.text('Already did this on the other phone'));
 
     expect(find.text('Sam & Alex'), findsOneWidget);
     for (final label in ['Love', 'Memories', 'Dates', 'Letters', 'Bucket']) {
@@ -322,6 +324,8 @@ void main() {
         tester, () => space.vault.create(passphrase: passphrase, coupleNames: 'Us two', iterations: fastIterations));
     await pumpApp(tester, () async => space);
     await untilFound(tester, find.byType(HomeShell));
+    await untilFound(tester, find.text('Already did this on the other phone'));
+    await press(tester, find.text('Already did this on the other phone'));
     expect(find.text('Us two'), findsOneWidget);
 
     space.mailbox.onWarning!('clock_skew', 'Your phone clock looks a little off.');
