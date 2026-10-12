@@ -52,14 +52,14 @@ void main() {
       await pumpHost(
         tester,
         OurHeader(
-          title: 'Farhan & Sam',
+          title: 'Sam & Alex',
           presence: const HeaderPresence.activeNow(partnerName: 'Sam'),
           syncState: SyncPillState.direct,
           onOpenSync: () => sync++,
           onLock: () => lock++,
         ),
       );
-      expect(find.text('Farhan & Sam'), findsOneWidget);
+      expect(find.text('Sam & Alex'), findsOneWidget);
       expect(find.text('Sam active now 💕'), findsOneWidget);
       await tester.tap(find.bySemanticsLabel('Phone to phone ⚡'));
       await tester.tap(find.bySemanticsLabel('Lock Our Space'));
