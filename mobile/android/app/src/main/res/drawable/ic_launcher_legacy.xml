@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="100"
+    android:viewportHeight="100">
+    <path
+        android:fillColor="#FFE8ED"
+        android:pathData="M28,0 L72,0 A28,28 0 0,1 100,28 L100,72 A28,28 0 0,1 72,100 L28,100 A28,28 0 0,1 0,72 L0,28 A28,28 0 0,1 28,0 Z" />
+    <group android:translateY="4">
+        <path
+            android:fillAlpha="0.15"
+            android:fillColor="#F02861"
+            android:pathData="M50,78 C25,60 15,45 15,32 A18,18 0 0,1 50,25 A18,18 0 0,1 85,32 C85,45 75,60 50,78 Z" />
+        <path
+            android:pathData="M50,78 C25,60 15,45 15,32 A18,18 0 0,1 50,25 A18,18 0 0,1 85,32 C85,45 75,60 50,78 Z"
+            android:strokeAlpha="0.03"
+            android:strokeColor="#F02861"
+            android:strokeLineJoin="round"
+            android:strokeWidth="8" />
+        <path
+            android:pathData="M50,78 C25,60 15,45 15,32 A18,18 0 0,1 50,25 A18,18 0 0,1 85,32 C85,45 75,60 50,78 Z"
+            android:strokeAlpha="0.05"
+            android:strokeColor="#F02861"
+            android:strokeLineJoin="round"
+            android:strokeWidth="4" />
+    </group>
+    <path android:pathData="M50,78 C25,60 15,45 15,32 A18,18 0 0,1 50,25 A18,18 0 0,1 85,32 C85,45 75,60 50,78 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:endColor="#FF5480"
+                android:endX="85.05"
+                android:endY="78"
+                android:startColor="#FF85A3"
+                android:startX="14.95"
+                android:startY="12.77"
+                android:type="linear" />
+        </aapt:attr>
+    </path>
+    <path
+        android:fillAlpha="0.6"
+        android:fillColor="#FFFFFF"
+        android:pathData="M30,30 A4,4 0 1,0 38,30 A4,4 0 1,0 30,30 Z" />
+    <path
+        android:fillColor="#FFD1DC"
+        android:pathData="M72,20 L74,24 L78,26 L74,28 L72,32 L70,28 L66,26 L70,24 Z" />
+</vector>
