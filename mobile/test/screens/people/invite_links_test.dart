@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:our_space_mobile/core/engine.dart';
+import 'package:our_space_mobile/core/engine/p2p/peer_hub.dart' show pairedPartnerKey;
 import 'package:our_space_mobile/presentation/deep_links.dart';
 import 'package:our_space_mobile/presentation/home_shell.dart';
 import 'package:our_space_mobile/presentation/screens/lock/lock_screen.dart';
@@ -107,6 +108,7 @@ void main() {
     expect(phone.vault.salt, partner.vault.salt);
     expect(find.text('Sam & Alex'), findsOneWidget);
     expect(inbox.pending, isNull);
+    expect(phone.store.settings.getItem(pairedPartnerKey), partner.device.peerId);
 
     phone.vault.lock();
     await tester.pump();
@@ -188,6 +190,7 @@ void main() {
     await until(tester, () => space.vault.isUnlocked);
     await untilFound(tester, find.byType(HomeShell));
     expect(space.vault.salt, isNot('EBESExQVFhcYGRobHB0eHw=='));
+    expect(space.store.settings.getItem(pairedPartnerKey), isNull);
 
     space.vault.lock();
     await tester.pump();
@@ -201,6 +204,7 @@ void main() {
     final inbox = InviteInbox();
     final space = await real(tester, openPeopleSpace);
     await real(tester, () => space.vault.create(passphrase: passphrase, iterations: fastIterations));
+    await settleIdentity(tester, space);
     space.vault.lock();
     await pumpOurSpace(tester, space, inbox: inbox);
     await untilFound(tester, find.text('Locked'));
@@ -210,5 +214,13 @@ void main() {
     await tester.pump();
     expect(find.text('Locked'), findsOneWidget);
     expect(find.text(hereLine), findsOneWidget);
+
+    await type(tester, fieldWithHint('Enter your secret passphrase (min 16 chars)...'), passphrase);
+    await press(tester, find.text('Unlock Our Space 💕'));
+    await until(tester, () => space.vault.isUnlocked);
+    await untilFound(tester, find.byType(HomeShell));
+    expect(space.store.settings.getItem(pairedPartnerKey), 'love-abc123xyz');
+    await until(tester, () => space.identity.status != IdentityStatus.loading);
+    await settleIdentity(tester, space);
   });
 }

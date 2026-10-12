@@ -690,7 +690,13 @@ class _LockScreenState extends State<LockScreen> {
     }
     setState(() => _loading = true);
     AppHaptics.tap();
-    final result = await _vault.unlock(_passphrase.text);
+    final vault = _vault;
+    final peer = context.space.peer;
+    final linked = _linkInvite;
+    final result = await vault.unlock(_passphrase.text);
+    if (result.ok && linked != null && (linked.salt == null || linked.salt == vault.salt)) {
+      peer.acceptInvite(linked);
+    }
     if (!mounted) return;
     setState(() {
       _loading = false;
@@ -752,11 +758,13 @@ class _LockScreenState extends State<LockScreen> {
     setState(() => _loading = true);
     AppHaptics.tap();
     final notices = context.read<AppNotices>();
+    final peer = context.space.peer;
     final result = await _vault.joinFromInvite(
       passphrase: _passphrase.text,
       invite: invite,
       confirmDestroy: _destroyToken,
     );
+    if (result.ok) peer.acceptInvite(invite);
     if (!mounted) return;
     setState(() {
       _loading = false;

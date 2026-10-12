@@ -65,6 +65,7 @@ class PeerSyncHub extends ChangeNotifier {
 
   Object? _lastKey;
   bool _active = false;
+  bool _ready = false;
   bool _disposed = false;
   String? _myPeerId;
   String? _partnerId;
@@ -149,8 +150,14 @@ class PeerSyncHub extends ChangeNotifier {
   void rememberInvitedPartner(String peerId) {
     final clean = jsTrim(peerId);
     if (clean.isEmpty) return;
-    _pendingConnect = clean;
     _write(pairedPartnerKey, clean);
+    final id = _myPeerId;
+    if (_active && _ready && id != null) {
+      _pendingConnect = null;
+      _offer(clean, id, fromLink: true);
+      return;
+    }
+    _pendingConnect = clean;
   }
 
   void acceptInvite(Invite invite) => rememberInvitedPartner(invite.partnerPeerId);
@@ -162,40 +169,45 @@ class PeerSyncHub extends ChangeNotifier {
     _active = true;
     _lastSentConfigAt = vault.config?.updatedAt ?? -1;
 
-    final invited = _pendingConnect;
-    _pendingConnect = null;
-
     engine.init(key).then((id) {
       if (!_active || !identical(vault.key, key)) return;
+      _ready = true;
       _myPeerId = id;
       notifyListeners();
 
-      final trusted = _read(trustedPartnerKey);
+      final invited = _pendingConnect;
+      _pendingConnect = null;
       final target = invited ?? _read(pairedPartnerKey);
-      if (target == null || target == id) return;
-
-      _partnerId = target;
-
-      if (target == trusted) {
-        _dialTimer?.cancel();
-        _dialTimer = _clock.after(const Duration(milliseconds: trustedDialDelayMs), () {
-          _dialTimer = null;
-          if (!_active) return;
-          _dialQuietly(target);
-        });
-        notifyListeners();
-        return;
-      }
-
-      _pendingInvite = PendingPeerInvite(peerId: target, fromLink: invited != null);
-      notifyListeners();
+      if (target == null) return;
+      _offer(target, id, fromLink: invited != null);
     }, onError: (Object _) {});
 
     _maybeResume();
   }
 
+  void _offer(String target, String id, {required bool fromLink}) {
+    if (target == id) return;
+
+    _partnerId = target;
+
+    if (target == _read(trustedPartnerKey)) {
+      _dialTimer?.cancel();
+      _dialTimer = _clock.after(const Duration(milliseconds: trustedDialDelayMs), () {
+        _dialTimer = null;
+        if (!_active) return;
+        _dialQuietly(target);
+      });
+      notifyListeners();
+      return;
+    }
+
+    _pendingInvite = PendingPeerInvite(peerId: target, fromLink: fromLink);
+    notifyListeners();
+  }
+
   void stop() {
     _active = false;
+    _ready = false;
     _dialTimer?.cancel();
     _dialTimer = null;
     _stopConnectedTicker();
@@ -452,6 +464,7 @@ class PeerSyncHub extends ChangeNotifier {
   void dispose() {
     _disposed = true;
     _active = false;
+    _ready = false;
     _dialTimer?.cancel();
     _stopConnectedTicker();
     vault.removeListener(_onVault);
