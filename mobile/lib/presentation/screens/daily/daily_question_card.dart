@@ -59,7 +59,7 @@ class _DailyQuestionCardState extends State<DailyQuestionCard> {
       builder: (context, _) {
         final today = _model.today;
         if (!_model.visible || today == null) return const SizedBox.shrink();
-        return DailyQuestionTeaser(
+        final teaser = DailyQuestionTeaser(
           question: today.question.text,
           bothIn: _model.bothIn,
           status: DailyCopy.status(
@@ -72,6 +72,7 @@ class _DailyQuestionCardState extends State<DailyQuestionCard> {
           ),
           onTap: _openSheet,
         );
+        return Padding(padding: const EdgeInsets.only(bottom: 16), child: teaser);
       },
     );
   }

@@ -9,6 +9,6 @@ class LoveTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const OurPage(children: [DailyQuestionCard(), MilestoneTracker()]);
+    return const OurPage(spacing: 0, children: [DailyQuestionCard(), MilestoneTracker()]);
   }
 }
