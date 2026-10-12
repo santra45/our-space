@@ -8,6 +8,13 @@ import 'identity/device_id.dart';
 import 'identity/identity_controller.dart';
 import 'identity/people.dart';
 import 'identity/people_repair.dart';
+import 'p2p/flutter_rtc.dart';
+import 'p2p/peer_endpoint.dart';
+import 'p2p/peer_hub.dart';
+import 'p2p/peer_records.dart';
+import 'p2p/peer_sync_engine.dart';
+import 'p2p/peerjs.dart';
+import 'p2p/signal_socket.dart';
 import 'repositories/bucket_list_repository.dart';
 import 'repositories/letters_repository.dart';
 import 'repositories/memories_repository.dart';
@@ -47,6 +54,8 @@ class OurSpace {
     http.Client? httpClient,
     NowFn now = systemNow,
     bool autoSync = true,
+    PeerEndpointFactory? peerEndpoints,
+    bool? peerToPeer,
   }) async {
     final store = await VaultStore.open(factory: databaseFactory, path: databasePath, now: now);
     final device = DeviceIdentity(store.settings);
@@ -61,6 +70,23 @@ class OurSpace {
       config: mailboxConfig ?? (useEnvironmentMailbox ? MailboxConfig.fromEnvironment() : null),
       client: httpClient,
     );
+    final peerEngine = PeerSyncEngine(
+      records: VaultStorePeerRecords(store),
+      settings: store.settings,
+      endpointFactory: peerEndpoints ??
+          PeerJsPeer.factory(connector: IoSignalSocket.connect, rtcFactory: createFlutterRtcSession),
+      observeRemote: (stamp) {
+        final at = stamp.floor();
+        if (at > store.clock.observedRemoteMax) store.clock.observedRemoteMax = at;
+      },
+    );
+    final peer = PeerSyncHub(
+      engine: peerEngine,
+      vault: vault,
+      identity: identity,
+      store: store,
+      autoStart: peerToPeer ?? autoSync,
+    );
     final sync = SyncService(
       store: store,
       vault: vault,
@@ -68,6 +94,7 @@ class OurSpace {
       mailbox: mailbox,
       loveBursts: loveBursts,
       autoSync: autoSync,
+      peer: peer,
     );
     final space = OurSpace._(
       store: store,
@@ -107,6 +134,8 @@ class OurSpace {
   final Mailbox mailbox;
   final SyncService sync;
   final BackupService backup;
+
+  PeerSyncHub get peer => sync.peer!;
 
   Stream<void> watchTable(String table) => store.watchTable(table);
 

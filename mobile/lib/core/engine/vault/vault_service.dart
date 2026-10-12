@@ -439,6 +439,33 @@ class VaultService extends ChangeNotifier {
     }
   }
 
+  Future<bool> adoptPartnerConfig(VaultConfig incoming) async {
+    final key = _key;
+    if (key == null) return false;
+    final current = _config;
+    if (current != null && incoming.updatedAt <= current.updatedAt) return false;
+    final meta = await store.getVaultMeta();
+    final salt = meta?['salt'];
+    if (meta == null || salt is! String || salt.isEmpty) return false;
+    final sealed = createCanary(
+      key,
+      coupleNames: incoming.coupleNames,
+      startDate: incoming.startDate,
+      updatedAt: incoming.updatedAt,
+      now: store.now,
+    );
+    await store.putVaultMeta({
+      ...meta,
+      'canary': sealed.canary,
+      'canaryIv': sealed.canaryIv,
+      'updatedAt': incoming.updatedAt,
+    });
+    if (!identical(_key, key)) return false;
+    _config = incoming;
+    notifyListeners();
+    return true;
+  }
+
   Future<RestoreResult> restoreFromBackup(
     Object? tables,
     String vaultPassphrase, {

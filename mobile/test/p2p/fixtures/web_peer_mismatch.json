@@ -1,0 +1,61 @@
+{
+ "keyBase64": {
+  "A": "kKAmb4ZJACKOFkF5kfmxmEyQVbB45G5t77Gi3V9xO9o=",
+  "B": "V/oanJL9BJZV60v4RmQXPvOJZSIIxe/MIPhJCiB9Xac="
+ },
+ "peers": {
+  "A": "love-aaaaaaaaaaaaaaaa",
+  "B": "love-bbbbbbbbbbbbbbbb"
+ },
+ "transcript": [
+  {
+   "from": "A",
+   "frame": "grhwcm90b2NvbL1TV0VFVEhFQVJUX1Yyt3BheWxvYWSCumNpcGhlcnRleHTYAGBVTHFJVlJGZVB2dUZxMlUvSlN1VFUydDRmWnJDRHdiRXdZSmVtZi9kNWhMc1J2UkpOeHZVUmxYL3lkZXJuTlphNGNTUFFHK0lhbHhmM1NNNzZVQXRXUThZY09MQzRLWT2yaXbYABBBWFRZWUZhdlgxL1R6OFM1"
+  },
+  {
+   "from": "B",
+   "close": true
+  },
+  {
+   "from": "A",
+   "close": true
+  }
+ ],
+ "statuses": {
+  "A": [
+   {
+    "state": "handshaking",
+    "code": "channel_open",
+    "partnerId": "love-bbbbbbbbbbbbbbbb"
+   },
+   {
+    "state": "disconnected",
+    "code": "peer_closed"
+   },
+   {
+    "state": "disconnected",
+    "code": "destroyed"
+   }
+  ],
+  "B": [
+   {
+    "state": "handshaking",
+    "code": "channel_open",
+    "partnerId": "love-aaaaaaaaaaaaaaaa"
+   },
+   {
+    "state": "disconnected",
+    "code": "peer_closed"
+   },
+   {
+    "state": "auth_failed",
+    "code": "passphrase_mismatch",
+    "error": "Your passphrases do not match. Check you both typed exactly the same one."
+   },
+   {
+    "state": "disconnected",
+    "code": "destroyed"
+   }
+  ]
+ }
+}
