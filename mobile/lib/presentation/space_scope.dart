@@ -148,6 +148,7 @@ class _SpaceScopeState extends State<SpaceScope> {
       providers: [
         Provider<OurSpace>.value(value: space),
         ChangeNotifierProvider<VaultService>.value(value: space.vault),
+        ChangeNotifierProvider<QuickUnlockService>.value(value: space.quickUnlock),
         ChangeNotifierProvider<IdentityController>.value(value: space.identity),
         ChangeNotifierProvider<SyncService>.value(value: space.sync),
         ChangeNotifierProvider<AppNotices>.value(value: _notices),

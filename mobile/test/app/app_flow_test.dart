@@ -15,19 +15,21 @@ import 'package:our_space_mobile/presentation/space_scope.dart';
 import 'package:our_space_mobile/presentation/vault_gate.dart';
 import 'package:our_space_mobile/presentation/widgets/our_widgets.dart';
 
+import '../support/fake_quick_unlock.dart';
 import '../support/harness.dart';
 import '../widgets/harness.dart' show recordHaptics, recordedHaptics, usePhoneSize;
 
 const String passphrase = 'correct horse battery staple 2026';
 const int fastIterations = 1000;
 
-Future<OurSpace> openTestSpace() {
+Future<OurSpace> openTestSpace({QuickUnlockPlatform? quickUnlock}) {
   final dir = Directory.systemTemp.createTempSync('our_space_app_');
   return OurSpace.open(
     databaseFactory: testDatabaseFactory(),
     databasePath: '${dir.path}${Platform.pathSeparator}space.sqlite',
     useEnvironmentMailbox: false,
     autoSync: false,
+    quickUnlockPlatform: quickUnlock,
   );
 }
 
@@ -185,6 +187,67 @@ void main() {
     await until(tester, () => space.vault.isUnlocked);
     await untilFound(tester, find.byType(HomeShell));
     expect(find.text('Sam & Alex'), findsOneWidget);
+  });
+
+  testWidgets('a touch opens the space once it is set up, and the passphrase is always one tap away', (tester) async {
+    calm(tester);
+    final fake = FakeQuickUnlock();
+    final space = await real(tester, () => openTestSpace(quickUnlock: fake));
+    await real(tester, () async {
+      await space.vault.create(passphrase: passphrase, coupleNames: 'Sam & Alex', iterations: fastIterations);
+      await space.identity.createCouple(myName: 'Sam', partnerName: 'Alex');
+      await space.quickUnlock.refresh();
+      expect((await space.quickUnlock.enable(passphrase)).ok, isTrue);
+    });
+    space.vault.lock();
+    await pumpApp(tester, () async => space);
+    await untilFound(tester, find.text(LockCopy.quickButton));
+
+    expect(find.text(LockCopy.quickIntro), findsOneWidget);
+    expect(find.text(LockCopy.usePassphrase), findsOneWidget);
+    expect(fieldWithHint('Enter your secret passphrase (min 16 chars)...'), findsNothing);
+
+    fake.failNext = 'cancelled';
+    await press(tester, find.text(LockCopy.quickButton));
+    await until(tester, () => enabledButton(tester, LockCopy.quickButton));
+    expect(space.vault.isUnlocked, isFalse);
+    expect(find.text(QuickUnlockCopy.didNotWork), findsNothing);
+
+    await press(tester, find.text(LockCopy.quickButton));
+    await until(tester, () => space.vault.isUnlocked);
+    await untilFound(tester, find.byType(HomeShell));
+    expect(find.text('Sam & Alex'), findsOneWidget);
+    expect(recordedHaptics, contains(HapticKind.celebration));
+
+    await tester.tap(find.byType(HeaderLockButton));
+    await tester.pump();
+    await tester.pump();
+    await untilFound(tester, find.text(LockCopy.usePassphrase));
+    await press(tester, find.text(LockCopy.usePassphrase));
+    expect(find.text('Enter the passphrase you two share to open your memories and notes.'), findsOneWidget);
+    expect(fieldWithHint('Enter your secret passphrase (min 16 chars)...'), findsOneWidget);
+    expect(find.text(LockCopy.quickButton), findsNothing);
+  });
+
+  testWidgets('when the phone fingerprints change it says so and goes back to the passphrase', (tester) async {
+    calm(tester);
+    final fake = FakeQuickUnlock();
+    final space = await real(tester, () => openTestSpace(quickUnlock: fake));
+    await real(tester, () async {
+      await space.vault.create(passphrase: passphrase, coupleNames: 'Sam & Alex', iterations: fastIterations);
+      await space.quickUnlock.refresh();
+      expect((await space.quickUnlock.enable(passphrase)).ok, isTrue);
+    });
+    space.vault.lock();
+    await pumpApp(tester, () async => space);
+    await untilFound(tester, find.text(LockCopy.quickButton));
+
+    fake.failNext = 'stale';
+    await press(tester, find.text(LockCopy.quickButton));
+    await untilFound(tester, find.text(QuickUnlockCopy.needsSetupAgain));
+    expect(space.vault.isUnlocked, isFalse);
+    expect(find.text(LockCopy.quickButton), findsNothing);
+    expect(fieldWithHint('Enter your secret passphrase (min 16 chars)...'), findsOneWidget);
   });
 
   testWidgets('shows a gentle retry when the phone storage will not open', (tester) async {

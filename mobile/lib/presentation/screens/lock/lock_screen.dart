@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -28,6 +30,9 @@ abstract final class LockCopy {
       'Please choose a memorable secret passphrase of at least $minPassphraseLength characters.';
   static String typeToConfirm() => 'Type $destroyConfirmationPhrase to confirm.';
   static const String restoreFallback = 'That did not finish. Please try again.';
+  static const String quickIntro = 'One touch, and you are back in your memories and notes.';
+  static const String quickButton = 'Open with a touch 💕';
+  static const String usePassphrase = 'Use the passphrase instead';
   static const String notOurFile = 'That does not look like a file Our Space saved.';
   static const String couldNotOpenFile = 'We could not open that file. Check the passphrase and try again.';
   static const String missingIdentity =
@@ -588,6 +593,7 @@ class _LockScreenState extends State<LockScreen> {
   LockMode _mode = LockMode.unlock;
   bool _modeTouched = false;
   bool _loading = false;
+  bool _showPassphraseForm = false;
   String? _error;
 
   bool _backupBusy = false;
@@ -600,6 +606,12 @@ class _LockScreenState extends State<LockScreen> {
   Map<String, Object?>? _restoreIdentity;
   bool _restoreBusy = false;
   String? _restoreError;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(context.read<QuickUnlockService>().refresh());
+  }
 
   @override
   void dispose() {
@@ -706,6 +718,27 @@ class _LockScreenState extends State<LockScreen> {
       _passphrase.clear();
       _celebrate();
     }
+  }
+
+  Future<void> _handleQuickUnlock() async {
+    setState(() {
+      _error = null;
+      _loading = true;
+    });
+    AppHaptics.tap();
+    final vault = _vault;
+    final peer = context.space.peer;
+    final linked = _linkInvite;
+    final result = await context.read<QuickUnlockService>().unlock();
+    if (result.ok && linked != null && (linked.salt == null || linked.salt == vault.salt)) {
+      peer.acceptInvite(linked);
+    }
+    if (!mounted) return;
+    setState(() {
+      _loading = false;
+      if (!result.ok && result.code != 'cancelled') _error = result.error;
+    });
+    if (result.ok) _celebrate();
   }
 
   Future<void> _handleSetup(bool hasVault) async {
@@ -927,12 +960,13 @@ class _LockScreenState extends State<LockScreen> {
 
   Widget _unlockForm(bool inviteIsForAnotherVault) {
     final linked = _linkInvite;
+    final touch = context.watch<QuickUnlockService>().offered && !_showPassphraseForm;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: spaced([
         _modeIntro(
           pill: OurPill.blush(label: 'Locked', icon: AppIcons.lock),
-          text: 'Enter the passphrase you two share to open your memories and notes.',
+          text: touch ? LockCopy.quickIntro : 'Enter the passphrase you two share to open your memories and notes.',
         ),
         if (linked != null && !inviteIsForAnotherVault)
           const _SmallNotice(
@@ -958,25 +992,48 @@ class _LockScreenState extends State<LockScreen> {
               style: Tw.px11.c(AppColors.amber900),
             ),
           ),
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const OurFieldLabel('Secret Passphrase'),
-            _passphraseField(
-              hint: 'Enter your secret passphrase (min $minPassphraseLength chars)...',
-              autofocus: true,
-              onSubmit: _loading ? () {} : _handleUnlock,
-            ),
-          ],
-        ),
-        if (_error != null) _ErrorBanner(_error!),
-        BouncyButton(
-          onPressed: _handleUnlock,
-          enabled: !_loading && _passphrase.text.trim().isNotEmpty,
-          expand: true,
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-          label: _loading ? 'Opening…' : 'Unlock Our Space 💕',
-        ),
+        if (touch) ...[
+          BouncyButton(
+            onPressed: _handleQuickUnlock,
+            enabled: !_loading,
+            expand: true,
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+            icon: AppIcons.fingerprint,
+            iconSize: 20,
+            gap: 8,
+            label: _loading ? 'Opening…' : LockCopy.quickButton,
+          ),
+          if (_error != null) _ErrorBanner(_error!),
+          Center(
+            child: _link(LockCopy.usePassphrase, () {
+              AppHaptics.tap();
+              setState(() {
+                _showPassphraseForm = true;
+                _error = null;
+              });
+            }),
+          ),
+        ] else ...[
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const OurFieldLabel('Secret Passphrase'),
+              _passphraseField(
+                hint: 'Enter your secret passphrase (min $minPassphraseLength chars)...',
+                autofocus: true,
+                onSubmit: _loading ? () {} : _handleUnlock,
+              ),
+            ],
+          ),
+          if (_error != null) _ErrorBanner(_error!),
+          BouncyButton(
+            onPressed: _handleUnlock,
+            enabled: !_loading && _passphrase.text.trim().isNotEmpty,
+            expand: true,
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+            label: _loading ? 'Opening…' : 'Unlock Our Space 💕',
+          ),
+        ],
         Padding(
           padding: const EdgeInsets.only(top: 8),
           child: Column(
