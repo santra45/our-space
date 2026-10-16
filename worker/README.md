@@ -19,6 +19,11 @@ The mailbox path is a 256-bit id derived from the same vault key, so finding
 your mailbox means guessing it, and the Worker has no route that lists
 anything — an unknown key is a flat 404.
 
+The one thing it holds in the clear is a phone's doorbell address, and only
+if that phone turned notifications on: the token Google issues so a message
+can wake it. It says nothing about either of you, it is stored apart from
+the sealed objects under `push/`, and there is no route that reads it back.
+
 `MAILBOX_TOKEN` gets compiled into the browser bundle, so treat it as public.
 It stops a passer-by burning your request quota; it is not a password, and it
 should not be one you use anywhere else.
@@ -37,6 +42,14 @@ says `PASTE_YOUR_NAMESPACE_ID_HERE`, then:
 ```bash
 npx wrangler secret put MAILBOX_TOKEN   # any long random string
 npx wrangler deploy
+```
+
+To let it ring the other phone, give it a Firebase service account key
+(Firebase console → Project settings → Service accounts → Generate new
+private key) and deploy again. Without it the Worker simply never rings.
+
+```bash
+npx wrangler secret put FCM_SERVICE_ACCOUNT < path/to/service-account.json
 ```
 
 **No payment method needed.** Workers KV is part of the Workers free plan.
@@ -93,14 +106,21 @@ and an interrupted sync resumes by starting again.
 
 Deleting something in the app travels as a **tombstone** — a record with its
 contents removed — which is written like anything else. That is why this Worker
-implements no `DELETE`. Removing an object would mean the other phone never
-learns the record died, and a deleted letter would climb back out of the grave
-on the next sync.
+implements no `DELETE` for objects. Removing an object would mean the other
+phone never learns the record died, and a deleted letter would climb back out
+of the grave on the next sync. The only thing a phone can delete is its own
+doorbell address.
 
-## What it does not do
+## The doorbell
 
-It does not make a phone buzz. The other person still finds out when they open
-the app. What it kills is the need for both of you to be there at once, which is
-the part that actually wears two people down. Real push notifications need a
-subscription and a signing key, and they leak to a push service the timing of
-every message you send — a different feature with a different trade-off.
+When one phone publishes a new manifest, the Worker rings every other phone in
+the same mailbox that left an address, through Firebase Cloud Messaging. The
+ring is the same every time: "Something new is waiting for you." It carries no
+names, no mailbox id and nothing that was written, because a sleeping phone has
+a locked space and could not read more anyway. Repeat rings replace a single
+notification instead of stacking up.
+
+The trade-off is timing. Google learns when a ring was sent to a phone, and so
+roughly when the other one published. It never learns what. The ring is sent
+after the publish has been answered, so a slow or broken push service never
+slows down or fails a sync, and an address Google reports as gone is forgotten.

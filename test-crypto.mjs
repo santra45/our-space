@@ -4365,6 +4365,13 @@ async function run() {
     async put(k, v) {
       wkKv.set(k, v);
     },
+    async delete(k) {
+      wkKv.delete(k);
+    },
+    async list({ prefix }) {
+      const keys = [...wkKv.keys()].filter((k) => k.startsWith(prefix)).map((name) => ({ name }));
+      return { keys, list_complete: true };
+    },
   };
   const wkR2 = new Map();
   const r2Binding = {
@@ -4470,6 +4477,167 @@ async function run() {
     (await worker.fetch(wkReq('GET', WK_KEY), { MAILBOX_TOKEN: 'tok', ALLOWED_ORIGIN: WK_ORIGIN }))
       .status === 500
   );
+
+  const PUSH_HIS = 'his-person-slot';
+  const PUSH_HER = 'her-person-slot';
+  const pushPath = (owner, device) => `/m/${WK_ID}/${owner}/push/${device}`;
+  const pushKey = (owner, device) => `push/${WK_ID}/${owner}/${device}`;
+  const HER_TOKEN = 'her-fcm-token:APA91b_example-token';
+  const HIS_TOKEN = 'his-fcm-token:APA91b_example-token';
+
+  const registered = await worker.fetch(
+    wkReq('PUT', pushPath(PUSH_HER, 'her-phone-0001'), { body: JSON.stringify({ token: HER_TOKEN }) }),
+    wkEnv
+  );
+  check('a phone can leave its doorbell address', registered.status === 204);
+  check(
+    'and it is kept apart from the sealed objects, under its own prefix',
+    JSON.parse(wkKv.get(pushKey(PUSH_HER, 'her-phone-0001'))).token === HER_TOKEN
+  );
+  check(
+    'a doorbell address can be written but never read back',
+    (await worker.fetch(wkReq('GET', pushPath(PUSH_HER, 'her-phone-0001')), wkEnv)).status === 405
+  );
+  check(
+    'a body that is not a token is refused',
+    (await worker.fetch(wkReq('PUT', pushPath(PUSH_HER, 'her-phone-0002'), { body: 'not json' }), wkEnv))
+      .status === 400
+  );
+  check(
+    'and so is a token with characters no real token has',
+    (
+      await worker.fetch(
+        wkReq('PUT', pushPath(PUSH_HER, 'her-phone-0002'), { body: JSON.stringify({ token: 'a b<c>' }) }),
+        wkEnv
+      )
+    ).status === 400
+  );
+  await worker.fetch(
+    wkReq('PUT', pushPath(PUSH_HER, 'her-phone-0002'), { body: JSON.stringify({ token: 'x' }) }),
+    wkEnv
+  );
+  check(
+    'a phone can take its address back',
+    (await worker.fetch(wkReq('DELETE', pushPath(PUSH_HER, 'her-phone-0002')), wkEnv)).status === 204 &&
+      !wkKv.has(pushKey(PUSH_HER, 'her-phone-0002'))
+  );
+
+  const fcmKeys = await crypto.subtle.generateKey(
+    { name: 'RSASSA-PKCS1-v1_5', modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: 'SHA-256' },
+    true,
+    ['sign', 'verify']
+  );
+  const pkcs8 = Buffer.from(await crypto.subtle.exportKey('pkcs8', fcmKeys.privateKey)).toString('base64');
+  const fcmAccount = {
+    project_id: 'our-space-test',
+    client_email: 'pusher@our-space-test.iam.gserviceaccount.com',
+    private_key: `-----BEGIN PRIVATE KEY-----\n${pkcs8.match(/.{1,64}/g).join('\n')}\n-----END PRIVATE KEY-----\n`,
+  };
+  const pushEnv = { ...wkEnv, FCM_SERVICE_ACCOUNT: JSON.stringify(fcmAccount) };
+
+  await worker.fetch(
+    wkReq('PUT', pushPath(PUSH_HIS, 'his-phone-0001'), { body: JSON.stringify({ token: HIS_TOKEN }) }),
+    wkEnv
+  );
+
+  const outbound = [];
+  let fcmStatus = 200;
+  let fcmThrows = false;
+  const realWorkerFetch = globalThis.fetch;
+  globalThis.fetch = async (url, init = {}) => {
+    const target = String(url);
+    outbound.push({ url: target, init });
+    if (target === 'https://oauth2.googleapis.com/token') {
+      return new Response(JSON.stringify({ access_token: 'ya29.test-access', expires_in: 3600 }), { status: 200 });
+    }
+    if (fcmThrows) throw new TypeError('fetch failed');
+    return new Response('{}', { status: fcmStatus });
+  };
+  const ringOnce = async (owner, env = pushEnv) => {
+    const pending = [];
+    const response = await worker.fetch(wkReq('PUT', `/m/${WK_ID}/${owner}/manifest`, { body: 'sealed' }), env, {
+      waitUntil: (p) => pending.push(p),
+    });
+    await Promise.all(pending);
+    return response;
+  };
+
+  try {
+    const fromHim = await ringOnce(PUSH_HIS);
+    const fcmCalls = outbound.filter((c) => c.url.startsWith('https://fcm.googleapis.com/'));
+    check('his manifest landing still returns straight away', fromHim.status === 204);
+    check(
+      'and rings her phone, through the project the service account names',
+      fcmCalls.length === 1 &&
+        fcmCalls[0].url === 'https://fcm.googleapis.com/v1/projects/our-space-test/messages:send'
+    );
+    const sent = JSON.parse(fcmCalls[0].init.body).message;
+    check('it rings her address, never his own', sent.token === HER_TOKEN);
+    check(
+      'the ring says only that something is waiting',
+      sent.notification.title === 'Our Space 💕' && sent.notification.body === 'Something new is waiting for you.'
+    );
+    const sentText = JSON.stringify(sent);
+    check(
+      'and carries nothing about the mailbox, the writer or what was written',
+      !sentText.includes(WK_ID) && !sentText.includes(PUSH_HIS) && !sentText.includes('sealed')
+    );
+    check(
+      'repeat rings replace one notification instead of piling up',
+      sent.android.collapse_key === 'our-space-new' && sent.android.notification.tag === 'our-space-new'
+    );
+    check('and it is sent urgently enough to wake a sleeping phone', sent.android.priority === 'HIGH');
+    check(
+      'it authenticates as the service account',
+      fcmCalls[0].init.headers.Authorization === 'Bearer ya29.test-access'
+    );
+
+    const exchange = outbound.find((c) => c.url === 'https://oauth2.googleapis.com/token');
+    const assertion = new URLSearchParams(exchange.init.body).get('assertion').split('.');
+    const fromUrl = (s) => Buffer.from(s.replace(/-/g, '+').replace(/_/g, '/'), 'base64');
+    const claims = JSON.parse(fromUrl(assertion[1]).toString());
+    check(
+      'the token it trades is signed by the service account key',
+      await crypto.subtle.verify(
+        'RSASSA-PKCS1-v1_5',
+        fcmKeys.publicKey,
+        fromUrl(assertion[2]),
+        new TextEncoder().encode(`${assertion[0]}.${assertion[1]}`)
+      )
+    );
+    check(
+      'for messaging only, for an hour',
+      claims.iss === fcmAccount.client_email &&
+        claims.scope === 'https://www.googleapis.com/auth/firebase.messaging' &&
+        claims.exp - claims.iat === 3600
+    );
+
+    outbound.length = 0;
+    await ringOnce(PUSH_HER);
+    check(
+      'her manifest rings his phone, reusing the access it already has',
+      outbound.length === 1 && JSON.parse(outbound[0].init.body).message.token === HIS_TOKEN
+    );
+
+    outbound.length = 0;
+    fcmStatus = 404;
+    await ringOnce(PUSH_HIS);
+    check(
+      'an address Google no longer knows is forgotten',
+      !wkKv.has(pushKey(PUSH_HER, 'her-phone-0001')) && wkKv.has(pushKey(PUSH_HIS, 'his-phone-0001'))
+    );
+    fcmStatus = 200;
+
+    fcmThrows = true;
+    check('a broken doorbell never breaks publishing', (await ringOnce(PUSH_HER)).status === 204);
+    fcmThrows = false;
+
+    outbound.length = 0;
+    await ringOnce(PUSH_HER, wkEnv);
+    check('with no service account set, nothing is sent anywhere', outbound.length === 0);
+  } finally {
+    globalThis.fetch = realWorkerFetch;
+  }
 
   section('23. A phone that lost its space');
 
