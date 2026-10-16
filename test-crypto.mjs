@@ -12,6 +12,7 @@ import {
   importVaultKeyFromBits,
   normalizePassphrase,
   PBKDF2_ITERATIONS_CURRENT,
+  PBKDF2_ITERATIONS_MAX,
   MIN_PASSPHRASE_LENGTH,
   createCanary,
   readCanary,
@@ -672,6 +673,17 @@ async function run() {
   await checkThrows('a tampered container fails before anything is imported', async () =>
     decryptBackupContainer({ ...container, ciphertext: container.ciphertext.slice(0, -8) + 'AAAAAAAA' }, backupPassphrase)
   );
+
+  const greedyStart = Date.now();
+  const greedy = await decryptBackupContainer({ ...container, kdfIterations: 2 ** 31 - 1 }, backupPassphrase);
+  check('a container asking for an absurd amount of hashing work is not obeyed', eq(greedy, rawVault));
+  check('and opening it costs about one normal unlock, not hours', Date.now() - greedyStart < 15000);
+  await checkThrows(
+    'the hashing step itself refuses to run past the ceiling',
+    async () => deriveKeyFromPassphrase(backupPassphrase, container.salt, { iterations: PBKDF2_ITERATIONS_MAX + 1 }),
+    (err) => /Invalid iteration count/.test(err.message)
+  );
+  check('the ceiling still leaves room for the counts this app has used', PBKDF2_ITERATIONS_MAX >= PBKDF2_ITERATIONS_CURRENT);
 
   const uncountedBody = await encryptText(JSON.stringify(rawVault), uncountedKey);
   const uncountedContainer = {

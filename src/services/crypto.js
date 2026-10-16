@@ -1,4 +1,5 @@
 export const PBKDF2_ITERATIONS_CURRENT = 600000;
+export const PBKDF2_ITERATIONS_MAX = 1000000;
 
 export const PBKDF2_ITERATIONS = PBKDF2_ITERATIONS_CURRENT;
 
@@ -112,7 +113,14 @@ async function importPassphraseKey(passphrase) {
   );
 }
 
+function assertIterations(iterations) {
+  if (!Number.isInteger(iterations) || iterations < 1 || iterations > PBKDF2_ITERATIONS_MAX) {
+    throw new Error('Invalid iteration count');
+  }
+}
+
 async function deriveUnchecked(passphrase, saltBase64, iterations) {
+  assertIterations(iterations);
   const passphraseKey = await importPassphraseKey(passphrase);
   const saltBuffer = base64ToBuffer(saltBase64);
 
@@ -162,6 +170,7 @@ export async function deriveVaultKeyBits(passphrase, saltBase64, options) {
   if (!isValidBase64(saltBase64)) {
     throw new Error('Invalid vault salt');
   }
+  assertIterations(iterations);
 
   const passphraseKey = await getCrypto().subtle.importKey(
     'raw',
