@@ -37,6 +37,10 @@ const MAX_COUPLE_NAMES_LENGTH = 120;
 
 const MAX_CLOCK_SKEW_MS = 48 * 60 * 60 * 1000;
 
+const PAIRED_UNVERIFIED_WARNING =
+  'Paired! We will know your passphrases match the moment your phones connect — if they ' +
+  'do not, we will tell you instead of syncing.';
+
 export function localDateString(date = new Date()) {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -484,10 +488,7 @@ export function VaultProvider({ children }) {
           key = derived.key;
         } else {
           key = await deriveKeyFromPassphrase(normalized, salt, { iterations });
-          setWarning(
-            'Paired! We will know your passphrases match the moment your phones connect — if they ' +
-              'do not, we will tell you instead of syncing.'
-          );
+          setWarning(PAIRED_UNVERIFIED_WARNING);
         }
 
         const startDate = isValidStartDate(initialSettings.startDate)
@@ -668,6 +669,20 @@ export function VaultProvider({ children }) {
   }, [isUnlocked]);
 
   useEffect(() => {
+    if (!isUnlocked) return undefined;
+
+    const handleStatus = (status) => {
+      if (status?.state !== 'authorized') return;
+      setWarning((current) => (current === PAIRED_UNVERIFIED_WARNING ? null : current));
+    };
+
+    peerSync.on('status', handleStatus);
+    return () => {
+      peerSync.off('status', handleStatus);
+    };
+  }, [isUnlocked]);
+
+  useEffect(() => {
     if (!isUnlocked || !cryptoKey) return undefined;
 
     const handleConfigSynced = async (remoteConfig) => {
@@ -777,7 +792,11 @@ export function VaultProvider({ children }) {
       {children}
 
       {warning && (
-        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[100] w-[calc(100%-2rem)] max-w-md">
+        <div
+          className={`fixed left-1/2 -translate-x-1/2 z-[100] w-[calc(100%-2rem)] max-w-md ${
+            isUnlocked ? 'bottom-[calc(env(safe-area-inset-bottom,8px)+4.75rem)]' : 'bottom-4'
+          }`}
+        >
           <div className="flex items-start gap-2.5 p-3 rounded-2xl bg-amber-50 border border-amber-200 shadow-lg shadow-amber-200/40">
             <AlertTriangle className="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5" />
             <p className="flex-1 text-[11px] leading-relaxed text-amber-900 font-medium">{warning}</p>
