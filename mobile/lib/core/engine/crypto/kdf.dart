@@ -9,6 +9,7 @@ import 'js_compat.dart';
 import 'pbkdf2.dart';
 
 const int pbkdf2IterationsCurrent = 600000;
+const int pbkdf2IterationsMax = 1000000;
 const int minPassphraseLength = 16;
 
 class PassphraseError implements Exception {
@@ -46,7 +47,7 @@ Future<Uint8List> deriveVaultKeyBits(
 }
 
 Future<Uint8List> _derive(String passphrase, String saltBase64, int iterations) {
-  if (iterations < 1) {
+  if (iterations < 1 || iterations > pbkdf2IterationsMax) {
     throw PassphraseError('Invalid iteration count');
   }
   return pbkdf2HmacSha256Async(

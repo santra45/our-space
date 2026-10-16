@@ -254,6 +254,20 @@ void main() {
         throwsA(isA<BackupError>()),
       );
     });
+
+    test('a backup asking for an absurd amount of hashing work is not obeyed', () async {
+      final backup = asStringMap(fixture['backup'])!;
+      final greedy = {...asStringMap(backup['container'])!, 'kdfIterations': 2147483647};
+      final watch = Stopwatch()..start();
+      final payload = await decryptBackupContainer(greedy, backup['passphrase'] as String);
+      expect(asStringMap(payload['tables']), isNotNull);
+      expect(watch.elapsed, lessThan(const Duration(seconds: 30)));
+      await expectLater(
+        deriveKeyFromPassphrase(backup['passphrase'] as String, fixture['salt'] as String, iterations: pbkdf2IterationsMax + 1),
+        throwsA(isA<PassphraseError>()),
+      );
+      expect(pbkdf2IterationsMax, greaterThanOrEqualTo(pbkdf2IterationsCurrent));
+    }, timeout: const Timeout(Duration(minutes: 2)));
   });
 
   group('invites', () {
