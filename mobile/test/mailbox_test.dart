@@ -241,6 +241,90 @@ void main() {
 
       final noOwner = await mailboxFor(her, worker).sync(key: key, ownerId: null, slots: [hisBox]);
       expect(noOwner.published.reason, 'no-owner');
+      expect(result.ok, isTrue);
+      expect(noOwner.ok, isTrue);
+
+      final stale = await mailboxFor(her, worker, tokenValue: 'wrong').sync(key: key, ownerId: herBox, slots: [hisBox]);
+      expect(stale.ok, isFalse);
+      expect(stale.failure, 'unauthorized');
+    });
+
+    test('a bad token, a server error, no connection or a garbled manifest is a failure, not an empty mailbox', () async {
+      final mailboxId = deriveMailboxId(key);
+      await his.putEncrypted(lettersTable, {'id': 'l1', 'updatedAt': clock += 1000}, key);
+      await mailboxFor(his, worker).publish(key: key, ownerId: hisBox);
+
+      final badToken = await mailboxFor(her, worker, tokenValue: 'wrong').collect(key: key, partnerId: hisBox);
+      expect(badToken.ok, isFalse);
+      expect(badToken.reason, 'unauthorized');
+
+      worker.failGets.add('$mailboxId/$hisBox/manifest');
+      final serverDown = await mailboxFor(her, worker).collect(key: key, partnerId: hisBox);
+      expect(serverDown.ok, isFalse);
+      expect(serverDown.reason, 'http-500');
+      worker.failGets.clear();
+
+      worker.offline = true;
+      final offline = await mailboxFor(her, worker).collect(key: key, partnerId: hisBox);
+      expect(offline.ok, isFalse);
+      expect(offline.reason, 'offline');
+      worker.offline = false;
+
+      worker.objects['$mailboxId/$hisBox/manifest'] = utf8.encode(jsonStringify({'ciphertext': 'AAAA', 'iv': 'AAAA'}));
+      final garbled = await mailboxFor(her, worker).collect(key: key, partnerId: hisBox);
+      expect(garbled.ok, isFalse);
+      expect(garbled.reason, 'unreadable');
+      expect(await her.getRow(lettersTable, 'l1'), isNull);
+    });
+
+    test('publish uploads nothing when it cannot read what it published before, and heals a garbled manifest', () async {
+      final mailboxId = deriveMailboxId(key);
+      await his.putEncrypted(lettersTable, {'id': 'l1', 'updatedAt': clock += 1000}, key);
+      await mailboxFor(his, worker).publish(key: key, ownerId: hisBox);
+      await his.putEncrypted(lettersTable, {'id': 'l2', 'updatedAt': clock += 1000}, key);
+
+      worker.failGets.add('$mailboxId/$hisBox/manifest');
+      worker.calls.clear();
+      final blind = await mailboxFor(his, worker).publish(key: key, ownerId: hisBox);
+      expect(blind.ok, isFalse);
+      expect(blind.reason, 'http-500');
+      expect(blind.uploaded, 0);
+      expect(worker.calls.any((c) => c.startsWith('PUT ')), isFalse);
+      worker.failGets.clear();
+
+      worker.objects['$mailboxId/$hisBox/manifest'] = utf8.encode('not a sealed manifest');
+      final healed = await mailboxFor(his, worker).publish(key: key, ownerId: hisBox);
+      expect(healed.ok, isTrue);
+      expect(healed.uploaded, 2);
+      expect((await mailboxFor(her, worker).collect(key: key, partnerId: hisBox)).applied, 2);
+    });
+
+    test('a record that fails to travel makes the run partial, and the next run finishes it', () async {
+      final mailboxId = deriveMailboxId(key);
+      await his.putEncrypted(lettersTable, {'id': 'a', 'updatedAt': clock += 1000}, key);
+      await his.putEncrypted(lettersTable, {'id': 'b', 'updatedAt': clock += 1000}, key);
+
+      worker.failPuts.add('$mailboxId/$hisBox/rec/letters/${recordKey('b')}');
+      final halfUp = await mailboxFor(his, worker).publish(key: key, ownerId: hisBox);
+      expect(halfUp.ok, isFalse);
+      expect(halfUp.reason, 'partial');
+      expect(halfUp.uploaded, 1);
+      worker.failPuts.clear();
+
+      final restUp = await mailboxFor(his, worker).publish(key: key, ownerId: hisBox);
+      expect(restUp.ok, isTrue);
+      expect(restUp.uploaded, 1);
+
+      worker.failGets.add('$mailboxId/$hisBox/rec/letters/${recordKey('a')}');
+      final halfDown = await mailboxFor(her, worker).collect(key: key, partnerId: hisBox);
+      expect(halfDown.ok, isFalse);
+      expect(halfDown.reason, 'partial');
+      expect(halfDown.applied, 1);
+      worker.failGets.clear();
+
+      final restDown = await mailboxFor(her, worker).collect(key: key, partnerId: hisBox);
+      expect(restDown.ok, isTrue);
+      expect(restDown.applied, 1);
     });
   });
 

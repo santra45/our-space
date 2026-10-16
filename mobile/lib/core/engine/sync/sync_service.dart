@@ -20,6 +20,7 @@ class MailboxStatus {
     this.applied = 0,
     this.uploaded = 0,
     this.reason,
+    this.failure,
   });
 
   static const MailboxStatus idle = MailboxStatus(state: MailboxRunState.idle, at: 0);
@@ -29,6 +30,7 @@ class MailboxStatus {
   final int applied;
   final int uploaded;
   final String? reason;
+  final String? failure;
 }
 
 enum SyncNoticeKind { notice, warning, loveBurst }
@@ -157,18 +159,19 @@ class SyncService extends ChangeNotifier {
       final slots = derivePersonSlots(key);
       final result = await mailbox.sync(key: key, ownerId: identity.myOwnerId, slots: slots);
       _status = MailboxStatus(
-        state: MailboxRunState.ok,
+        state: result.ok ? MailboxRunState.ok : MailboxRunState.failed,
         at: store.now(),
         applied: result.applied,
         uploaded: result.uploaded,
         reason: reason,
+        failure: result.failure,
       );
       if (result.applied > 0) {
         final plural = result.applied == 1 ? '' : 's';
         _notify(SyncNotice('${result.applied} new thing$plural from ${identity.partnerName} 💕', SyncNoticeKind.notice));
       }
     } catch (_) {
-      _status = MailboxStatus(state: MailboxRunState.failed, at: store.now(), reason: reason);
+      _status = MailboxStatus(state: MailboxRunState.failed, at: store.now(), reason: reason, failure: 'error');
     } finally {
       _busy = false;
       notifyListeners();

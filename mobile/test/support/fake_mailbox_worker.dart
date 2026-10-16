@@ -22,6 +22,7 @@ class FakeMailboxWorker extends http.BaseClient {
   final List<String> calls = [];
   bool offline = false;
   final Set<String> failPuts = {};
+  final Set<String> failGets = {};
 
   static FakeMailboxWorker fromKvDump(Map<String, Object?> dump, {required String token}) {
     final seed = <String, Uint8List>{};
@@ -73,6 +74,7 @@ class FakeMailboxWorker extends http.BaseClient {
     final key = '${match.group(1)}/${match.group(2)}/${match.group(3)}';
 
     if (method == 'GET') {
+      if (failGets.contains(key)) return _reply(500);
       final body = objects[key];
       if (body == null) return _reply(404);
       return _reply(200, body);

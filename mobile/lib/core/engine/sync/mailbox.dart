@@ -141,7 +141,19 @@ class MailboxSyncResult {
   final PublishResult published;
   final int applied;
   final int uploaded;
+
+  String? get failure {
+    for (final result in collected) {
+      if (!result.ok) return result.reason ?? 'collect-failed';
+    }
+    if (!published.ok && published.reason != 'no-owner') return published.reason ?? 'publish-failed';
+    return null;
+  }
+
+  bool get ok => failure == null;
 }
+
+typedef _ManifestRead = ({Map<String, Object?>? manifest, String? failure});
 
 class Mailbox {
   Mailbox({
@@ -174,24 +186,31 @@ class Mailbox {
 
   bool _ok(http.Response response) => response.statusCode >= 200 && response.statusCode < 300;
 
-  Future<Map<String, Object?>?> _readManifest(MailboxConfig cfg, String base, VaultKey key) async {
+  String _failureFor(http.Response response) {
+    final status = response.statusCode;
+    if (status == 401 || status == 403) return 'unauthorized';
+    return 'http-$status';
+  }
+
+  Future<_ManifestRead> _readManifest(MailboxConfig cfg, String base, VaultKey key) async {
     http.Response response;
     try {
       response = await _request(cfg, 'GET', '$base/manifest');
     } catch (_) {
-      return null;
+      return (manifest: null, failure: 'offline');
     }
-    if (!_ok(response)) return null;
+    if (response.statusCode == 404) return (manifest: null, failure: null);
+    if (!_ok(response)) return (manifest: null, failure: _failureFor(response));
     try {
       final sealed = asStringMap(jsonDecode(utf8.decode(response.bodyBytes, allowMalformed: true)));
       final ciphertext = sealed?['ciphertext'];
       final iv = sealed?['iv'];
-      if (ciphertext is! String || iv is! String) return null;
+      if (ciphertext is! String || iv is! String) return (manifest: null, failure: 'unreadable');
       final manifest = decryptJson(ciphertext, iv, key);
-      if (manifest is! Map) return null;
-      return asStringMap(manifest);
+      if (manifest is! Map) return (manifest: null, failure: 'unreadable');
+      return (manifest: asStringMap(manifest), failure: null);
     } catch (_) {
-      return null;
+      return (manifest: null, failure: 'unreadable');
     }
   }
 
@@ -208,11 +227,17 @@ class Mailbox {
     final mailboxId = deriveMailboxId(key);
     final base = '/m/$mailboxId/$ownerId';
 
-    final published = await _readManifest(cfg, base, key);
+    final read = await _readManifest(cfg, base, key);
+    final readFailure = read.failure;
+    if (readFailure != null && readFailure != 'unreadable') {
+      return PublishResult(ok: false, reason: readFailure);
+    }
+    final published = read.manifest;
     final local = await store.getManifest();
     final confirmed = <String, Object?>{};
     var uploaded = 0;
     var skipped = 0;
+    var failed = 0;
 
     final tables = includePhotos ? [...mailboxTextTables, memoriesTable] : mailboxTextTables;
 
@@ -254,12 +279,14 @@ class Mailbox {
           final response = await _request(cfg, 'PUT', '$base/rec/$table/${recordKey(entry['id'])}', body);
           if (!_ok(response)) {
             skipped++;
+            failed++;
             continue;
           }
           uploaded++;
           confirmedEntries.add(entry);
         } catch (_) {
           skipped++;
+          failed++;
         }
       }
     }
@@ -268,8 +295,10 @@ class Mailbox {
       confirmed[memoriesTable] = published[memoriesTable];
     }
 
+    final partial = failed > 0 ? 'partial' : null;
+
     if (uploaded == 0 && sameManifest(published, confirmed)) {
-      return PublishResult(ok: true, uploaded: uploaded, skipped: skipped, unchanged: true);
+      return PublishResult(ok: failed == 0, reason: partial, uploaded: uploaded, skipped: skipped, unchanged: true);
     }
 
     try {
@@ -282,7 +311,7 @@ class Mailbox {
       return PublishResult(ok: false, reason: 'offline', uploaded: uploaded, skipped: skipped);
     }
 
-    return PublishResult(ok: true, uploaded: uploaded, skipped: skipped);
+    return PublishResult(ok: failed == 0, reason: partial, uploaded: uploaded, skipped: skipped);
   }
 
   Future<CollectResult> collect({required VaultKey? key, required String? partnerId}) async {
@@ -294,7 +323,10 @@ class Mailbox {
     final mailboxId = deriveMailboxId(key);
     final base = '/m/$mailboxId/$partnerId';
 
-    final remote = await _readManifest(cfg, base, key);
+    final read = await _readManifest(cfg, base, key);
+    final readFailure = read.failure;
+    if (readFailure != null) return CollectResult(ok: false, reason: readFailure);
+    final remote = read.manifest;
     if (remote == null) return const CollectResult(ok: true, reason: 'nothing-published');
 
     final diff = await diffAgainstLocal(remote, store);
@@ -303,23 +335,45 @@ class Mailbox {
 
     final tables = <String, List<Object?>>{};
     var fetched = 0;
+    var failed = 0;
 
     for (final wanted in diff.wanted) {
+      http.Response response;
       try {
-        final response = await _request(cfg, 'GET', '$base/rec/${wanted.table}/${recordKey(wanted.id)}');
-        if (!_ok(response)) continue;
-        final record = jsonDecode(utf8.decode(response.bodyBytes, allowMalformed: true));
-        tables.putIfAbsent(wanted.table, () => <Object?>[]).add(record);
-        fetched++;
-      } catch (_) {}
+        response = await _request(cfg, 'GET', '$base/rec/${wanted.table}/${recordKey(wanted.id)}');
+      } catch (_) {
+        failed++;
+        continue;
+      }
+      if (response.statusCode == 404) continue;
+      if (!_ok(response)) {
+        failed++;
+        continue;
+      }
+      Object? record;
+      try {
+        record = jsonDecode(utf8.decode(response.bodyBytes, allowMalformed: true));
+      } catch (_) {
+        continue;
+      }
+      tables.putIfAbsent(wanted.table, () => <Object?>[]).add(record);
+      fetched++;
     }
 
-    if (fetched == 0) return const CollectResult(ok: true);
+    final partial = failed > 0 ? 'partial' : null;
+
+    if (fetched == 0) return CollectResult(ok: failed == 0, reason: partial);
 
     final plan = await store.planBackupMerge(tables, key);
     final result = await store.applyBackupMerge(plan);
 
-    return CollectResult(ok: true, applied: result.totalWritten, fetched: fetched, totals: plan.totals);
+    return CollectResult(
+      ok: failed == 0,
+      applied: result.totalWritten,
+      fetched: fetched,
+      reason: partial,
+      totals: plan.totals,
+    );
   }
 
   Future<MailboxSyncResult> sync({

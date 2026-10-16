@@ -259,6 +259,26 @@ void main() {
     }, timeout: const Timeout(Duration(minutes: 2)));
   });
 
+  group('mailbox status', () {
+    test('a mailbox the phone cannot get into shows as failed, not ok', () async {
+      final worker = FakeMailboxWorker(token: 'the-token-the-worker-knows');
+      final space = await openSpace(
+        mailbox: MailboxConfig.resolve(
+          url: 'https://mailbox.example.workers.dev',
+          token: 'a-token-that-was-rotated',
+          origin: 'https://sameskytonight.vercel.app',
+        ),
+        worker: worker,
+      );
+      expect((await space.vault.create(passphrase: passphrase)).ok, isTrue);
+
+      final status = await space.sync.syncNow();
+      expect(status.state, MailboxRunState.failed);
+      expect(status.failure, 'unauthorized');
+      await space.close();
+    });
+  });
+
   group('end to end with the web mailbox', () {
     test('a phone joins from the web invite, collects, claims a person and publishes back', () async {
       final box = asStringMap(fixture['mailbox'])!;
