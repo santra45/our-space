@@ -81,7 +81,7 @@ class LocalPeerServer {
 }
 
 class LoopbackChannel implements RtcChannel {
-  LoopbackChannel(this.label, {String state = 'connecting'}) : _state = state;
+  LoopbackChannel(this.label, {this._state = 'connecting'});
 
   @override
   final String label;

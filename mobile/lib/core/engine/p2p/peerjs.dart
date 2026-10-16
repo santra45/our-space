@@ -194,10 +194,9 @@ class PeerJsPeer implements PeerEndpoint {
     String? id, {
     required PeerJsOptions options,
     required SignalSocketConnector connector,
-    required RtcSessionFactory rtcFactory,
+    required this._rtcFactory,
     PeerClock clock = const SystemPeerClock(),
   })  : _options = options,
-        _rtcFactory = rtcFactory,
         _clock = clock {
     _socket = PeerJsSocket(
       secure: options.secure,

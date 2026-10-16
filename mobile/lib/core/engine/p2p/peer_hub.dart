@@ -37,8 +37,8 @@ class PeerSyncHub extends ChangeNotifier {
     required this.identity,
     required this.store,
     this.autoStart = true,
-    PeerClock clock = const SystemPeerClock(),
-  }) : _clock = clock {
+    this._clock = const SystemPeerClock(),
+  }) {
     _partnerId = _read(pairedPartnerKey);
     final storedConnected = num.tryParse(_read(lastConnectedKey) ?? '');
     _lastConnectedAt = storedConnected?.toInt();

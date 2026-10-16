@@ -164,18 +164,13 @@ class PeerSyncEngine {
   PeerSyncEngine({
     required this.records,
     required this.settings,
-    required PeerEndpointFactory endpointFactory,
-    PeerClock clock = const SystemPeerClock(),
-    String Function(int bytes) nonce = generateSecureNonce,
-    String Function() newPeerId = generatePeerId,
-    List<Map<String, Object?>> Function() iceServers = buildIceServers,
-    void Function(num stamp)? observeRemote,
-  })  : _endpointFactory = endpointFactory,
-        _clock = clock,
-        _nonce = nonce,
-        _newPeerId = newPeerId,
-        _iceServers = iceServers,
-        _observeRemote = observeRemote {
+    required this._endpointFactory,
+    this._clock = const SystemPeerClock(),
+    this._nonce = generateSecureNonce,
+    this._newPeerId = generatePeerId,
+    this._iceServers = buildIceServers,
+    this._observeRemote,
+  }) {
     _knownPartnerId = _storedKnownPartnerId();
   }
 

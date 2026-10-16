@@ -5,7 +5,7 @@ import 'local_settings.dart';
 import 'tables.dart';
 
 class SyncClock {
-  SyncClock(this._settings, {NowFn now = systemNow}) : _now = now;
+  SyncClock(this._settings, {this._now = systemNow});
 
   static const String storageKey = 'sweetheart_sync_clock';
 
