@@ -35,6 +35,8 @@ dependencies:
   provider: ^6.1.2
   app_links: ^7.2.2
   unorm_dart: ^0.3.3
+  firebase_core: ^5.0.0
+  firebase_messaging: ^17.0.0
 
 dev_dependencies:
   flutter_test:
