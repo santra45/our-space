@@ -82,6 +82,7 @@ class SyncService extends ChangeNotifier {
 
   MailboxStatus _status = MailboxStatus.idle;
   bool _busy = false;
+  String? _queued;
   Timer? _timer;
   Object? _lastKey;
   String? _lastNotice;
@@ -119,6 +120,7 @@ class SyncService extends ChangeNotifier {
     if (key == null) {
       _timer?.cancel();
       _timer = null;
+      _queued = null;
       return;
     }
     if (autoSync) schedule('unlock', const Duration(milliseconds: 1500));
@@ -149,7 +151,10 @@ class SyncService extends ChangeNotifier {
   Future<MailboxStatus> syncNow([String reason = 'manual']) async {
     final key = vault.key;
     if (key == null || !mailbox.isEnabled) return _status;
-    if (_busy) return _status;
+    if (_busy) {
+      _queued = reason;
+      return _status;
+    }
 
     _busy = true;
     _status = MailboxStatus(state: MailboxRunState.syncing, at: _status.at);
@@ -175,6 +180,11 @@ class SyncService extends ChangeNotifier {
     } finally {
       _busy = false;
       notifyListeners();
+    }
+    final queued = _queued;
+    if (queued != null && !_disposed) {
+      _queued = null;
+      return syncNow(queued);
     }
     return _status;
   }

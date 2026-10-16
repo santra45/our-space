@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
 import 'package:our_space_mobile/core/engine.dart';
 import 'package:our_space_mobile/core/engine/crypto/base64.dart';
 import 'package:our_space_mobile/core/engine/crypto/derived_ids.dart';
@@ -27,6 +28,19 @@ Future<OurSpace> openSpace({MailboxConfig? mailbox, FakeMailboxWorker? worker}) 
 
 Future<T> firstWhere<T>(Stream<T> stream, bool Function(T) test) =>
     stream.firstWhere(test).timeout(const Duration(seconds: 10));
+
+class GatedMailboxWorker extends FakeMailboxWorker {
+  GatedMailboxWorker({required super.token});
+
+  Completer<void>? gate;
+
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) async {
+    final waiting = gate;
+    if (waiting != null) await waiting.future;
+    return super.send(request);
+  }
+}
 
 void main() {
   final fixture = readFixture('web_sealed.json');
@@ -275,6 +289,34 @@ void main() {
       final status = await space.sync.syncNow();
       expect(status.state, MailboxRunState.failed);
       expect(status.failure, 'unauthorized');
+      await space.close();
+    });
+
+    test('a sync asked for while one is running runs right after it, instead of being dropped', () async {
+      const token = 'the-token-the-worker-knows';
+      final worker = GatedMailboxWorker(token: token);
+      final space = await openSpace(
+        mailbox: MailboxConfig.resolve(
+          url: 'https://mailbox.example.workers.dev',
+          token: token,
+          origin: 'https://sameskytonight.vercel.app',
+        ),
+        worker: worker,
+      );
+      expect((await space.vault.create(passphrase: passphrase)).ok, isTrue);
+
+      worker.gate = Completer<void>();
+      final running = space.sync.syncNow('first');
+      final asked = await space.sync.syncNow('local-write');
+      expect(asked.state, MailboxRunState.syncing);
+
+      final gate = worker.gate!;
+      worker.gate = null;
+      gate.complete();
+      final done = await running;
+      expect(done.state, MailboxRunState.ok);
+      expect(done.reason, 'local-write');
+      expect(worker.calls.where((c) => c.endsWith('/manifest')).length, 4);
       await space.close();
     });
   });
