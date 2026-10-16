@@ -38,4 +38,5 @@ export 'engine/storage/vault_store.dart' show VaultStore, MergePlan, MergeResult
 export 'engine/sync/backup_service.dart';
 export 'engine/sync/mailbox.dart' show MailboxConfig, Mailbox, PublishResult, CollectResult, MailboxSyncResult;
 export 'engine/sync/sync_service.dart';
+export 'engine/vault/quick_unlock.dart';
 export 'engine/vault/vault_service.dart';

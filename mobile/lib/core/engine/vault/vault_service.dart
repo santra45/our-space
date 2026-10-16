@@ -216,6 +216,48 @@ class VaultService extends ChangeNotifier {
     return const VaultResult.success();
   }
 
+  Future<DerivedKey?> verifyPassphrase(String passphrase) async {
+    Map<String, Object?>? meta;
+    try {
+      meta = await store.getVaultMeta();
+    } catch (_) {
+      return null;
+    }
+    final salt = meta?['salt'];
+    if (meta == null || salt is! String || salt.isEmpty) return null;
+    try {
+      return await deriveKeyWithVerification(
+        passphrase,
+        salt,
+        (candidate) => readCanary(candidate, meta) != null,
+        iterations: meta['kdfIterations'] as num?,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<VaultResult> unlockWithKey(VaultKey key, {int? iterations}) async {
+    Map<String, Object?>? meta;
+    try {
+      meta = await store.getVaultMeta();
+    } catch (_) {
+      return const VaultResult.failure(VaultMessages.couldNotOpen, code: 'unreadable');
+    }
+    final salt = meta?['salt'];
+    if (meta == null || salt is! String || salt.isEmpty) {
+      return const VaultResult.failure(VaultMessages.nothingHereYet, code: 'no_vault');
+    }
+    final payload = readCanary(key, meta);
+    if (payload == null) {
+      return const VaultResult.failure(VaultMessages.incorrectPassphrase, code: 'wrong_key');
+    }
+    final stored = meta['kdfIterations'];
+    final count = iterations ?? (stored is num ? stored.floor() : pbkdf2IterationsCurrent);
+    _adopt(key, salt, count, _configFrom(payload, meta));
+    return const VaultResult.success();
+  }
+
   Future<(bool, Map<String, Object?>?, VaultResult?)> _guardDestructiveWrite(String? confirmDestroy) async {
     final read = await store.readVaultIdentity();
     if (!read.ok) {

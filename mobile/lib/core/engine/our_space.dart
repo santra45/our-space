@@ -24,6 +24,7 @@ import 'storage/vault_store.dart';
 import 'sync/backup_service.dart';
 import 'sync/mailbox.dart';
 import 'sync/sync_service.dart';
+import 'vault/quick_unlock.dart';
 import 'vault/vault_service.dart';
 
 class OurSpace {
@@ -44,6 +45,7 @@ class OurSpace {
     required this.mailbox,
     required this.sync,
     required this.backup,
+    required this.quickUnlock,
   });
 
   static Future<OurSpace> open({
@@ -56,6 +58,7 @@ class OurSpace {
     bool autoSync = true,
     PeerEndpointFactory? peerEndpoints,
     bool? peerToPeer,
+    QuickUnlockPlatform? quickUnlockPlatform,
   }) async {
     final store = await VaultStore.open(factory: databaseFactory, path: databasePath, now: now);
     final device = DeviceIdentity(store.settings);
@@ -113,6 +116,7 @@ class OurSpace {
       mailbox: mailbox,
       sync: sync,
       backup: BackupService(store: store, vault: vault),
+      quickUnlock: QuickUnlockService(vault: vault, settings: store.settings, platform: quickUnlockPlatform),
     );
     await vault.check();
     return space;
@@ -134,12 +138,14 @@ class OurSpace {
   final Mailbox mailbox;
   final SyncService sync;
   final BackupService backup;
+  final QuickUnlockService quickUnlock;
 
   PeerSyncHub get peer => sync.peer!;
 
   Stream<void> watchTable(String table) => store.watchTable(table);
 
   Future<void> close() async {
+    quickUnlock.dispose();
     sync.dispose();
     identity.dispose();
     vault.dispose();
