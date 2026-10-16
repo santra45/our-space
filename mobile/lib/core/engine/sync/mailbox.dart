@@ -66,16 +66,16 @@ bool sameManifest(Object? previous, Map<String, Object?> next) {
     final before = prev[table] is List ? prev[table] as List : const <Object?>[];
     final after = next[table] is List ? next[table] as List : const <Object?>[];
     if (before.length != after.length) return false;
-    final versions = <Object?, Object?>{};
+    final versions = <Object?, (Object?, bool)>{};
     for (final e in before) {
       final entry = e is Map ? e : null;
       if (entry == null) return false;
-      versions[entry['id']] = entry['updatedAt'];
+      versions[entry['id']] = (entry['updatedAt'], entry['deleted'] == true);
     }
     for (final e in after) {
       final entry = e is Map ? e : null;
       if (entry == null) return false;
-      if (!versions.containsKey(entry['id']) || versions[entry['id']] != entry['updatedAt']) return false;
+      if (versions[entry['id']] != (entry['updatedAt'], entry['deleted'] == true)) return false;
     }
   }
   return true;
@@ -243,18 +243,18 @@ class Mailbox {
 
     for (final table in tables) {
       final entries = local[table] ?? const <Map<String, Object?>>[];
-      final already = <Object?, Object?>{};
+      final already = <Object?, (Object?, bool)>{};
       final publishedEntries = published?[table];
       if (publishedEntries is List) {
         for (final e in publishedEntries) {
-          if (e is Map) already[e['id']] = e['updatedAt'];
+          if (e is Map) already[e['id']] = (e['updatedAt'], e['deleted'] == true);
         }
       }
       final confirmedEntries = <Map<String, Object?>>[];
       confirmed[table] = confirmedEntries;
 
       for (final entry in entries) {
-        if (already.containsKey(entry['id']) && already[entry['id']] == entry['updatedAt']) {
+        if (already[entry['id']] == (entry['updatedAt'], entry['deleted'] == true)) {
           confirmedEntries.add(entry);
           continue;
         }

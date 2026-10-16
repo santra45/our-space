@@ -165,6 +165,25 @@ void main() {
       expect((await mailboxFor(her, worker).collect(key: key, partnerId: hisBox)).applied, 0);
     });
 
+    test('a tombstone with the same timestamp as the live copy it replaced still travels', () async {
+      final tie = clock += 1000;
+      await his.putEncrypted(lettersTable, {'id': 'tie', 'title': 'a', 'content': 'live', 'updatedAt': tie}, key);
+      await mailboxFor(his, worker).publish(key: key, ownerId: hisBox);
+      await mailboxFor(her, worker).collect(key: key, partnerId: hisBox);
+
+      await his.putRow(lettersTable, encryptRecord({'id': 'tie', 'updatedAt': tie, 'deleted': true}, key, table: lettersTable));
+      final tombstone = await mailboxFor(his, worker).publish(key: key, ownerId: hisBox);
+      expect(tombstone.ok, isTrue);
+      expect(tombstone.uploaded, 1);
+      expect(tombstone.unchanged, isFalse);
+      final wire = jsonDecode(worker.kvDump()['${deriveMailboxId(key)}/$hisBox/rec/letters/${recordKey('tie')}']!) as Map;
+      expect(wire['deleted'], isTrue);
+
+      expect((await mailboxFor(her, worker).collect(key: key, partnerId: hisBox)).applied, 1);
+      expect((await her.getDecrypted(lettersTable, 'tie', key))!['deleted'], isTrue);
+      expect((await mailboxFor(his, worker).publish(key: key, ownerId: hisBox)).unchanged, isTrue);
+    });
+
     test('photos travel with their sealed bytes, and can be held back', () async {
       await his.putEncrypted(memoriesTable, {
         'id': 'mem-1',
