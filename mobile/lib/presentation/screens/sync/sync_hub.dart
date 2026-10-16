@@ -14,6 +14,7 @@ import 'backup_dialogs.dart';
 import 'invite_qr.dart';
 import 'peer_link.dart';
 import 'qr_scanner.dart';
+import 'quick_unlock_panel.dart';
 
 Future<void> showSyncHub(BuildContext context) {
   return showOurModal<void>(
@@ -133,6 +134,7 @@ class _SyncHubState extends State<SyncHub> {
   void initState() {
     super.initState();
     _devicePeerId = context.space.device.peerId;
+    unawaited(context.read<QuickUnlockService>().refresh());
     _clock = Timer.periodic(_presenceTick, (_) {
       if (mounted) setState(() => _now = DateTime.now().millisecondsSinceEpoch);
     });
@@ -396,6 +398,7 @@ class _SyncHubState extends State<SyncHub> {
             onPair: _manualConnect,
           ),
           const SizedBox(height: 16),
+          const QuickUnlockPanel(),
           _BackupPanel(
             notice: _backupNotice,
             error: _backupError,

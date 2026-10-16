@@ -22,7 +22,7 @@ const String passphrase = 'correct horse battery staple 2026';
 const int fastIterations = 1000;
 const String openHubLabel = 'Open hub';
 
-Future<OurSpace> openHubSpace({MailboxConfig? mailbox, http.Client? client}) async {
+Future<OurSpace> openHubSpace({MailboxConfig? mailbox, http.Client? client, QuickUnlockPlatform? quickUnlock}) async {
   final dir = Directory.systemTemp.createTempSync('our_space_hub_');
   final space = await OurSpace.open(
     databaseFactory: testDatabaseFactory(),
@@ -31,6 +31,7 @@ Future<OurSpace> openHubSpace({MailboxConfig? mailbox, http.Client? client}) asy
     mailboxConfig: mailbox,
     httpClient: client,
     autoSync: false,
+    quickUnlockPlatform: quickUnlock,
   );
   await space.store.settings.setItem(DeviceIdentity.peerIdKey, space.device.peerId);
   return space;
@@ -42,8 +43,9 @@ Future<OurSpace> openUnlockedSpace(
   String startDate = '2021-06-14',
   MailboxConfig? mailbox,
   http.Client? client,
+  QuickUnlockPlatform? quickUnlock,
 }) async {
-  final space = await real(tester, () => openHubSpace(mailbox: mailbox, client: client));
+  final space = await real(tester, () => openHubSpace(mailbox: mailbox, client: client, quickUnlock: quickUnlock));
   await real(
     tester,
     () => space.vault.create(
