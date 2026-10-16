@@ -294,7 +294,7 @@ class QuickUnlockService extends ChangeNotifier {
 
     Uint8List bits;
     try {
-      bits = await platform.open(record.sealed, _aad(salt), QuickUnlockPrompt.open);
+      bits = Uint8List.fromList(await platform.open(record.sealed, _aad(salt), QuickUnlockPrompt.open));
     } on QuickUnlockFailure catch (failure) {
       switch (failure.code) {
         case 'cancelled':

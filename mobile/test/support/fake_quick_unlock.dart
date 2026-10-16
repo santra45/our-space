@@ -45,8 +45,8 @@ class FakeQuickUnlock implements QuickUnlockPlatform {
     _maybeFail();
     if (_secret == null || !listEquals(aad, _aad)) throw const QuickUnlockFailure('stale');
     final override = openAs;
-    if (override != null) return Uint8List.fromList(override);
-    return _xor(sealed.ciphertext);
+    if (override != null) return Uint8List.fromList(override).asUnmodifiableView();
+    return _xor(sealed.ciphertext).asUnmodifiableView();
   }
 
   @override
