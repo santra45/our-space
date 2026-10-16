@@ -151,10 +151,10 @@ async function accessToken(account) {
   return cachedAccess.token;
 }
 
-function pushMessage(token) {
+function pushMessage(address) {
   return {
     message: {
-      token,
+      fid: address,
       notification: { title: PUSH_MESSAGE.title, body: PUSH_MESSAGE.body },
       android: {
         priority: 'HIGH',

@@ -4572,7 +4572,7 @@ async function run() {
         fcmCalls[0].url === 'https://fcm.googleapis.com/v1/projects/our-space-test/messages:send'
     );
     const sent = JSON.parse(fcmCalls[0].init.body).message;
-    check('it rings her address, never his own', sent.token === HER_TOKEN);
+    check('it rings her installation, never his own', sent.fid === HER_TOKEN && sent.token === undefined);
     check(
       'the ring says only that something is waiting',
       sent.notification.title === 'Our Space 💕' && sent.notification.body === 'Something new is waiting for you.'
@@ -4616,7 +4616,7 @@ async function run() {
     await ringOnce(PUSH_HER);
     check(
       'her manifest rings his phone, reusing the access it already has',
-      outbound.length === 1 && JSON.parse(outbound[0].init.body).message.token === HIS_TOKEN
+      outbound.length === 1 && JSON.parse(outbound[0].init.body).message.fid === HIS_TOKEN
     );
 
     outbound.length = 0;
