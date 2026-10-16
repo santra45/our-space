@@ -88,13 +88,17 @@ export function SyncProvider({ children }) {
 
   const [mailboxState, setMailboxState] = useState({ state: 'idle', at: 0 });
   const mailboxBusyRef = useRef(false);
+  const mailboxQueuedRef = useRef(null);
   const mailboxTimerRef = useRef(null);
 
   const runMailbox = useCallback(
     async (reason) => {
       const key = cryptoKey || getVaultKey();
       if (!key || !isMailboxEnabled()) return;
-      if (mailboxBusyRef.current) return;
+      if (mailboxBusyRef.current) {
+        mailboxQueuedRef.current = reason;
+        return;
+      }
 
       mailboxBusyRef.current = true;
       setMailboxState((prev) => ({ ...prev, state: 'syncing' }));
@@ -125,6 +129,12 @@ export function SyncProvider({ children }) {
         setMailboxState({ state: 'failed', at: Date.now(), reason, failure: 'error' });
       } finally {
         mailboxBusyRef.current = false;
+      }
+
+      const queued = mailboxQueuedRef.current;
+      if (queued) {
+        mailboxQueuedRef.current = null;
+        await runMailbox(queued);
       }
     },
     [cryptoKey]
@@ -168,6 +178,7 @@ export function SyncProvider({ children }) {
         clearTimeout(mailboxTimerRef.current);
         mailboxTimerRef.current = null;
       }
+      mailboxQueuedRef.current = null;
     };
   }, [isUnlocked, scheduleMailbox]);
 
