@@ -13,7 +13,7 @@ class FakeMailboxWorker extends http.BaseClient {
   static const int maxObjectBytes = 16 * 1024 * 1024;
 
   static final RegExp path = RegExp(
-    r'^/m/([0-9a-f]{32,64})/([A-Za-z0-9_-]{8,64})/(manifest|rec/[A-Za-z0-9]{1,32}/[A-Za-z0-9_-]{1,255})$',
+    r'^/m/([0-9a-f]{32,64})/([A-Za-z0-9_-]{8,64})/(manifest|rec/[A-Za-z0-9]{1,32}/[A-Za-z0-9_-]{1,255}|push/[A-Za-z0-9_-]{8,64})$',
   );
 
   final String token;
@@ -23,6 +23,7 @@ class FakeMailboxWorker extends http.BaseClient {
   bool offline = false;
   final Set<String> failPuts = {};
   final Set<String> failGets = {};
+  final Map<String, String> pushes = {};
 
   static FakeMailboxWorker fromKvDump(Map<String, Object?> dump, {required String token}) {
     final seed = <String, Uint8List>{};
@@ -71,7 +72,27 @@ class FakeMailboxWorker extends http.BaseClient {
 
     final match = path.firstMatch(request.url.path);
     if (match == null) return _reply(404);
-    final key = '${match.group(1)}/${match.group(2)}/${match.group(3)}';
+    final tail = match.group(3)!;
+    if (tail.startsWith('push/')) {
+      final pushKey = 'push/${match.group(1)}/${match.group(2)}/${tail.substring(5)}';
+      if (method == 'DELETE') {
+        pushes.remove(pushKey);
+        return _reply(204);
+      }
+      if (method != 'PUT') return _reply(405);
+      final bytes = request is http.Request ? request.bodyBytes : await request.finalize().toBytes();
+      Object? decoded;
+      try {
+        decoded = jsonDecode(utf8.decode(bytes));
+      } catch (_) {
+        decoded = null;
+      }
+      final token = decoded is Map ? decoded['token'] : null;
+      if (token is! String || token.isEmpty) return _reply(400);
+      pushes[pushKey] = token;
+      return _reply(204);
+    }
+    final key = '${match.group(1)}/${match.group(2)}/$tail';
 
     if (method == 'GET') {
       if (failGets.contains(key)) return _reply(500);

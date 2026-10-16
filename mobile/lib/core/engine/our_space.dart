@@ -23,6 +23,7 @@ import 'repositories/roulette_repository.dart';
 import 'storage/vault_store.dart';
 import 'sync/backup_service.dart';
 import 'sync/mailbox.dart';
+import 'sync/push_service.dart';
 import 'sync/sync_service.dart';
 import 'vault/quick_unlock.dart';
 import 'vault/vault_service.dart';
@@ -46,6 +47,7 @@ class OurSpace {
     required this.sync,
     required this.backup,
     required this.quickUnlock,
+    required this.push,
   });
 
   static Future<OurSpace> open({
@@ -59,6 +61,7 @@ class OurSpace {
     PeerEndpointFactory? peerEndpoints,
     bool? peerToPeer,
     QuickUnlockPlatform? quickUnlockPlatform,
+    PushPlatform? pushPlatform,
   }) async {
     final store = await VaultStore.open(factory: databaseFactory, path: databasePath, now: now);
     final device = DeviceIdentity(store.settings);
@@ -117,6 +120,14 @@ class OurSpace {
       sync: sync,
       backup: BackupService(store: store, vault: vault),
       quickUnlock: QuickUnlockService(vault: vault, settings: store.settings, platform: quickUnlockPlatform),
+      push: PushService(
+        vault: vault,
+        identity: identity,
+        mailbox: mailbox,
+        settings: store.settings,
+        sync: sync,
+        platform: pushPlatform,
+      ),
     );
     await vault.check();
     return space;
@@ -139,12 +150,14 @@ class OurSpace {
   final SyncService sync;
   final BackupService backup;
   final QuickUnlockService quickUnlock;
+  final PushService push;
 
   PeerSyncHub get peer => sync.peer!;
 
   Stream<void> watchTable(String table) => store.watchTable(table);
 
   Future<void> close() async {
+    push.dispose();
     quickUnlock.dispose();
     sync.dispose();
     identity.dispose();

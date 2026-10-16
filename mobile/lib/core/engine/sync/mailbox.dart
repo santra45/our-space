@@ -400,5 +400,31 @@ class Mailbox {
     );
   }
 
+  Future<bool> registerPush({
+    required VaultKey? key,
+    required String? ownerId,
+    required String device,
+    required String address,
+  }) async {
+    final cfg = config;
+    if (cfg == null || key == null || ownerId == null || ownerId.isEmpty) return false;
+    try {
+      final path = '/m/${deriveMailboxId(key)}/$ownerId/push/$device';
+      return _ok(await _request(cfg, 'PUT', path, jsonEncode({'token': address})));
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<bool> forgetPush({required VaultKey? key, required String? ownerId, required String device}) async {
+    final cfg = config;
+    if (cfg == null || key == null || ownerId == null || ownerId.isEmpty) return false;
+    try {
+      return _ok(await _request(cfg, 'DELETE', '/m/${deriveMailboxId(key)}/$ownerId/push/$device'));
+    } catch (_) {
+      return false;
+    }
+  }
+
   void close() => _client.close();
 }

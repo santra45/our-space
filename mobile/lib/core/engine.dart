@@ -37,6 +37,8 @@ export 'engine/storage/tables.dart';
 export 'engine/storage/vault_store.dart' show VaultStore, MergePlan, MergeResult, MergeStats, StoreError, TableWrite, SealedWrite, readBackupVaultIdentity;
 export 'engine/sync/backup_service.dart';
 export 'engine/sync/mailbox.dart' show MailboxConfig, Mailbox, PublishResult, CollectResult, MailboxSyncResult;
+export 'engine/sync/firebase_push.dart';
+export 'engine/sync/push_service.dart';
 export 'engine/sync/sync_service.dart';
 export 'engine/vault/quick_unlock.dart';
 export 'engine/vault/vault_service.dart';

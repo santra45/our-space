@@ -39,7 +39,7 @@ Stream<LicenseEntry> bundledLicenses() async* {
   yield LicenseEntryWithLineBreaks(['lucide'], await rootBundle.loadString('assets/svg/icons/LICENSE.txt'));
 }
 
-Future<OurSpace> openOurSpace() => OurSpace.open();
+Future<OurSpace> openOurSpace() async => OurSpace.open(pushPlatform: await FirebasePushPlatform.start());
 
 Widget vaultGate(BuildContext context, Widget shell) => InviteLinkGate(shell: shell);
 

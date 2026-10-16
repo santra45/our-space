@@ -154,7 +154,7 @@ class _SpaceScopeState extends State<SpaceScope> {
         ChangeNotifierProvider<AppNotices>.value(value: _notices),
         ChangeNotifierProvider<PeerLink>.value(value: _peer),
       ],
-      child: SpaceLifecycle(sync: space.sync, child: widget.child),
+      child: SpaceLifecycle(sync: space.sync, push: space.push, child: widget.child),
     );
   }
 }
@@ -164,9 +164,10 @@ extension SpaceContext on BuildContext {
 }
 
 class SpaceLifecycle extends StatefulWidget {
-  const SpaceLifecycle({super.key, required this.sync, required this.child});
+  const SpaceLifecycle({super.key, required this.sync, this.push, required this.child});
 
   final SyncService sync;
+  final PushService? push;
   final Widget child;
 
   @override
@@ -195,6 +196,7 @@ class _SpaceLifecycleState extends State<SpaceLifecycle> with WidgetsBindingObse
         if (_inBackground) {
           _inBackground = false;
           widget.sync.onForeground();
+          unawaited(widget.push?.check());
         }
       case AppLifecycleState.hidden:
       case AppLifecycleState.paused:
