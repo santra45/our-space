@@ -41,11 +41,12 @@ class FirebasePushPlatform implements PushPlatform {
 
   @override
   Future<String?> address() async {
+    final registered = _messaging.onRegistered.first.timeout(const Duration(seconds: 30));
     try {
-      final registered = _messaging.onRegistered.first.timeout(const Duration(seconds: 30));
       await _messaging.register();
       return await registered;
     } catch (_) {
+      registered.ignore();
       return null;
     }
   }
