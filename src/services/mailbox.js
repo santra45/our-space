@@ -104,12 +104,17 @@ export async function publish(args) {
   const mailboxId = await deriveMailboxId(cryptoKey);
   const base = `/m/${mailboxId}/${ownerId}`;
 
-  const published = await readManifest(config, base, cryptoKey);
+  const read = await readManifest(config, base, cryptoKey);
+  if (read.failure && read.failure !== 'unreadable') {
+    return { ...idle, reason: read.failure };
+  }
+  const published = read.manifest;
 
   const local = await store.getManifest();
   const confirmed = {};
   let uploaded = 0;
   let skipped = 0;
+  let failed = 0;
 
   const tables = args && args.includePhotos === false ? TEXT_TABLES : [...TEXT_TABLES, 'memories'];
 
@@ -146,12 +151,14 @@ export async function publish(args) {
         const response = await request(config, 'PUT', `${base}/rec/${tableName}/${recordKey(entry.id)}`, body);
         if (!response.ok) {
           skipped++;
+          failed++;
           continue;
         }
         uploaded++;
         confirmed[tableName].push(entry);
       } catch {
         skipped++;
+        failed++;
       }
     }
   }
@@ -160,8 +167,10 @@ export async function publish(args) {
     confirmed.memories = published.memories;
   }
 
+  const partial = failed > 0 ? { reason: 'partial' } : {};
+
   if (uploaded === 0 && sameManifest(published, confirmed)) {
-    return { ok: true, uploaded, skipped, unchanged: true };
+    return { ok: failed === 0, ...partial, uploaded, skipped, unchanged: true };
   }
 
   try {
@@ -172,7 +181,12 @@ export async function publish(args) {
     return { ok: false, reason: 'offline', uploaded, skipped };
   }
 
-  return { ok: true, uploaded, skipped };
+  return { ok: failed === 0, ...partial, uploaded, skipped };
+}
+
+function failureFor(response) {
+  if (response.status === 401 || response.status === 403) return 'unauthorized';
+  return `http-${response.status}`;
 }
 
 async function readManifest(config, base, cryptoKey) {
@@ -180,17 +194,20 @@ async function readManifest(config, base, cryptoKey) {
   try {
     response = await request(config, 'GET', `${base}/manifest`);
   } catch {
-    return null;
+    return { manifest: null, failure: 'offline' };
   }
-  if (!response.ok) return null;
+  if (response.status === 404) return { manifest: null, failure: null };
+  if (!response.ok) return { manifest: null, failure: failureFor(response) };
 
   try {
     const sealed = JSON.parse(await response.text());
     const manifest = await decryptJSON(sealed.ciphertext, sealed.iv, cryptoKey);
-    if (!manifest || typeof manifest !== 'object' || Array.isArray(manifest)) return null;
-    return manifest;
+    if (!manifest || typeof manifest !== 'object' || Array.isArray(manifest)) {
+      return { manifest: null, failure: 'unreadable' };
+    }
+    return { manifest, failure: null };
   } catch {
-    return null;
+    return { manifest: null, failure: 'unreadable' };
   }
 }
 
@@ -207,7 +224,9 @@ export async function collect(args) {
   const mailboxId = await deriveMailboxId(cryptoKey);
   const base = `/m/${mailboxId}/${partnerId}`;
 
-  const remote = await readManifest(config, base, cryptoKey);
+  const read = await readManifest(config, base, cryptoKey);
+  if (read.failure) return { ...idle, reason: read.failure };
+  const remote = read.manifest;
   if (!remote) return { ok: true, reason: 'nothing-published', applied: 0, fetched: 0 };
 
   const wanted = await peerSync.diffAgainstLocal(remote);
@@ -215,20 +234,35 @@ export async function collect(args) {
 
   const tables = {};
   let fetched = 0;
+  let failed = 0;
 
   for (const { table, id } of wanted) {
+    let response;
     try {
-      const response = await request(config, 'GET', `${base}/rec/${table}/${recordKey(id)}`);
-      if (!response.ok) continue;
-      const record = JSON.parse(await response.text());
-      if (!tables[table]) tables[table] = [];
-      tables[table].push(record);
-      fetched++;
+      response = await request(config, 'GET', `${base}/rec/${table}/${recordKey(id)}`);
     } catch {
+      failed++;
+      continue;
     }
+    if (response.status === 404) continue;
+    if (!response.ok) {
+      failed++;
+      continue;
+    }
+    let record;
+    try {
+      record = JSON.parse(await response.text());
+    } catch {
+      continue;
+    }
+    if (!tables[table]) tables[table] = [];
+    tables[table].push(record);
+    fetched++;
   }
 
-  if (fetched === 0) return { ok: true, applied: 0, fetched: 0 };
+  const partial = failed > 0 ? { reason: 'partial' } : {};
+
+  if (fetched === 0) return { ok: failed === 0, ...partial, applied: 0, fetched: 0 };
 
   const plan = await store.planBackupMerge(tables, cryptoKey);
   const result = await store.applyBackupMerge(plan);
@@ -245,7 +279,14 @@ export async function collect(args) {
     }
   }
 
-  return { ok: true, applied, fetched, totals: plan.totals };
+  return { ok: failed === 0, ...partial, applied, fetched, totals: plan.totals };
+}
+
+function syncFailure(collected, published) {
+  const failedCollect = collected.find((r) => !r.ok);
+  if (failedCollect) return failedCollect.reason || 'collect-failed';
+  if (!published.ok && published.reason !== 'no-owner') return published.reason || 'publish-failed';
+  return null;
 }
 
 export async function syncMailbox(args) {
@@ -258,8 +299,11 @@ export async function syncMailbox(args) {
   }
 
   const published = args && args.ownerId ? await publish(args) : { ok: false, reason: 'no-owner' };
+  const failure = syncFailure(collected, published);
 
   return {
+    ok: failure === null,
+    failure,
     collected,
     published,
     applied: collected.reduce((sum, r) => sum + (r.applied || 0), 0),

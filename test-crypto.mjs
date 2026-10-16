@@ -3958,15 +3958,21 @@ async function run() {
 
   const mbxBucket = new Map();
   const mbxCalls = [];
+  const mbxFail = new Set();
+  let mbxOffline = false;
   const realFetch = globalThis.fetch;
 
   globalThis.fetch = async (url, options = {}) => {
     const { pathname } = new URL(url);
     const method = options.method || 'GET';
+    if (mbxOffline) throw new TypeError('Failed to fetch');
     mbxCalls.push(`${method} ${pathname}`);
 
     if (options.headers?.Authorization !== 'Bearer test-token') {
       return { ok: false, status: 401, async text() { return ''; } };
+    }
+    if (mbxFail.has(`${method} ${pathname}`)) {
+      return { ok: false, status: 500, async text() { return ''; } };
     }
     if (method === 'PUT') {
       mbxBucket.set(pathname, options.body);
@@ -4227,6 +4233,87 @@ async function run() {
       store: hisPhone,
     });
     check('a bad token fails the publish rather than half-doing it', badToken.ok === false);
+
+    const lockedOut = await mbx.collect({
+      cryptoKey: key,
+      partnerId: HIS_BOX,
+      overrides: { url: mbxCfg.url, token: 'wrong' },
+      store: herPhone,
+    });
+    check('a bad token is a failure, not an empty mailbox', lockedOut.ok === false);
+    check('and says so', lockedOut.reason === 'unauthorized');
+
+    mbxFail.add(`GET /m/${mbxId}/${HIS_BOX}/manifest`);
+    const serverDown = await mbx.collect({
+      cryptoKey: key,
+      partnerId: HIS_BOX,
+      overrides: mbxCfg,
+      store: herPhone,
+    });
+    check('a server error is a failure too', serverDown.ok === false && serverDown.reason === 'http-500');
+
+    mbxCalls.length = 0;
+    const blind = await mbx.publish({ cryptoKey: key, ownerId: HIS_BOX, overrides: mbxCfg, store: hisPhone });
+    check(
+      'publish refuses to run blind when it cannot read its own manifest',
+      blind.ok === false && blind.reason === 'http-500'
+    );
+    check('and uploads nothing at all in that case', !mbxCalls.some((c) => c.startsWith('PUT ')));
+    mbxFail.clear();
+
+    mbxOffline = true;
+    const unreachable = await mbx.collect({
+      cryptoKey: key,
+      partnerId: HIS_BOX,
+      overrides: mbxCfg,
+      store: herPhone,
+    });
+    mbxOffline = false;
+    check('no connection is a failure', unreachable.ok === false && unreachable.reason === 'offline');
+
+    await hisPhone.putEncrypted('letters', { id: 'letter-half-a', updatedAt: mbxStamp() }, key);
+    await hisPhone.putEncrypted('letters', { id: 'letter-half-b', updatedAt: mbxStamp() }, key);
+    mbxFail.add(`PUT /m/${mbxId}/${HIS_BOX}/rec/letters/${mbx.recordKey('letter-half-b')}`);
+    const halfUp = await mbx.publish({ cryptoKey: key, ownerId: HIS_BOX, overrides: mbxCfg, store: hisPhone });
+    mbxFail.clear();
+    check('a record that fails to upload makes the publish partial', halfUp.ok === false && halfUp.reason === 'partial');
+    const restUp = await mbx.publish({ cryptoKey: key, ownerId: HIS_BOX, overrides: mbxCfg, store: hisPhone });
+    check('and the next publish finishes it', restUp.ok === true && restUp.uploaded === 1);
+
+    mbxFail.add(`GET /m/${mbxId}/${HIS_BOX}/rec/letters/${mbx.recordKey('letter-half-a')}`);
+    const halfDown = await mbx.collect({
+      cryptoKey: key,
+      partnerId: HIS_BOX,
+      overrides: mbxCfg,
+      store: herPhone,
+    });
+    mbxFail.clear();
+    check('a record that fails to download makes the collect partial', halfDown.ok === false && halfDown.reason === 'partial');
+    check('while what did arrive is still applied', halfDown.applied >= 1);
+    const restDown = await mbx.collect({
+      cryptoKey: key,
+      partnerId: HIS_BOX,
+      overrides: mbxCfg,
+      store: herPhone,
+    });
+    check('and the next collect finishes it', restDown.ok === true && restDown.applied === 1);
+
+    const unclaimed = await mbx.syncMailbox({
+      cryptoKey: key,
+      ownerId: null,
+      slots: [HIS_BOX],
+      overrides: mbxCfg,
+      store: herPhone,
+    });
+    check('a phone that has not picked who it is yet is not a failed sync', unclaimed.ok === true);
+    const stale = await mbx.syncMailbox({
+      cryptoKey: key,
+      ownerId: HER_BOX,
+      slots: [HIS_BOX],
+      overrides: { url: mbxCfg.url, token: 'wrong' },
+      store: herPhone,
+    });
+    check('a sync with a bad token reports failed, with the reason', stale.ok === false && stale.failure === 'unauthorized');
 
     db.getManifest = realDbManifest;
     db.planBackupMerge = realPlan;

@@ -108,11 +108,12 @@ export function SyncProvider({ children }) {
         });
 
         setMailboxState({
-          state: 'ok',
+          state: result.ok ? 'ok' : 'failed',
           at: Date.now(),
           applied: result.applied,
           uploaded: result.uploaded,
           reason,
+          failure: result.failure,
         });
 
         if (result.applied > 0) {
@@ -121,7 +122,7 @@ export function SyncProvider({ children }) {
           );
         }
       } catch {
-        setMailboxState({ state: 'failed', at: Date.now(), reason });
+        setMailboxState({ state: 'failed', at: Date.now(), reason, failure: 'error' });
       } finally {
         mailboxBusyRef.current = false;
       }
