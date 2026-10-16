@@ -76,6 +76,10 @@ function toWire(tableName, row) {
   return wire;
 }
 
+function versionOf(entry) {
+  return `${entry.updatedAt}:${entry.deleted === true}`;
+}
+
 function sameManifest(prev, next) {
   if (!prev || typeof prev !== 'object') return false;
   const tables = new Set([...Object.keys(prev), ...Object.keys(next)]);
@@ -83,9 +87,9 @@ function sameManifest(prev, next) {
     const before = Array.isArray(prev[tableName]) ? prev[tableName] : [];
     const after = Array.isArray(next[tableName]) ? next[tableName] : [];
     if (before.length !== after.length) return false;
-    const versions = new Map(before.map((e) => [e.id, e.updatedAt]));
+    const versions = new Map(before.map((e) => [e.id, versionOf(e)]));
     for (const entry of after) {
-      if (!versions.has(entry.id) || versions.get(entry.id) !== entry.updatedAt) return false;
+      if (versions.get(entry.id) !== versionOf(entry)) return false;
     }
   }
   return true;
@@ -121,12 +125,12 @@ export async function publish(args) {
   for (const tableName of tables) {
     const entries = local[tableName] || [];
     const already = new Map(
-      ((published && published[tableName]) || []).map((e) => [e.id, e.updatedAt])
+      ((published && published[tableName]) || []).map((e) => [e.id, versionOf(e)])
     );
     confirmed[tableName] = [];
 
     for (const entry of entries) {
-      if (already.get(entry.id) === entry.updatedAt) {
+      if (already.get(entry.id) === versionOf(entry)) {
         confirmed[tableName].push(entry);
         continue;
       }

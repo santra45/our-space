@@ -4298,6 +4298,19 @@ async function run() {
     });
     check('and the next collect finishes it', restDown.ok === true && restDown.applied === 1);
 
+    const tieAt = mbxStamp();
+    await hisPhone.putEncrypted('letters', { id: 'letter-tie', updatedAt: tieAt }, key);
+    await mbx.publish({ cryptoKey: key, ownerId: HIS_BOX, overrides: mbxCfg, store: hisPhone });
+    const tieRow = await hisPhone.table('letters').get('letter-tie');
+    await hisPhone.table('letters').put({ ...tieRow, deleted: true, _del: 1, updatedAt: tieAt });
+    const tieUp = await mbx.publish({ cryptoKey: key, ownerId: HIS_BOX, overrides: mbxCfg, store: hisPhone });
+    check(
+      'a tombstone with the same timestamp as the live copy it replaced still uploads',
+      tieUp.ok === true && tieUp.uploaded === 1 && !tieUp.unchanged
+    );
+    const tieAgain = await mbx.publish({ cryptoKey: key, ownerId: HIS_BOX, overrides: mbxCfg, store: hisPhone });
+    check('and once it has, the manifest counts as unchanged again', tieAgain.unchanged === true);
+
     const unclaimed = await mbx.syncMailbox({
       cryptoKey: key,
       ownerId: null,
