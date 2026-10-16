@@ -37,6 +37,7 @@ class IdentityController extends ChangeNotifier {
   bool _busy = false;
   bool _writing = false;
   Object? _lastKey;
+  String? _touchedFor;
   bool appInForeground = true;
 
   bool _disposed = false;
@@ -74,6 +75,7 @@ class IdentityController extends ChangeNotifier {
     final key = vault.key;
     if (key == null) {
       _identity = Identity.locked;
+      _touchedFor = null;
       notifyListeners();
       return;
     }
@@ -93,6 +95,11 @@ class IdentityController extends ChangeNotifier {
           next = await people.resolveIdentity(key);
           _identity = next;
           notifyListeners();
+        }
+        final personId = next.me?.personId;
+        if (personId != null && personId != _touchedFor) {
+          _touchedFor = personId;
+          await touchLastActive();
         }
       }
     } catch (_) {

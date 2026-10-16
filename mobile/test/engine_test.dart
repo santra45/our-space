@@ -273,6 +273,33 @@ void main() {
     }, timeout: const Timeout(Duration(minutes: 2)));
   });
 
+  group('presence', () {
+    test('unlocking the space marks me active again without waiting for something to be written', () async {
+      var nowMs = 1760000000000;
+      final dir = Directory.systemTemp.createTempSync('our_space_presence_');
+      final space = await OurSpace.open(
+        databaseFactory: testDatabaseFactory(),
+        databasePath: '${dir.path}${Platform.pathSeparator}space.sqlite',
+        useEnvironmentMailbox: false,
+        autoSync: false,
+        now: () => nowMs,
+      );
+      expect((await space.vault.create(passphrase: passphrase)).ok, isTrue);
+      expect(await space.identity.createCouple(myName: 'Farhan', partnerName: 'Qalbi'), isTrue);
+      final before = space.identity.me!.lastActiveAt;
+      expect(before, isNotNull);
+
+      space.vault.lock();
+      nowMs += 10 * 60 * 1000;
+      expect((await space.vault.unlock(passphrase)).ok, isTrue);
+      for (var i = 0; i < 100 && space.identity.me?.lastActiveAt != nowMs; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+      }
+      expect(space.identity.me!.lastActiveAt, nowMs);
+      await space.close();
+    }, timeout: const Timeout(Duration(minutes: 2)));
+  });
+
   group('mailbox status', () {
     test('a mailbox the phone cannot get into shows as failed, not ok', () async {
       final worker = FakeMailboxWorker(token: 'the-token-the-worker-knows');
