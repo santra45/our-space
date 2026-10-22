@@ -189,7 +189,8 @@ abstract final class LettersCopy {
     if (date == null) return sealOff;
     final days = daysBetween(now, date);
     final label = shortDate(date, now);
-    if (days <= 0) return '$label · today, so it opens right away';
+    if (days < 0) return '$label · so it opens right away';
+    if (days == 0) return '$label · today, so it opens right away';
     if (days == 1) return '$label · tomorrow';
     return '$label · in ${count(days, night: night)}';
   }

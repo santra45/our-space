@@ -113,6 +113,7 @@ void main() {
 
   test('describes the chosen seal day', () {
     expect(LettersCopy.sealOn('2026-10-22', now, night: true), '22 Oct · today, so it opens right away');
+    expect(LettersCopy.sealOn('2026-10-20', now, night: true), '20 Oct · so it opens right away');
     expect(LettersCopy.sealOn('2026-10-23', now, night: true), '23 Oct · tomorrow');
     expect(LettersCopy.sealOn('2026-11-01', now, night: true), '1 Nov · in 10 nights');
     expect(LettersCopy.sealOn('2026-11-01', now, night: false), '1 Nov · in 10 days');

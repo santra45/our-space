@@ -282,6 +282,7 @@ class _LettersPageState extends State<LettersPage> {
         if (any) LetterSegments(selected: _segment, counts: shelf.countOf, onSelect: _select),
         if (notice != null)
           Padding(
+            key: const ValueKey<String>('letters-notice-slot'),
             padding: const EdgeInsets.only(top: SkySpace.md),
             child: SkyEntrance(
               key: ValueKey<String>('letters-notice-${notice.text}'),
@@ -298,6 +299,7 @@ class _LettersPageState extends State<LettersPage> {
           ),
         if (unreadable > 0)
           Padding(
+            key: const ValueKey<String>('letters-hidden-slot'),
             padding: const EdgeInsets.only(top: SkySpace.md),
             child: SkyNotice(
               key: LettersKeys.hidden,
