@@ -99,7 +99,7 @@ void main() {
       final source = await testPng(300, 200);
       await expectLater(
         compressPhoto(source, encoder: FakeEncoder().call),
-        failsWith('This phone could not re-encode the photo. Try a different image.'),
+        failsWith('This phone could not get the photo ready. Try a different one.'),
       );
     });
 

@@ -195,7 +195,7 @@ Future<CompressedPhoto> compressPhoto(
   }
 
   if (blob == null || blob.isEmpty) {
-    throw PhotoCompressionError('This phone could not re-encode the photo. Try a different image.');
+    throw PhotoCompressionError('This phone could not get the photo ready. Try a different one.');
   }
 
   return CompressedPhoto(
