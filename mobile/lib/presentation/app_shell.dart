@@ -84,10 +84,13 @@ abstract final class ShellCopy {
   static const String sendLove = 'Send love';
   static const String hereNow = 'here now';
   static const String justUs = 'Just the two of you';
-  static String seen(String when) {
-    if (when == 'Just now' || when == 'Yesterday') return 'seen ${when.toLowerCase()}';
-    return 'seen $when';
+  static String when(String lastSeen) {
+    if (lastSeen == 'Just now' || lastSeen == 'Yesterday') return lastSeen.toLowerCase();
+    if (lastSeen.endsWith(' ago')) return lastSeen;
+    return 'on $lastSeen';
   }
+
+  static String seen(String lastSeen) => 'seen ${when(lastSeen)}';
 }
 
 class ShellActions extends InheritedWidget {
@@ -135,7 +138,9 @@ class PartnerPresence {
       case PresenceKind.here:
         return _named ? '$partnerName is here now' : 'You are both here';
       case PresenceKind.seen:
-        return _named ? '$partnerName was here ${lastSeen!.toLowerCase()}' : 'Here together ${lastSeen!.toLowerCase()}';
+        return _named
+            ? '$partnerName was here ${ShellCopy.when(lastSeen!)}'
+            : 'Here together ${ShellCopy.when(lastSeen!)}';
       case PresenceKind.unknown:
         return ShellCopy.justUs;
     }
@@ -401,10 +406,8 @@ class ShellNotices extends StatelessWidget {
       child: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 448),
-          child: AnimatedSize(
-            duration: motion ? SkyMotion.base : Duration.zero,
-            curve: SkyMotion.standard,
-            alignment: Alignment.topCenter,
+          child: _Grow(
+            motion: motion,
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -441,6 +444,24 @@ class ShellNotices extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _Grow extends StatelessWidget {
+  const _Grow({required this.motion, required this.child});
+
+  final bool motion;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!motion) return child;
+    return AnimatedSize(
+      duration: SkyMotion.base,
+      curve: SkyMotion.standard,
+      alignment: Alignment.topCenter,
+      child: child,
     );
   }
 }

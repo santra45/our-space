@@ -1,7 +1,6 @@
 import 'package:animations/animations.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/physics.dart';
-import 'package:flutter_animate/flutter_animate.dart';
 
 import '../widgets/app_haptics.dart';
 import 'sky_tokens.dart';
@@ -84,17 +83,27 @@ class SkyPressable extends StatefulWidget {
 
 class _SkyPressableState extends State<SkyPressable> with SingleTickerProviderStateMixin {
   late final AnimationController _scale = AnimationController.unbounded(vsync: this, value: 1);
+  bool _motion = true;
+  bool _pressed = false;
 
   bool get _active => widget.enabled && (widget.onTap != null || widget.onLongPress != null);
 
-  void _down(TapDownDetails _) {
-    if (!_active || !skyMotionAllowed(context)) return;
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _motion = skyMotionAllowed(context);
+  }
+
+  void _down(PointerDownEvent _) {
+    if (!_active || !_motion) return;
+    _pressed = true;
     _scale.animateTo(widget.pressedScale, duration: SkyMotion.instant, curve: Curves.easeOut);
   }
 
   void _release() {
-    if (!mounted) return;
-    if (!skyMotionAllowed(context)) {
+    if (!_pressed) return;
+    _pressed = false;
+    if (!_motion) {
       _scale.value = 1;
       return;
     }
@@ -117,6 +126,7 @@ class _SkyPressableState extends State<SkyPressable> with SingleTickerProviderSt
 
   @override
   void dispose() {
+    _pressed = false;
     _scale.dispose();
     super.dispose();
   }
@@ -124,28 +134,34 @@ class _SkyPressableState extends State<SkyPressable> with SingleTickerProviderSt
   @override
   Widget build(BuildContext context) {
     return Semantics(
+      container: true,
       button: widget.button,
       enabled: widget.enabled,
       selected: widget.selected,
       label: widget.semanticLabel,
       excludeSemantics: widget.excludeSemantics,
-      child: GestureDetector(
+      child: Listener(
         behavior: widget.behavior,
-        onTapDown: _active ? _down : null,
-        onTapCancel: _active ? _release : null,
-        onTap: _active && widget.onTap != null ? _tap : null,
-        onLongPress: _active && widget.onLongPress != null ? _longPress : null,
-        child: AnimatedBuilder(
-          animation: _scale,
-          builder: (context, child) => Transform.scale(scale: _scale.value, child: child),
-          child: widget.child,
+        onPointerDown: _active ? _down : null,
+        onPointerUp: _active ? (_) => _release() : null,
+        onPointerCancel: _active ? (_) => _release() : null,
+        child: GestureDetector(
+          behavior: widget.behavior,
+          onTapCancel: _active ? _release : null,
+          onTap: _active && widget.onTap != null ? _tap : null,
+          onLongPress: _active && widget.onLongPress != null ? _longPress : null,
+          child: AnimatedBuilder(
+            animation: _scale,
+            builder: (context, child) => Transform.scale(scale: _scale.value, child: child),
+            child: widget.child,
+          ),
         ),
       ),
     );
   }
 }
 
-class SkyEntrance extends StatelessWidget {
+class SkyEntrance extends StatefulWidget {
   const SkyEntrance({
     super.key,
     required this.child,
@@ -162,15 +178,51 @@ class SkyEntrance extends StatelessWidget {
   final Offset offset;
 
   @override
+  State<SkyEntrance> createState() => _SkyEntranceState();
+}
+
+class _SkyEntranceState extends State<SkyEntrance> with SingleTickerProviderStateMixin {
+  AnimationController? _controller;
+  late Animation<double> _fade;
+  late Animation<double> _move;
+  bool _motion = true;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_controller != null) return;
+    _motion = skyMotionAllowed(context);
+    final wait = _motion ? widget.delay + SkyMotion.staggerDelay(widget.index) : Duration.zero;
+    final run = _motion ? widget.duration : SkyMotion.fast;
+    final total = wait + run;
+    final start = total.inMicroseconds == 0 ? 0.0 : wait.inMicroseconds / total.inMicroseconds;
+    final controller = AnimationController(vsync: this, duration: total);
+    _fade = CurvedAnimation(
+      parent: controller,
+      curve: Interval(start, 1, curve: SkyMotion.gentle),
+    );
+    _move = CurvedAnimation(
+      parent: controller,
+      curve: Interval(start, 1, curve: SkyMotion.standard),
+    );
+    _controller = controller..forward();
+  }
+
+  @override
+  void dispose() {
+    _controller?.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    if (!skyMotionAllowed(context)) {
-      return child.animate().fadeIn(duration: SkyMotion.fast);
-    }
-    final wait = delay + SkyMotion.staggerDelay(index);
-    return child
-        .animate()
-        .fadeIn(delay: wait, duration: duration, curve: SkyMotion.gentle)
-        .move(begin: offset, end: Offset.zero, delay: wait, duration: duration, curve: SkyMotion.standard);
+    final faded = FadeTransition(opacity: _fade, child: widget.child);
+    if (!_motion || widget.offset == Offset.zero) return faded;
+    return AnimatedBuilder(
+      animation: _move,
+      builder: (context, child) => Transform.translate(offset: widget.offset * (1 - _move.value), child: child),
+      child: faded,
+    );
   }
 }
 

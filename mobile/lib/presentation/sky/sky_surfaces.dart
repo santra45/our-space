@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_animate/flutter_animate.dart';
 
 import 'sky_controls.dart';
 import 'sky_icons.dart';
@@ -203,7 +202,7 @@ class SkyHereChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final t = context.sky;
-    Widget dot = Container(
+    final dot = Container(
       width: 5,
       height: 5,
       decoration: BoxDecoration(
@@ -212,12 +211,6 @@ class SkyHereChip extends StatelessWidget {
         boxShadow: [BoxShadow(color: t.rose, blurRadius: 6)],
       ),
     );
-    if (pulse && skyMotionAllowed(context)) {
-      dot = dot
-          .animate(onPlay: (c) => c.repeat(reverse: true))
-          .fade(begin: 0.45, end: 1, duration: SkyMotion.presence ~/ 2, curve: Curves.easeInOut)
-          .scaleXY(begin: 0.8, end: 1.15, duration: SkyMotion.presence ~/ 2, curve: Curves.easeInOut);
-    }
     return Container(
       margin: const EdgeInsets.only(top: 4),
       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
@@ -229,11 +222,57 @@ class SkyHereChip extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          dot,
+          pulse && skyMotionAllowed(context) ? SkyPulse(child: dot) : dot,
           const SizedBox(width: 4),
           Text(label, style: SkyType.tiny.copyWith(color: t.hereText)),
         ],
       ),
+    );
+  }
+}
+
+class SkyPulse extends StatefulWidget {
+  const SkyPulse({
+    super.key,
+    required this.child,
+    this.period = SkyMotion.presence,
+    this.minScale = 0.8,
+    this.maxScale = 1.15,
+  });
+
+  final Widget child;
+  final Duration period;
+  final double minScale;
+  final double maxScale;
+
+  @override
+  State<SkyPulse> createState() => _SkyPulseState();
+}
+
+class _SkyPulseState extends State<SkyPulse> with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(vsync: this, duration: widget.period ~/ 2)
+    ..repeat(reverse: true);
+  late final Animation<double> _curve = CurvedAnimation(parent: _controller, curve: Curves.easeInOut);
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!skyMotionAllowed(context)) return widget.child;
+    return AnimatedBuilder(
+      animation: _curve,
+      builder: (context, child) => Opacity(
+        opacity: 0.45 + 0.55 * _curve.value,
+        child: Transform.scale(
+          scale: widget.minScale + (widget.maxScale - widget.minScale) * _curve.value,
+          child: child,
+        ),
+      ),
+      child: widget.child,
     );
   }
 }

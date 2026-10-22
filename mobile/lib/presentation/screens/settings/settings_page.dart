@@ -1,9 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../../core/engine.dart';
 import '../../app_shell.dart';
-import '../../legacy_area.dart';
 import '../../sky/sky.dart';
 import '../sync/sync_hub.dart';
 
@@ -14,6 +15,9 @@ abstract final class SettingsCopy {
   static const String skyFollowsHint = 'Day sky by day, stars by night';
   static const String lockNow = 'Lock Our Space now';
   static const String lockedFooter = 'Locked with your passphrase. Only you two can open it.';
+  static const String twoOfUs = 'The two of us';
+  static const String phones = 'Phones and copies';
+  static const String phonesHint = 'Add another phone, or keep a copy safe';
   static String since(String date) => 'Together since $date';
 }
 
@@ -21,6 +25,7 @@ class SettingsPage extends StatelessWidget {
   const SettingsPage({super.key});
 
   static const String routeName = '/settings';
+  static const Key phonesKey = ValueKey<String>('settings-phones');
 
   @override
   Widget build(BuildContext context) {
@@ -33,7 +38,6 @@ class SettingsPage extends StatelessWidget {
     final me = identity.me != null ? identity.myName : (couple.isEmpty ? null : couple);
     final partner = identity.partner != null ? identity.partnerName : null;
     return SkyScrollScaffold(
-      padding: const EdgeInsets.fromLTRB(SkySpace.lg, SkySpace.lg, SkySpace.lg, 0),
       topBar: const SkyTopBar(title: SettingsCopy.title, compact: true, leading: SkyBackButton()),
       children: [
         Column(
@@ -87,6 +91,19 @@ class SettingsPage extends StatelessWidget {
               ),
             ],
           ),
+        SkyListGroup(
+          label: SettingsCopy.twoOfUs,
+          children: [
+            SkyListRow(
+              key: SettingsPage.phonesKey,
+              icon: SkyIcons.phone,
+              tone: SkyTone.lavender,
+              title: SettingsCopy.phones,
+              subtitle: SettingsCopy.phonesHint,
+              onTap: () => unawaited(showSyncHub(context)),
+            ),
+          ],
+        ),
         SkyButton(
           key: ShellKeys.lockNow,
           label: SettingsCopy.lockNow,
@@ -103,11 +120,6 @@ class SettingsPage extends StatelessWidget {
               child: Text(SettingsCopy.lockedFooter, style: SkyType.caption.copyWith(color: t.faint)),
             ),
           ],
-        ),
-        const LegacyArea(
-          borderRadius: BorderRadius.all(Radius.circular(24)),
-          removeTopPadding: false,
-          child: SyncHub(),
         ),
       ],
     );

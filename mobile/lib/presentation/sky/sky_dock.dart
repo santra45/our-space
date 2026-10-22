@@ -146,30 +146,32 @@ class _DockSlot extends StatelessWidget {
       semanticLabel: item.label,
       selected: active,
       excludeSemantics: true,
-      child: AnimatedSize(
-        duration: motion ? SkyMotion.base : Duration.zero,
-        curve: SkyMotion.standard,
-        child: AnimatedSwitcher(
-          duration: motion ? SkyMotion.quick : Duration.zero,
-          switchInCurve: SkyMotion.standard,
-          transitionBuilder: (child, animation) => FadeTransition(
-            opacity: animation,
-            child: ScaleTransition(scale: Tween<double>(begin: 0.86, end: 1).animate(animation), child: child),
-          ),
-          layoutBuilder: (current, previous) => Stack(
-            alignment: Alignment.center,
-            clipBehavior: Clip.none,
-            children: [
-              for (final child in previous)
-                Positioned.fill(
-                  child: OverflowBox(maxWidth: double.infinity, maxHeight: double.infinity, child: child),
+      child: !motion
+          ? face
+          : AnimatedSize(
+              duration: SkyMotion.base,
+              curve: SkyMotion.standard,
+              child: AnimatedSwitcher(
+                duration: SkyMotion.quick,
+                switchInCurve: SkyMotion.standard,
+                transitionBuilder: (child, animation) => FadeTransition(
+                  opacity: animation,
+                  child: ScaleTransition(scale: Tween<double>(begin: 0.86, end: 1).animate(animation), child: child),
                 ),
-              ?current,
-            ],
-          ),
-          child: face,
-        ),
-      ),
+                layoutBuilder: (current, previous) => Stack(
+                  alignment: Alignment.center,
+                  clipBehavior: Clip.none,
+                  children: [
+                    for (final child in previous)
+                      Positioned.fill(
+                        child: OverflowBox(maxWidth: double.infinity, maxHeight: double.infinity, child: child),
+                      ),
+                    ?current,
+                  ],
+                ),
+                child: face,
+              ),
+            ),
     );
   }
 }
