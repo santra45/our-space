@@ -9,8 +9,8 @@ typedef SkyClock = DateTime Function();
 
 class SkyModeController extends ChangeNotifier {
   SkyModeController({LocalSettings? settings, SkyClock? clock, this.schedule = true})
-      : _settings = settings ?? LocalSettings.memory(),
-        _clock = clock ?? DateTime.now {
+    : _settings = settings ?? LocalSettings.memory(),
+      _clock = clock ?? DateTime.now {
     _followsTime = _settings.getItem(followsTimeKey) != '0';
     _mode = _resolve();
     _armTimer();

@@ -108,7 +108,15 @@ abstract final class SkyShapes {
   }
 }
 
-void _glow(Canvas canvas, Offset center, double radius, Color color, double sigma, {double opacity = 1, int passes = 2}) {
+void _glow(
+  Canvas canvas,
+  Offset center,
+  double radius,
+  Color color,
+  double sigma, {
+  double opacity = 1,
+  int passes = 2,
+}) {
   if (opacity <= 0) return;
   final paint = Paint()
     ..color = color.withValues(alpha: (color.a * opacity).clamp(0.0, 1.0))
@@ -144,8 +152,7 @@ class SkyBackdropPainter extends CustomPainter {
       canvas.drawCircle(
         Offset.zero,
         radius,
-        Paint()
-          ..shader = ui.Gradient.radial(Offset.zero, radius, [tokens.haze, tokens.haze.withValues(alpha: 0)]),
+        Paint()..shader = ui.Gradient.radial(Offset.zero, radius, [tokens.haze, tokens.haze.withValues(alpha: 0)]),
       );
       canvas.restore();
     }
@@ -224,7 +231,11 @@ class SkyBackdropPainter extends CustomPainter {
       }
       for (final star in stars) {
         if (star.twinkles) continue;
-        canvas.drawCircle(star.position * k, star.radius * k, Paint()..color = star.color.withValues(alpha: star.opacity));
+        canvas.drawCircle(
+          star.position * k,
+          star.radius * k,
+          Paint()..color = star.color.withValues(alpha: star.opacity),
+        );
       }
     }
 
@@ -438,7 +449,11 @@ class SkyLivePainter extends CustomPainter {
       }
       if (big) {
         final w = _wave(i * 0.9, 3.6);
-        canvas.drawCircle(p, 15, Paint()..color = tokens.star.withValues(alpha: (night ? 0.16 : 0.35) * (0.85 + 0.15 * w)));
+        canvas.drawCircle(
+          p,
+          15,
+          Paint()..color = tokens.star.withValues(alpha: (night ? 0.16 : 0.35) * (0.85 + 0.15 * w)),
+        );
         canvas.drawCircle(p, 8, Paint()..color = tokens.star.withValues(alpha: night ? 0.32 : 0.55));
         _glow(canvas, p, 4.6, tokens.starCore, sigma);
         final cross = Paint()
@@ -519,8 +534,16 @@ class SkyLivePainter extends CustomPainter {
     final flash = b < 1 ? (1 - b) : 0.0;
     canvas.save();
     canvas.translate(p.dx, p.dy);
-    canvas.drawCircle(Offset.zero, 42 * pop, Paint()..color = tokens.star.withValues(alpha: (night ? 0.14 : 0.35) + 0.2 * flash));
-    canvas.drawCircle(Offset.zero, 24 * pop, Paint()..color = tokens.star.withValues(alpha: (night ? 0.25 : 0.5) + 0.2 * flash));
+    canvas.drawCircle(
+      Offset.zero,
+      42 * pop,
+      Paint()..color = tokens.star.withValues(alpha: (night ? 0.14 : 0.35) + 0.2 * flash),
+    );
+    canvas.drawCircle(
+      Offset.zero,
+      24 * pop,
+      Paint()..color = tokens.star.withValues(alpha: (night ? 0.25 : 0.5) + 0.2 * flash),
+    );
     final reach = Curves.easeOutCubic.transform((b * 1.3).clamp(0.0, 1.0));
     for (var k = 0; k < 12; k++) {
       final a = k / 12 * math.pi * 2 + (1 - reach) * 0.4;
@@ -545,12 +568,23 @@ class SkyLivePainter extends CustomPainter {
     canvas.drawCircle(Offset.zero, coreRadius, Paint()..color = const Color(0xFFFFFFFF));
     final drift = Curves.easeOutCubic.transform(b);
     for (final s in field.sparkles) {
-      canvas.drawCircle(s.offset * drift, s.radius, Paint()..color = tokens.sparkle.withValues(alpha: 0.9 * math.min(1, b * 2)));
+      canvas.drawCircle(
+        s.offset * drift,
+        s.radius,
+        Paint()..color = tokens.sparkle.withValues(alpha: 0.9 * math.min(1, b * 2)),
+      );
     }
     canvas.restore();
   }
 
-  static void _dashedLine(Canvas canvas, Offset a, Offset b, Paint paint, {required double dash, required double gapLength}) {
+  static void _dashedLine(
+    Canvas canvas,
+    Offset a,
+    Offset b,
+    Paint paint, {
+    required double dash,
+    required double gapLength,
+  }) {
     final total = (b - a).distance;
     if (total <= 0) return;
     final dir = (b - a) / total;

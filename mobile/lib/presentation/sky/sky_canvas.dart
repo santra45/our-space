@@ -10,33 +10,17 @@ enum SkyPointKind { qalbi, farhu, gap, heart, moon, design }
 
 @immutable
 class SkyPoint {
-  const SkyPoint.qalbi()
-      : kind = SkyPointKind.qalbi,
-        index = 0,
-        design = Offset.zero;
+  const SkyPoint.qalbi() : kind = SkyPointKind.qalbi, index = 0, design = Offset.zero;
 
-  const SkyPoint.farhu()
-      : kind = SkyPointKind.farhu,
-        index = 0,
-        design = Offset.zero;
+  const SkyPoint.farhu() : kind = SkyPointKind.farhu, index = 0, design = Offset.zero;
 
-  const SkyPoint.gap()
-      : kind = SkyPointKind.gap,
-        index = 0,
-        design = Offset.zero;
+  const SkyPoint.gap() : kind = SkyPointKind.gap, index = 0, design = Offset.zero;
 
-  const SkyPoint.heart(this.index)
-      : kind = SkyPointKind.heart,
-        design = Offset.zero;
+  const SkyPoint.heart(this.index) : kind = SkyPointKind.heart, design = Offset.zero;
 
-  const SkyPoint.moon()
-      : kind = SkyPointKind.moon,
-        index = 0,
-        design = Offset.zero;
+  const SkyPoint.moon() : kind = SkyPointKind.moon, index = 0, design = Offset.zero;
 
-  const SkyPoint.design(this.design)
-      : kind = SkyPointKind.design,
-        index = 0;
+  const SkyPoint.design(this.design) : kind = SkyPointKind.design, index = 0;
 
   final SkyPointKind kind;
   final int index;
@@ -183,10 +167,15 @@ class _SkyCanvasState extends State<SkyCanvas> with SingleTickerProviderStateMix
           clipBehavior: Clip.hardEdge,
           children: [
             RepaintBoundary(
-              child: CustomPaint(painter: SkyBackdropPainter(scene: scene, tokens: tokens), isComplex: true),
+              child: CustomPaint(
+                painter: SkyBackdropPainter(scene: scene, tokens: tokens),
+                isComplex: true,
+              ),
             ),
             RepaintBoundary(
-              child: CustomPaint(painter: SkyLivePainter(scene: scene, tokens: tokens, time: _time)),
+              child: CustomPaint(
+                painter: SkyLivePainter(scene: scene, tokens: tokens, time: _time),
+              ),
             ),
             for (final anchor in widget.anchors)
               if (anchor.at.resolve(scene) case final Offset point)

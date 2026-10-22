@@ -10,14 +10,14 @@ abstract final class SkyFonts {
   static const List<String> serifFallback = [SkyFonts.sans];
 
   static List<FontVariation> serifAxes(double size, FontWeight weight) => [
-        FontVariation('wght', weight.value.toDouble()),
-        FontVariation('opsz', size.clamp(6.0, 96.0)),
-      ];
+    FontVariation('wght', weight.value.toDouble()),
+    FontVariation('opsz', size.clamp(6.0, 96.0)),
+  ];
 
   static List<FontVariation> sansAxes(double size, FontWeight weight) => [
-        FontVariation('wght', weight.value.toDouble()),
-        FontVariation('opsz', size.clamp(9.0, 40.0)),
-      ];
+    FontVariation('wght', weight.value.toDouble()),
+    FontVariation('opsz', size.clamp(9.0, 40.0)),
+  ];
 }
 
 abstract final class SkyType {
@@ -114,29 +114,29 @@ abstract final class SkyType {
 @immutable
 class SkyTypography {
   SkyTypography(this.tokens)
-      : displayLarge = SkyType.displayLarge.copyWith(color: tokens.title),
-        display = SkyType.display.copyWith(color: tokens.title),
-        title = SkyType.title.copyWith(color: tokens.title),
-        titleSmall = SkyType.titleSmall.copyWith(color: tokens.title),
-        headline = SkyType.headline.copyWith(color: tokens.text),
-        headlineSmall = SkyType.headlineSmall.copyWith(color: tokens.text),
-        serifLarge = SkyType.serifLarge.copyWith(color: tokens.text),
-        serifBody = SkyType.serifBody.copyWith(color: tokens.text),
-        serifItem = SkyType.serifItem.copyWith(color: tokens.text),
-        name = SkyType.name.copyWith(color: tokens.label),
-        stat = SkyType.stat.copyWith(color: tokens.text),
-        kicker = SkyType.kicker.copyWith(color: tokens.kicker),
-        label = SkyType.label.copyWith(color: tokens.muted),
-        body = SkyType.body.copyWith(color: tokens.text),
-        bodyMuted = SkyType.body.copyWith(color: tokens.muted),
-        bodyStrong = SkyType.bodyStrong.copyWith(color: tokens.text),
-        bodySmall = SkyType.bodySmall.copyWith(color: tokens.muted),
-        small = SkyType.small.copyWith(color: tokens.muted),
-        caption = SkyType.caption.copyWith(color: tokens.faint),
-        button = SkyType.button.copyWith(color: tokens.text),
-        chip = SkyType.chip.copyWith(color: tokens.text),
-        tip = SkyType.tip.copyWith(color: tokens.tipText),
-        hand = SkyType.handCaption.copyWith(color: tokens.paperInk);
+    : displayLarge = SkyType.displayLarge.copyWith(color: tokens.title),
+      display = SkyType.display.copyWith(color: tokens.title),
+      title = SkyType.title.copyWith(color: tokens.title),
+      titleSmall = SkyType.titleSmall.copyWith(color: tokens.title),
+      headline = SkyType.headline.copyWith(color: tokens.text),
+      headlineSmall = SkyType.headlineSmall.copyWith(color: tokens.text),
+      serifLarge = SkyType.serifLarge.copyWith(color: tokens.text),
+      serifBody = SkyType.serifBody.copyWith(color: tokens.text),
+      serifItem = SkyType.serifItem.copyWith(color: tokens.text),
+      name = SkyType.name.copyWith(color: tokens.label),
+      stat = SkyType.stat.copyWith(color: tokens.text),
+      kicker = SkyType.kicker.copyWith(color: tokens.kicker),
+      label = SkyType.label.copyWith(color: tokens.muted),
+      body = SkyType.body.copyWith(color: tokens.text),
+      bodyMuted = SkyType.body.copyWith(color: tokens.muted),
+      bodyStrong = SkyType.bodyStrong.copyWith(color: tokens.text),
+      bodySmall = SkyType.bodySmall.copyWith(color: tokens.muted),
+      small = SkyType.small.copyWith(color: tokens.muted),
+      caption = SkyType.caption.copyWith(color: tokens.faint),
+      button = SkyType.button.copyWith(color: tokens.text),
+      chip = SkyType.chip.copyWith(color: tokens.text),
+      tip = SkyType.tip.copyWith(color: tokens.tipText),
+      hand = SkyType.handCaption.copyWith(color: tokens.paperInk);
 
   final SkyTokens tokens;
   final TextStyle displayLarge;

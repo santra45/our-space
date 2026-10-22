@@ -161,18 +161,18 @@ class HeartConstellation {
 
   @override
   int get hashCode => Object.hash(
-        center,
-        scale,
-        gap,
-        qalbi,
-        farhu,
-        complete,
-        burst,
-        presence,
-        dim,
-        Object.hashAllUnordered(unlit),
-        gapGuide,
-      );
+    center,
+    scale,
+    gap,
+    qalbi,
+    farhu,
+    complete,
+    burst,
+    presence,
+    dim,
+    Object.hashAllUnordered(unlit),
+    gapGuide,
+  );
 }
 
 @immutable
@@ -300,26 +300,34 @@ class SkyScene {
 
   @override
   int get hashCode => Object.hash(
-        seed,
-        stars,
-        dayStars,
-        moon,
-        sun,
-        sunAt,
-        Object.hashAll(clouds),
-        skyline,
-        heart,
-        shootingStar,
-        haze,
-        horizonGlow,
-        twinkle,
-        designWidth,
-      );
+    seed,
+    stars,
+    dayStars,
+    moon,
+    sun,
+    sunAt,
+    Object.hashAll(clouds),
+    skyline,
+    heart,
+    shootingStar,
+    haze,
+    horizonGlow,
+    twinkle,
+    designWidth,
+  );
 }
 
 @immutable
 class SkyStar {
-  const SkyStar(this.position, this.radius, this.color, this.opacity, {this.twinkles = false, this.phase = 0, this.period = 3});
+  const SkyStar(
+    this.position,
+    this.radius,
+    this.color,
+    this.opacity, {
+    this.twinkles = false,
+    this.phase = 0,
+    this.period = 3,
+  });
 
   final Offset position;
   final double radius;
@@ -361,29 +369,33 @@ class SkyField {
         final color = rnd.next() > 0.8 ? _gold : _white;
         final opacity = 0.18 + rnd.next() * 0.5;
         final twinkles = scene.twinkle && i % 3 == 0;
-        stars.add(SkyStar(
-          Offset(x, y),
-          r,
-          color,
-          opacity,
-          twinkles: twinkles,
-          phase: (i * 0.618) % 1 * math.pi * 2,
-          period: 2.4 + (i * 37 % 19) / 10,
-        ));
+        stars.add(
+          SkyStar(
+            Offset(x, y),
+            r,
+            color,
+            opacity,
+            twinkles: twinkles,
+            phase: (i * 0.618) % 1 * math.pi * 2,
+            period: 2.4 + (i * 37 % 19) / 10,
+          ),
+        );
       }
     } else {
       for (var i = 0; i < scene.dayStars; i++) {
         final x = rnd.next() * w;
         final y = 110 + rnd.next() * h * 0.6;
-        stars.add(SkyStar(
-          Offset(x, y),
-          0.9,
-          _white,
-          0.55,
-          twinkles: scene.twinkle && i.isEven,
-          phase: (i * 0.618) % 1 * math.pi * 2,
-          period: 2.8 + (i * 29 % 13) / 10,
-        ));
+        stars.add(
+          SkyStar(
+            Offset(x, y),
+            0.9,
+            _white,
+            0.55,
+            twinkles: scene.twinkle && i.isEven,
+            phase: (i * 0.618) % 1 * math.pi * 2,
+            period: 2.8 + (i * 29 % 13) / 10,
+          ),
+        );
       }
     }
     final sparkles = <SkySparkle>[

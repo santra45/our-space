@@ -69,9 +69,9 @@ abstract final class SkyThemes {
     );
     final text = textTheme(t);
     OutlineInputBorder outline(Color color, [double width = 1]) => OutlineInputBorder(
-          borderRadius: SkyRadii.all(SkyRadii.field),
-          borderSide: BorderSide(color: color, width: width),
-        );
+      borderRadius: SkyRadii.all(SkyRadii.field),
+      borderSide: BorderSide(color: color, width: width),
+    );
     return ThemeData(
       useMaterial3: true,
       brightness: brightness,
@@ -204,7 +204,10 @@ class SkyTheme extends StatelessWidget {
       data: SkyThemes.material(tokens),
       child: DefaultTextStyle(
         style: SkyType.body.copyWith(color: tokens.text, decoration: TextDecoration.none),
-        child: IconTheme.merge(data: IconThemeData(color: tokens.text, size: 20), child: child),
+        child: IconTheme.merge(
+          data: IconThemeData(color: tokens.text, size: 20),
+          child: child,
+        ),
       ),
     );
   }

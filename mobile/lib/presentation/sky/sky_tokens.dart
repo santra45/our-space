@@ -157,39 +157,30 @@ class SkyTokens extends ThemeExtension<SkyTokens> {
   bool get isDay => mode == SkyMode.day;
 
   LinearGradient get skyGradient => LinearGradient(
-        begin: Alignment.topCenter,
-        end: Alignment.bottomCenter,
-        colors: [skyTop, skyMid, skyLow],
-        stops: const [0, 0.55, 1],
-      );
+    begin: Alignment.topCenter,
+    end: Alignment.bottomCenter,
+    colors: [skyTop, skyMid, skyLow],
+    stops: const [0, 0.55, 1],
+  );
 
-  LinearGradient get cardGradient => LinearGradient(
-        begin: Alignment.topCenter,
-        end: Alignment.bottomCenter,
-        colors: [cardTop, cardBottom],
-      );
+  LinearGradient get cardGradient =>
+      LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [cardTop, cardBottom]);
 
-  LinearGradient get featureGradient => LinearGradient(
-        begin: Alignment.topCenter,
-        end: Alignment.bottomCenter,
-        colors: [featureTop, featureBottom],
-      );
+  LinearGradient get featureGradient =>
+      LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [featureTop, featureBottom]);
 
   LinearGradient get primaryGradient => const LinearGradient(colors: [roseDark, roseMid, roseDark]);
 
-  LinearGradient get roseOrbGradient => const LinearGradient(
-        begin: Alignment.topLeft,
-        end: Alignment.bottomRight,
-        colors: [roseLight, roseDark],
-      );
+  LinearGradient get roseOrbGradient =>
+      const LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [roseLight, roseDark]);
 
   LinearGradient get toggleOnGradient => LinearGradient(colors: [roseDeep, rose]);
 
   LinearGradient get progressGradient => LinearGradient(colors: [gold, rose]);
 
   List<BoxShadow> get primaryShadow => const [
-        BoxShadow(color: Color(0x6BE24E79), offset: Offset(0, 8), blurRadius: 18.2),
-      ];
+    BoxShadow(color: Color(0x6BE24E79), offset: Offset(0, 8), blurRadius: 18.2),
+  ];
 
   SystemUiOverlayStyle get statusBar => isNight
       ? const SystemUiOverlayStyle(
