@@ -67,7 +67,24 @@ class DailyQuestionModel extends ChangeNotifier {
     if (changed) unawaited(refresh());
   }
 
-  Future<void> refresh() async {
+  Future<void>? _running;
+
+  Future<void> refresh() {
+    final run = _refresh();
+    _running = run;
+    return run;
+  }
+
+  Future<void> settled() async {
+    while (true) {
+      final current = _running;
+      if (current == null) return;
+      await current;
+      if (identical(current, _running)) return;
+    }
+  }
+
+  Future<void> _refresh() async {
     final key = _key;
     final ownerId = _ownerId;
     if (key == null || ownerId == null || _disposed) return;
@@ -181,6 +198,7 @@ class DailyQuestionModel extends ChangeNotifier {
         await loadArchive();
       }
       await refresh();
+      await settled();
     } catch (_) {
       if (_disposed) return false;
       if (!saved) _error = DailyCopy.saveFailed;

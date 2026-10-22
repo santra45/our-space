@@ -70,9 +70,8 @@ class _DailyQuestionSheetState extends State<DailyQuestionSheet> {
 
   Future<void> _submit() async {
     final catchUp = model.catchUp != null;
-    final saved = await model.save();
+    final saved = await model.save(onSaved: AppHaptics.celebration);
     if (!saved || !mounted) return;
-    AppHaptics.celebration();
     if (!catchUp && model.bothIn) {
       _close(DailySheetResult.lit);
       return;
