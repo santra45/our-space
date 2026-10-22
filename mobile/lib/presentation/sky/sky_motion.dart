@@ -17,6 +17,7 @@ abstract final class SkyMotion {
   static const Duration streak = Duration(milliseconds: 900);
   static const Duration burst = Duration(milliseconds: 1200);
   static const Duration celebration = Duration(milliseconds: 1600);
+  static const Duration dayNight = Duration(milliseconds: 700);
   static const Duration twinkle = Duration(milliseconds: 3200);
   static const Duration presence = Duration(milliseconds: 2200);
   static const Duration staggerStep = Duration(milliseconds: 45);
@@ -215,12 +216,14 @@ class SkySharedAxisSwitcher extends StatelessWidget {
     this.axis = SharedAxisTransitionType.horizontal,
     this.reverse = false,
     this.duration = SkyMotion.medium,
+    this.expand = false,
   });
 
   final Widget child;
   final SharedAxisTransitionType axis;
   final bool reverse;
   final Duration duration;
+  final bool expand;
 
   @override
   Widget build(BuildContext context) {
@@ -228,7 +231,8 @@ class SkySharedAxisSwitcher extends StatelessWidget {
     return PageTransitionSwitcher(
       duration: duration,
       reverse: reverse,
-      layoutBuilder: (entries) => Stack(alignment: Alignment.topCenter, children: entries),
+      layoutBuilder: (entries) =>
+          Stack(alignment: Alignment.topCenter, fit: expand ? StackFit.expand : StackFit.loose, children: entries),
       transitionBuilder: (child, primary, secondary) => SharedAxisTransition(
         animation: primary,
         secondaryAnimation: secondary,

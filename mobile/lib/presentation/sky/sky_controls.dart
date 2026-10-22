@@ -581,7 +581,9 @@ class _SkyTextFieldState extends State<SkyTextField> {
     final hintColor = paper ? t.paperMuted : t.faint;
     InputBorder border(Color color, [double width = 1]) {
       if (underline) {
-        return UnderlineInputBorder(borderSide: BorderSide(color: color, width: width));
+        return UnderlineInputBorder(
+          borderSide: BorderSide(color: color, width: width),
+        );
       }
       if (paper) return InputBorder.none;
       return OutlineInputBorder(

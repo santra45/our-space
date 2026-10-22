@@ -5,7 +5,7 @@ import '../core/engine.dart';
 import 'app_shell.dart';
 import 'screens/lock/lock_screen.dart';
 import 'space_scope.dart';
-import 'widgets/our_widgets.dart';
+import 'sky/sky.dart';
 
 class VaultGate extends StatefulWidget {
   const VaultGate({super.key, required this.shell, this.invite});
@@ -42,53 +42,45 @@ class _VaultGateState extends State<VaultGate> {
 class VaultWarningBanner extends StatelessWidget {
   const VaultWarningBanner({super.key});
 
+  static const String dismissLabel = 'Dismiss';
+
   @override
   Widget build(BuildContext context) {
     final notices = context.watch<AppNotices>();
     final warning = notices.vaultWarning;
-    if (warning == null) return const SizedBox.shrink();
+    final unlocked = context.watch<VaultService>().isUnlocked;
     final media = MediaQuery.of(context);
+    final bottom = unlocked ? SkySizes.dockClearance(media.viewPadding.bottom) : SkySpace.lg + media.viewPadding.bottom;
     return Positioned(
-      left: 16,
-      right: 16,
-      bottom: 16 + media.viewPadding.bottom,
+      left: SkySpace.lg,
+      right: SkySpace.lg,
+      bottom: bottom,
       child: Center(
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: AppLayout.maxWidthMd),
-          child: Material(
-            type: MaterialType.transparency,
-            child: Semantics(
-              liveRegion: true,
-              child: CssBox(
-                padding: const EdgeInsets.all(12),
-                color: AppColors.amber50,
-                border: Border.all(color: AppColors.amber200),
-                borderRadius: AppRadii.all(AppRadii.x2l),
-                shadows: AppShadows.tinted(AppShadows.lg, AppColors.amber200.withValues(alpha: 0.4)),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Padding(
-                      padding: EdgeInsets.only(top: 2),
-                      child: LucideIcon(AppIcons.alertTriangle, size: 16, color: AppColors.amber500),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(warning, style: Tw.px11.relaxed.medium.c(AppColors.amber900)),
-                    ),
-                    const SizedBox(width: 10),
-                    Semantics(
-                      button: true,
-                      label: 'Dismiss',
-                      child: GestureDetector(
-                        behavior: HitTestBehavior.opaque,
-                        onTap: notices.clearVaultWarning,
-                        child: const LucideIcon(AppIcons.x, size: 14, color: AppColors.amber500),
-                      ),
-                    ),
-                  ],
+          constraints: const BoxConstraints(maxWidth: 448),
+          child: SkyTheme(
+            child: AnimatedSwitcher(
+              duration: skyMotionAllowed(context) ? SkyMotion.base : Duration.zero,
+              transitionBuilder: (child, animation) => FadeTransition(
+                opacity: animation,
+                child: SlideTransition(
+                  position: Tween<Offset>(begin: const Offset(0, 0.3), end: Offset.zero).animate(animation),
+                  child: child,
                 ),
               ),
+              child: warning == null
+                  ? const SizedBox.shrink()
+                  : Material(
+                      key: ValueKey<String>(warning),
+                      type: MaterialType.transparency,
+                      child: SkyNotice(
+                        text: warning,
+                        tone: SkyNoticeTone.warning,
+                        elevated: true,
+                        onDismiss: notices.clearVaultWarning,
+                        dismissLabel: dismissLabel,
+                      ),
+                    ),
             ),
           ),
         ),

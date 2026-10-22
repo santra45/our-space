@@ -49,10 +49,12 @@ abstract final class SkySizes {
   static const double dockBottom = 18;
   static const double dockLoveOuter = 58;
   static const double dockLoveInner = 48;
-  static const double dockLoveLift = 15;
+  static const double dockLoveLift = 13;
   static const double dockSlotWidth = 56;
   static const double skyHeight = 360;
   static const double maxContentWidth = 520;
 
-  static double dockClearance(double safeBottom) => safeBottom + dockBottom + dockHeight + 18;
+  static double dockOffset(double safeBottom) => safeBottom + 10 > dockBottom ? safeBottom + 10 : dockBottom;
+
+  static double dockClearance(double safeBottom) => dockOffset(safeBottom) + dockHeight + 18;
 }

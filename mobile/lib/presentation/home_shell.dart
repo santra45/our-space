@@ -5,41 +5,88 @@ import 'package:provider/provider.dart';
 
 import '../core/engine.dart';
 import 'app_shell.dart';
+import 'screens/love/love_sheet.dart';
 import 'screens/people/people_setup.dart';
 import 'screens/sync/peer_link.dart';
-import 'screens/sync/sync_hub.dart';
+import 'sky/sky.dart';
 import 'space_scope.dart';
-import 'widgets/our_widgets.dart';
+import 'widgets/app_haptics.dart';
+import 'widgets/confetti_burst.dart';
 
-HeaderPresence headerPresenceFor(IdentityController identity, {int? now, bool together = false}) {
-  if (together) return HeaderPresence.activeNow(partnerName: identity.partnerName);
+PartnerPresence partnerPresenceFor(IdentityController identity, {int? now, bool together = false}) {
+  final name = identity.partner == null ? null : identity.partnerName;
+  if (together) return PartnerPresence.here(partnerName: name);
   final seen = formatLastSeen(identity.partnerLastActive, now: now);
-  if (seen == null) return const HeaderPresence.justForUs();
-  return HeaderPresence.lastSeen(partnerName: identity.partnerName, lastSeen: seen);
+  if (seen == null) return PartnerPresence.unknown(partnerName: name);
+  return PartnerPresence.seen(partnerName: name, lastSeen: seen);
 }
 
-SyncPillState syncPillFor(PeerLinkView link) {
-  if (link.error != null) return SyncPillState.error;
-  if (link.authorized) {
-    switch (link.route) {
-      case PeerRoute.direct:
-        return SyncPillState.direct;
-      case PeerRoute.relayed:
-        return SyncPillState.relayed;
-      case null:
-        return SyncPillState.connected;
-    }
-  }
-  if (link.handshaking) return SyncPillState.checking;
-  if (link.connecting) return SyncPillState.pairing;
-  return SyncPillState.idle;
+abstract final class JoinRequestCopy {
+  static const String title = 'Connect with this phone?';
+  static const String fromLink = 'A link is asking to connect with the phone below.';
+  static const String saved = 'A phone saved here has not connected with you before.';
+  static const String caution = 'Only connect if you know who sent you this link.';
+  static const String notNow = 'Not now';
+  static const String connect = 'Connect';
+}
+
+Future<bool> showJoinRequestDialog(BuildContext context, {required String peerId, required bool fromLink}) async {
+  final result = await showSkyDialog<bool>(
+    context: context,
+    dismissible: false,
+    builder: (dialogContext) {
+      final t = dialogContext.sky;
+      return SkyDialog(
+        icon: SkyIcons.phone,
+        tone: SkyTone.gold,
+        title: JoinRequestCopy.title,
+        message: fromLink ? JoinRequestCopy.fromLink : JoinRequestCopy.saved,
+        actions: [
+          SkyButton(
+            label: JoinRequestCopy.notNow,
+            variant: SkyButtonVariant.ghost,
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+          ),
+          SkyButton(
+            label: JoinRequestCopy.connect,
+            onPressed: () {
+              AppHaptics.tap();
+              Navigator.of(dialogContext).pop(true);
+            },
+          ),
+        ],
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                color: t.chip,
+                borderRadius: SkyRadii.all(SkyRadii.md),
+                border: Border.all(color: t.chipBorder),
+              ),
+              child: Text(
+                peerId,
+                textAlign: TextAlign.center,
+                style: SkyType.sans(12.5, weight: FontWeight.w700).copyWith(color: t.text),
+              ),
+            ),
+            const SizedBox(height: SkySpace.md),
+            const SkyNotice(text: JoinRequestCopy.caution, tone: SkyNoticeTone.warning),
+          ],
+        ),
+      );
+    },
+  );
+  return result ?? false;
 }
 
 class HomeShell extends StatefulWidget {
-  const HomeShell({super.key, this.pageBuilder, this.particles = true});
+  const HomeShell({super.key, this.pageBuilder, this.initialTab = SkyTab.sky});
 
-  final AppTabBuilder? pageBuilder;
-  final bool particles;
+  final SkyTabBuilder? pageBuilder;
+  final SkyTab initialTab;
 
   @override
   State<HomeShell> createState() => _HomeShellState();
@@ -92,7 +139,7 @@ class _HomeShellState extends State<HomeShell> {
       _askingInvite = false;
       return;
     }
-    final yes = await showConnectDeviceDialog(context, peerId: pending.peerId, fromLink: pending.fromLink);
+    final yes = await showJoinRequestDialog(context, peerId: pending.peerId, fromLink: pending.fromLink);
     _askingInvite = false;
     if (!mounted || peer.state.pendingInvite == null) return;
     if (yes) {
@@ -120,8 +167,6 @@ class _HomeShellState extends State<HomeShell> {
     super.dispose();
   }
 
-  void _openSync() => unawaited(showSyncHub(context));
-
   @override
   Widget build(BuildContext context) {
     final vault = context.watch<VaultService>();
@@ -129,23 +174,23 @@ class _HomeShellState extends State<HomeShell> {
     final notices = context.watch<AppNotices>();
     final peer = context.watch<PeerLink?>();
     final link = peer?.state ?? PeerLinkView.offline;
+    final couple = vault.config?.coupleNames;
 
-    return AppShell(
-      header: OurHeader(
-        title: vault.config?.coupleNames,
-        presence: headerPresenceFor(identity, now: _now, together: link.authorized),
-        syncState: syncPillFor(link),
-        onOpenSync: _openSync,
-        onLock: vault.lock,
-        syncErrorText: link.error?.text,
-        onDismissSyncError: peer?.clearError,
-        syncWarningText: notices.syncWarning,
-      ),
-      pageBuilder: widget.pageBuilder ?? tabPage,
+    return SkyShell(
+      initialTab: widget.initialTab,
+      pageBuilder: widget.pageBuilder ?? skyTabPage,
       toastController: notices.toast,
-      onOpenSync: _openSync,
+      presence: partnerPresenceFor(identity, now: _now, together: link.authorized),
+      status: ShellStatus(
+        errorText: link.error?.text,
+        onDismissError: peer?.clearError,
+        warningText: notices.syncWarning,
+      ),
+      myName: identity.me != null ? identity.myName : couple,
+      partnerName: identity.partner != null ? identity.partnerName : null,
+      onOpenSettings: () => unawaited(openSettings(context)),
+      onOpenLove: () => unawaited(showLoveSheet(context)),
       onLock: vault.lock,
-      particles: widget.particles,
       overlays: const [PeopleSetup()],
     );
   }

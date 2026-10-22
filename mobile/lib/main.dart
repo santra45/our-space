@@ -9,7 +9,7 @@ import 'presentation/deep_links.dart';
 import 'presentation/home_shell.dart';
 import 'presentation/screens/lock/lock_screen.dart';
 import 'presentation/space_scope.dart';
-import 'presentation/theme/app_colors.dart';
+import 'presentation/sky/sky.dart';
 import 'presentation/theme/app_theme.dart';
 import 'presentation/vault_gate.dart';
 import 'presentation/widgets/our_feedback.dart';
@@ -60,6 +60,7 @@ class _OurSpaceAppState extends State<OurSpaceApp> {
   OurSpace? _space;
   bool _failed = false;
   int _attempt = 0;
+  SkyModeController _sky = SkyModeController();
 
   @override
   void initState() {
@@ -76,7 +77,12 @@ class _OurSpaceAppState extends State<OurSpaceApp> {
         await space.close();
         return;
       }
-      setState(() => _space = space);
+      final previous = _sky;
+      setState(() {
+        _space = space;
+        _sky = SkyModeController(settings: space.store.settings);
+      });
+      previous.dispose();
     } catch (_) {
       if (mounted && attempt == _attempt) setState(() => _failed = true);
     }
@@ -88,28 +94,40 @@ class _OurSpaceAppState extends State<OurSpaceApp> {
     final space = _space;
     _space = null;
     if (space != null) unawaited(space.close());
+    _sky.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Our Space 💕',
-      color: AppColors.blush100,
-      debugShowCheckedModeBanner: false,
-      theme: AppTheme.lightTheme,
-      builder: (context, navigator) {
-        final space = _space;
-        if (space == null) return LockScreenBoot(failed: _failed, onRetry: _open);
-        return SpaceScope(
-          space: space,
-          child: Stack(
-            fit: StackFit.expand,
-            children: [navigator!, const VaultWarningBanner()],
-          ),
-        );
-      },
-      home: Builder(builder: (context) => widget.gate(context, widget.shell ?? const HomeShell())),
+    final sky = _sky;
+    return ListenableBuilder(
+      listenable: sky,
+      builder: (context, _) => MaterialApp(
+        title: 'Our Space',
+        color: sky.tokens.page,
+        debugShowCheckedModeBanner: false,
+        theme: SkyThemes.legacy(sky.tokens),
+        themeAnimationDuration: SkyMotion.dayNight,
+        themeAnimationCurve: Curves.easeInOut,
+        builder: (context, navigator) {
+          final space = _space;
+          if (space == null) {
+            return SkyModeScope(
+              controller: sky,
+              child: LockScreenBoot(failed: _failed, onRetry: _open),
+            );
+          }
+          return SkyModeScope(
+            controller: sky,
+            child: SpaceScope(
+              space: space,
+              child: Stack(fit: StackFit.expand, children: [navigator!, const VaultWarningBanner()]),
+            ),
+          );
+        },
+        home: Builder(builder: (context) => widget.gate(context, widget.shell ?? const HomeShell())),
+      ),
     );
   }
 }

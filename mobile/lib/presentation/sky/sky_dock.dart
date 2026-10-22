@@ -30,18 +30,19 @@ class SkyDock extends StatelessWidget {
   final VoidCallback? onLove;
   final String loveLabel;
 
-  static const double lift = 13;
+  static const double lift = SkySizes.dockLoveLift;
   static const double height = SkySizes.dockHeight + lift;
 
   static double clearance(BuildContext context) => SkySizes.dockClearance(MediaQuery.viewPaddingOf(context).bottom);
 
   Widget _slot(BuildContext context, int index) {
     final item = items[index];
-    return _DockSlot(
+    final active = index == selectedIndex;
+    return Flexible(
       key: ValueKey<String>('sky-dock-${item.label}'),
-      item: item,
-      active: index == selectedIndex,
-      onTap: () => onSelect(index),
+      flex: active ? 0 : 1,
+      fit: FlexFit.tight,
+      child: _DockSlot(item: item, active: active, onTap: () => onSelect(index)),
     );
   }
 
@@ -67,7 +68,6 @@ class SkyDock extends StatelessWidget {
               ),
               padding: const EdgeInsets.symmetric(horizontal: 10),
               child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   _slot(context, 0),
                   _slot(context, 1),
@@ -93,7 +93,7 @@ class SkyDock extends StatelessWidget {
 }
 
 class _DockSlot extends StatelessWidget {
-  const _DockSlot({super.key, required this.item, required this.active, required this.onTap});
+  const _DockSlot({required this.item, required this.active, required this.onTap});
 
   final SkyDockItem item;
   final bool active;
@@ -156,7 +156,17 @@ class _DockSlot extends StatelessWidget {
             opacity: animation,
             child: ScaleTransition(scale: Tween<double>(begin: 0.86, end: 1).animate(animation), child: child),
           ),
-          layoutBuilder: (current, previous) => Stack(alignment: Alignment.center, children: [...previous, ?current]),
+          layoutBuilder: (current, previous) => Stack(
+            alignment: Alignment.center,
+            clipBehavior: Clip.none,
+            children: [
+              for (final child in previous)
+                Positioned.fill(
+                  child: OverflowBox(maxWidth: double.infinity, maxHeight: double.infinity, child: child),
+                ),
+              ?current,
+            ],
+          ),
           child: face,
         ),
       ),
