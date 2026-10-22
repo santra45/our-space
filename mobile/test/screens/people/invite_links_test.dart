@@ -106,7 +106,7 @@ void main() {
     await until(tester, () => phone.vault.isUnlocked);
     await untilFound(tester, find.byType(HomeShell));
     expect(phone.vault.salt, partner.vault.salt);
-    expect(find.text('Sam & Alex'), findsOneWidget);
+    expect(phone.vault.config?.coupleNames, 'Sam & Alex');
     expect(inbox.pending, isNull);
     expect(phone.store.settings.getItem(pairedPartnerKey), partner.device.peerId);
 

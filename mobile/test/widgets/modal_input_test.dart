@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:our_space_mobile/presentation/home_shell.dart';
 import 'package:our_space_mobile/presentation/theme/app_colors.dart';
 import 'package:our_space_mobile/presentation/widgets/app_icons.dart';
-import 'package:our_space_mobile/presentation/widgets/our_header.dart';
 import 'package:our_space_mobile/presentation/widgets/our_inputs.dart';
 import 'package:our_space_mobile/presentation/widgets/our_modal.dart';
 
@@ -93,21 +93,28 @@ void main() {
       expect(confirmed, 0);
     });
 
-    testWidgets('the connect-device prompt keeps the web wording', (tester) async {
+    testWidgets('the join request asks warmly, shows the phone code and resolves both ways', (tester) async {
       final answers = <bool>[];
       await pumpHost(
         tester,
-        _Launcher((context) async => answers.add(await showConnectDeviceDialog(context, peerId: 'our-space-abc123', fromLink: true))),
+        _Launcher((context) async => answers.add(await showJoinRequestDialog(context, peerId: 'our-space-abc123', fromLink: true))),
       );
       await tester.tap(find.text('open'));
       await tester.pumpAndSettle();
-      expect(find.text('Connect to this device?'), findsOneWidget);
-      expect(find.text('A link is asking to connect to the phone below.'), findsOneWidget);
+      expect(find.text(JoinRequestCopy.title), findsOneWidget);
+      expect(find.text(JoinRequestCopy.fromLink), findsOneWidget);
       expect(find.text('our-space-abc123'), findsOneWidget);
-      expect(find.text('Only connect if you know who sent you this link.'), findsOneWidget);
-      await tester.tap(find.text('Connect'));
+      expect(find.text(JoinRequestCopy.caution), findsOneWidget);
+      await tester.tap(find.text(JoinRequestCopy.connect));
       await tester.pumpAndSettle();
-      expect(answers, [true]);
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(JoinRequestCopy.notNow));
+      await tester.pumpAndSettle();
+      expect(answers, [true, false]);
+      for (final copy in [JoinRequestCopy.title, JoinRequestCopy.fromLink, JoinRequestCopy.saved, JoinRequestCopy.caution]) {
+        expect(copy.toLowerCase(), isNot(contains('device')));
+      }
     });
 
     test('pop entrance starts small and low, then springs to rest', () {

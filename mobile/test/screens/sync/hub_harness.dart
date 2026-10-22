@@ -153,7 +153,10 @@ class FakePeerLink extends PeerLink {
   void declineInvite() => calls.add('declineInvite');
 }
 
-Widget blankTab(BuildContext context, AppTab tab) => const SizedBox.shrink();
+Widget blankTab(BuildContext context, SkyTab tab) => const SizedBox.shrink();
+
+Widget avatarTab(BuildContext context, SkyTab tab) =>
+    const SafeArea(child: Align(alignment: Alignment.topRight, child: ShellAvatar()));
 
 class Launcher extends StatelessWidget {
   const Launcher({super.key, this.child});

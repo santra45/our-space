@@ -16,7 +16,7 @@ Finder cardOf(String text) => find.ancestor(of: dream(text), matching: find.byTy
 Finder inCard(String text, Finder matching) => find.descendant(of: cardOf(text), matching: matching);
 
 Future<void> openBucket(WidgetTester tester, OurSpace space, {int total = 6}) async {
-  await openTab(tester, space, 'Bucket');
+  await openUsSection(tester, space, 'Dreams');
   await untilFound(tester, find.text(BucketCopy.progress(0, total, 0)));
 }
 

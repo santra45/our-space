@@ -6,7 +6,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:our_space_mobile/core/engine.dart';
 import 'package:our_space_mobile/main.dart';
 import 'package:our_space_mobile/presentation/files/vault_files.dart';
+import 'package:our_space_mobile/presentation/app_shell.dart';
 import 'package:our_space_mobile/presentation/home_shell.dart';
+import 'package:our_space_mobile/presentation/screens/settings/settings_page.dart';
 import 'package:our_space_mobile/presentation/screens/sync/backup_dialogs.dart';
 import 'package:our_space_mobile/presentation/screens/sync/invite_qr.dart';
 import 'package:our_space_mobile/presentation/screens/sync/peer_link.dart';
@@ -523,14 +525,18 @@ void main() {
     expect(find.text(SyncHubCopy.title), findsOneWidget);
   });
 
-  testWidgets('opens from the header pill, and locking closes the hub and every sheet above it', (tester) async {
+  testWidgets('opens from settings, and locking closes the hub, settings and every sheet above them', (tester) async {
     calm(tester);
     final space = await openUnlockedSpace(tester);
     await real(tester, () => space.identity.createCouple(myName: 'Sam', partnerName: 'Alex'));
-    await tester.pumpWidget(OurSpaceApp(openSpace: () async => space, shell: const HomeShell(pageBuilder: blankTab)));
+    await tester.pumpWidget(OurSpaceApp(openSpace: () async => space, shell: const HomeShell(pageBuilder: avatarTab)));
     await tester.pump();
-    await untilFound(tester, find.byType(SyncStatusPill));
-    await tester.tap(find.byType(SyncStatusPill));
+    await untilFound(tester, find.byKey(ShellKeys.avatar));
+    await tester.tap(find.byKey(ShellKeys.avatar));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(find.byType(SettingsPage), findsOneWidget);
+    await tester.tap(find.byKey(SettingsPage.phonesKey));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
     expect(find.text(SyncHubCopy.title), findsOneWidget);
@@ -544,6 +550,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 500));
     expect(find.text(BackupCopy.exportTitle), findsNothing);
     expect(find.text(SyncHubCopy.title), findsNothing);
+    expect(find.byType(SettingsPage), findsNothing);
     expect(find.text('Locked'), findsOneWidget);
   });
 

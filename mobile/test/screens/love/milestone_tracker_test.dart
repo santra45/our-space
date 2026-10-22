@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:our_space_mobile/core/engine.dart';
+import 'package:our_space_mobile/presentation/app_shell.dart';
+import 'package:our_space_mobile/presentation/home_shell.dart';
 import 'package:our_space_mobile/presentation/screens/countdown/live_love_counter.dart';
 import 'package:our_space_mobile/presentation/screens/countdown/milestone_copy.dart';
 import 'package:our_space_mobile/presentation/screens/countdown/milestone_tracker.dart';
@@ -215,7 +217,7 @@ void main() {
     final space = await coupleSpace(tester);
     await real(tester, () => space.milestones.add(title: 'First date', date: '2021-06-14'));
 
-    await pumpLove(tester, space);
+    await pumpLove(tester, space, shell: const HomeShell(initialTab: SkyTab.us));
     await untilFound(tester, find.text('Relationship Milestones'));
     await untilFound(tester, find.text('First date'));
     expect(find.text('Jun 14, 2021'), findsOneWidget);
@@ -308,7 +310,7 @@ void main() {
       );
     }
 
-    await pumpLove(tester, space);
+    await pumpLove(tester, space, shell: const HomeShell(initialTab: SkyTab.us));
     await untilFound(
       tester,
       find.text('2 milestones could not be opened with your passphrase, so they are hidden for now.'),

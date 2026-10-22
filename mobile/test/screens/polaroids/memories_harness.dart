@@ -8,7 +8,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:our_space_mobile/core/engine.dart';
 import 'package:our_space_mobile/main.dart';
+import 'package:our_space_mobile/presentation/app_shell.dart';
 import 'package:our_space_mobile/presentation/home_shell.dart';
+import 'package:our_space_mobile/presentation/sky/sky.dart';
 import 'package:our_space_mobile/presentation/screens/polaroids/photo_compression.dart';
 import 'package:our_space_mobile/presentation/screens/polaroids/photo_picker.dart';
 import 'package:our_space_mobile/presentation/widgets/our_widgets.dart';
@@ -79,7 +81,14 @@ Future<void> openTab(WidgetTester tester, OurSpace space, String label) async {
   await tester.pumpWidget(OurSpaceApp(openSpace: () async => space));
   await tester.pump();
   await untilFound(tester, find.byType(HomeShell));
-  await tester.tap(find.descendant(of: find.byType(OurBottomNav), matching: find.text(label)));
+  await tester.tap(find.descendant(of: find.byKey(ShellKeys.dock), matching: find.text(label)));
+  await tester.pump();
+  await tester.pump();
+}
+
+Future<void> openUsSection(WidgetTester tester, OurSpace space, String section) async {
+  await openTab(tester, space, 'Us');
+  await tester.tap(find.widgetWithText(SkyChip, section));
   await tester.pump();
   await tester.pump();
 }

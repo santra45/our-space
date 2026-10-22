@@ -8,9 +8,12 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:our_space_mobile/core/engine.dart';
 import 'package:our_space_mobile/main.dart';
+import 'package:our_space_mobile/presentation/app_shell.dart';
 import 'package:our_space_mobile/presentation/files/vault_files.dart';
 import 'package:our_space_mobile/presentation/home_shell.dart';
 import 'package:our_space_mobile/presentation/screens/lock/lock_screen.dart';
+import 'package:our_space_mobile/presentation/screens/settings/settings_page.dart';
+import 'package:our_space_mobile/presentation/sky/sky.dart';
 import 'package:our_space_mobile/presentation/space_scope.dart';
 import 'package:our_space_mobile/presentation/vault_gate.dart';
 import 'package:our_space_mobile/presentation/widgets/our_widgets.dart';
@@ -70,6 +73,25 @@ Future<void> press(WidgetTester tester, Finder finder) async {
 bool enabledButton(WidgetTester tester, String label) {
   final button = tester.widget<BouncyButton>(find.ancestor(of: find.text(label), matching: find.byType(BouncyButton)));
   return button.isEnabled;
+}
+
+Finder labelled(String label) =>
+    find.byWidgetPredicate((widget) => widget is Semantics && widget.properties.label == label);
+
+Finder inNotices(String text) => find.descendant(of: find.byKey(ShellKeys.notices), matching: find.text(text));
+
+Future<void> openSettingsPage(WidgetTester tester) async {
+  await tester.tap(find.byKey(ShellKeys.avatar));
+  await tester.pump();
+  await tester.pump(const Duration(milliseconds: 500));
+  expect(find.byType(SettingsPage), findsOneWidget);
+}
+
+Future<void> lockFromSettings(WidgetTester tester) async {
+  await openSettingsPage(tester);
+  await press(tester, find.byKey(ShellKeys.lockNow));
+  await tester.pump();
+  await tester.pump(const Duration(milliseconds: 500));
 }
 
 Future<void> pumpApp(WidgetTester tester, Future<OurSpace> Function() open) async {
@@ -155,17 +177,18 @@ void main() {
     await untilFound(tester, find.text('Already did this on the other phone'));
     await press(tester, find.text('Already did this on the other phone'));
 
-    expect(find.text('Sam & Alex'), findsOneWidget);
-    for (final label in ['Love', 'Memories', 'Dates', 'Letters', 'Bucket']) {
-      expect(find.text(label), findsOneWidget);
+    for (final label in ['Sky', 'Letters', 'Memories', 'Us']) {
+      expect(find.descendant(of: find.byKey(ShellKeys.dock), matching: find.text(label)), findsOneWidget);
     }
-    expect(find.text('Just for us 💕'), findsOneWidget);
+    expect(find.byType(SkyHereChip), findsNothing);
     expect(recordedHaptics, contains(HapticKind.celebration));
     expect(space.vault.config!.coupleNames, 'Sam & Alex');
 
-    await tester.tap(find.byType(HeaderLockButton));
+    await openSettingsPage(tester);
+    expect(find.text('Sam & Alex'), findsOneWidget);
+    await press(tester, find.byKey(ShellKeys.lockNow));
     await tester.pump();
-    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
     expect(space.vault.isUnlocked, isFalse);
     expect(find.text('Locked'), findsOneWidget);
     expect(find.text('Enter the passphrase you two share to open your memories and notes.'), findsOneWidget);
@@ -186,7 +209,8 @@ void main() {
     await press(tester, find.text('Unlock Our Space 💕'));
     await until(tester, () => space.vault.isUnlocked);
     await untilFound(tester, find.byType(HomeShell));
-    expect(find.text('Sam & Alex'), findsOneWidget);
+    expect(find.byKey(ShellKeys.dock), findsOneWidget);
+    expect(space.vault.config!.coupleNames, 'Sam & Alex');
   });
 
   testWidgets('a touch opens the space once it is set up, and the passphrase is always one tap away', (tester) async {
@@ -216,12 +240,11 @@ void main() {
     await press(tester, find.text(LockCopy.quickButton));
     await until(tester, () => space.vault.isUnlocked);
     await untilFound(tester, find.byType(HomeShell));
-    expect(find.text('Sam & Alex'), findsOneWidget);
+    expect(find.descendant(of: find.byType(SkyNameLabel), matching: find.text('Alex')), findsOneWidget);
+    expect(find.descendant(of: find.byType(SkyNameLabel), matching: find.text('Sam')), findsOneWidget);
     expect(recordedHaptics, contains(HapticKind.celebration));
 
-    await tester.tap(find.byType(HeaderLockButton));
-    await tester.pump();
-    await tester.pump();
+    await lockFromSettings(tester);
     await untilFound(tester, find.text(LockCopy.usePassphrase));
     await press(tester, find.text(LockCopy.usePassphrase));
     expect(find.text('Enter the passphrase you two share to open your memories and notes.'), findsOneWidget);
@@ -298,9 +321,9 @@ void main() {
     await untilFound(tester, find.byType(HomeShell));
 
     expect(phone.vault.salt, partner.vault.salt);
-    expect(find.text('Sam & Alex'), findsOneWidget);
+    expect(phone.vault.config!.coupleNames, 'Sam & Alex');
     expect(find.text(VaultMessages.pairedUnverified), findsOneWidget);
-    await tester.tap(find.descendant(of: find.byType(VaultWarningBanner), matching: find.byType(GestureDetector)).last);
+    await tester.tap(find.descendant(of: find.byType(VaultWarningBanner), matching: labelled(VaultWarningBanner.dismissLabel)));
     await tester.pump();
     expect(find.text(VaultMessages.pairedUnverified), findsNothing);
   });
@@ -381,7 +404,7 @@ void main() {
     expect(restored.map((m) => m.title), ['First date']);
   });
 
-  testWidgets('header shows sync warnings and notices, and locking closes open sheets', (tester) async {
+  testWidgets('the shell shows warnings and notices, and locking closes settings', (tester) async {
     calm(tester);
     final space = await real(tester, openTestSpace);
     await real(
@@ -390,28 +413,23 @@ void main() {
     await untilFound(tester, find.byType(HomeShell));
     await untilFound(tester, find.text('Already did this on the other phone'));
     await press(tester, find.text('Already did this on the other phone'));
-    expect(find.text('Us two'), findsOneWidget);
+    expect(find.byKey(ShellKeys.dock), findsOneWidget);
 
     space.mailbox.onWarning!('clock_skew', 'Your phone clock looks a little off.');
     await tester.pump();
-    expect(
-      find.descendant(of: find.byType(OurHeader), matching: find.text('Your phone clock looks a little off.')),
-      findsOneWidget,
-    );
+    expect(inNotices('Your phone clock looks a little off.'), findsOneWidget);
     await tester.pump(const Duration(seconds: 8));
     expect(find.text('Your phone clock looks a little off.'), findsNothing);
 
-    final toast = find.descendant(
-      of: find.byType(OurHeader),
-      matching: find.text('Saved 💕 your partner will see it the moment you two connect.'),
-    );
+    final toast = inNotices('Saved. Your partner will see it the moment you two connect.');
     unawaited(space.sync.sendLoveBurst());
     await untilFound(tester, toast);
     await tester.pump(const Duration(seconds: 5));
     expect(toast, findsNothing);
 
-    await tester.tap(find.byType(SyncStatusPill));
-    await tester.pump();
+    await openSettingsPage(tester);
+    expect(find.text('Us two'), findsOneWidget);
+    await press(tester, find.byKey(SettingsPage.phonesKey));
     await tester.pump(const Duration(milliseconds: 500));
     expect(find.text('Pair & Sync Hub'), findsOneWidget);
 
@@ -421,6 +439,7 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
     expect(find.text('Pair & Sync Hub'), findsNothing);
+    expect(find.byType(SettingsPage), findsNothing);
     expect(find.text('Locked'), findsOneWidget);
     final notices = tester.element(find.byType(LockScreen)).read<AppNotices>();
     expect(notices.syncWarning, isNull);
@@ -442,9 +461,10 @@ void main() {
     expect(space.identity.appInForeground, isTrue);
   });
 
-  test('header presence follows the partner last-seen time like the web', () async {
+  test('partner presence starts unknown until the partner has been seen', () async {
     final space = await openTestSpace();
-    expect(headerPresenceFor(space.identity).text, 'Just for us 💕');
+    expect(partnerPresenceFor(space.identity).kind, PresenceKind.unknown);
+    expect(partnerPresenceFor(space.identity).label, isNull);
     await space.close();
   });
 }

@@ -43,7 +43,7 @@ void main() {
   testWidgets('shows the scratch-off card with the first idea and the categories', (tester) async {
     calm(tester);
     final space = await real(tester, openReadySpace);
-    await openTab(tester, space, 'Dates');
+    await openUsSection(tester, space, 'Date night');
     await untilFound(tester, find.text('Date Night Scratch-Off'));
 
     expect(find.text('Scratch with your finger to reveal what we are doing next!'), findsOneWidget);
@@ -65,7 +65,7 @@ void main() {
   testWidgets('rolls a new idea, filters by category and saves the card for both of us', (tester) async {
     calm(tester);
     final space = await real(tester, openReadySpace);
-    await openTab(tester, space, 'Dates');
+    await openUsSection(tester, space, 'Date night');
     await untilFound(tester, find.text('Date Night Scratch-Off'));
 
     final firstCard = scratchCard(tester).key;
@@ -103,7 +103,7 @@ void main() {
   testWidgets('scratching reveals the idea, celebrates and remembers it', (tester) async {
     calm(tester);
     final space = await real(tester, openReadySpace);
-    await openTab(tester, space, 'Dates');
+    await openUsSection(tester, space, 'Date night');
     await untilFound(tester, find.text('Date Night Scratch-Off'));
     await reveal(tester, find.byType(ScratchCard));
 
@@ -132,7 +132,7 @@ void main() {
   testWidgets('a quick tap or a short drag does not reveal the card', (tester) async {
     calm(tester);
     final space = await real(tester, openReadySpace);
-    await openTab(tester, space, 'Dates');
+    await openUsSection(tester, space, 'Date night');
     await untilFound(tester, find.text('Date Night Scratch-Off'));
     await reveal(tester, find.byType(ScratchCard));
     await tester.tap(find.byType(ScratchCard));
@@ -160,7 +160,7 @@ void main() {
     final space = await real(tester, openReadySpace);
     await real(tester, () => space.roulette.persist(ideaId: 'd6', category: 'outdoor', revealed: true));
 
-    await openTab(tester, space, 'Dates');
+    await openUsSection(tester, space, 'Date night');
     await untilFound(tester, find.text('Sunrise Breakfast Picnic'));
     expect(chipSelected(tester, 'Outdoor'), isTrue);
     expect(scratchCard(tester).revealed, isTrue);

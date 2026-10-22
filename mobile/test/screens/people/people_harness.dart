@@ -88,7 +88,7 @@ void calm(WidgetTester tester) {
   addTearDown(tester.platformDispatcher.clearAccessibilityFeaturesTestValue);
 }
 
-Widget blankTab(BuildContext context, AppTab tab) => const SizedBox.shrink();
+Widget blankTab(BuildContext context, SkyTab tab) => const SizedBox.shrink();
 
 Future<void> pumpOurSpace(WidgetTester tester, OurSpace space, {InviteInbox? inbox}) async {
   final links = inbox ?? InviteInbox();

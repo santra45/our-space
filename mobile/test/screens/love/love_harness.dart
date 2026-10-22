@@ -133,7 +133,7 @@ Future<VaultKey> strangerKey(WidgetTester tester) async {
 }
 
 Future<void> pumpLove(WidgetTester tester, OurSpace space, {Widget? shell}) async {
-  await tester.pumpWidget(OurSpaceApp(openSpace: () async => space, shell: shell ?? const HomeShell(particles: false)));
+  await tester.pumpWidget(OurSpaceApp(openSpace: () async => space, shell: shell ?? const HomeShell()));
   await tester.pump();
 }
 
