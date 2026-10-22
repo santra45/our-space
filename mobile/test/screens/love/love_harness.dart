@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:our_space_mobile/core/engine.dart';
 import 'package:our_space_mobile/main.dart';
 import 'package:our_space_mobile/presentation/home_shell.dart';
+import 'package:our_space_mobile/presentation/sky/sky.dart';
 import 'package:our_space_mobile/presentation/widgets/our_widgets.dart';
 
 import '../../support/harness.dart';
@@ -65,12 +66,20 @@ Future<void> untilFound(WidgetTester tester, Finder finder) => until(tester, () 
 Future<void> untilGone(WidgetTester tester, Finder finder) => until(tester, () => finder.evaluate().isEmpty);
 
 Finder fieldWithHint(String hint) => find.descendant(
-      of: find.byWidgetPredicate((widget) => widget is OurTextField && widget.hint == hint),
+      of: find.byWidgetPredicate(
+        (widget) => (widget is OurTextField && widget.hint == hint) || (widget is SkyTextField && widget.hint == hint),
+      ),
       matching: find.byType(TextField),
     );
 
-Finder iconButton(String label) =>
-    find.byWidgetPredicate((widget) => widget is OurIconButton && widget.semanticLabel == label);
+Finder iconButton(String label) => find.byWidgetPredicate(
+      (widget) =>
+          (widget is OurIconButton && widget.semanticLabel == label) ||
+          (widget is SkyIconButton && widget.semanticLabel == label),
+    );
+
+Finder semanticsLabelled(String label) =>
+    find.byWidgetPredicate((widget) => widget is Semantics && widget.properties.label == label);
 
 Future<void> reveal(WidgetTester tester, Finder finder) async {
   unawaited(Scrollable.ensureVisible(tester.element(finder), alignment: 0.5));
@@ -95,6 +104,8 @@ Future<void> settleRoute(WidgetTester tester) async {
 }
 
 bool buttonEnabled(WidgetTester tester, String label) {
+  final sky = find.ancestor(of: find.text(label), matching: find.byType(SkyButton));
+  if (sky.evaluate().isNotEmpty) return tester.widget<SkyButton>(sky).enabled;
   final button = tester.widget<BouncyButton>(find.ancestor(of: find.text(label), matching: find.byType(BouncyButton)));
   return button.isEnabled;
 }
@@ -135,6 +146,41 @@ Future<VaultKey> strangerKey(WidgetTester tester) async {
 Future<void> pumpLove(WidgetTester tester, OurSpace space, {Widget? shell}) async {
   await tester.pumpWidget(OurSpaceApp(openSpace: () async => space, shell: shell ?? const HomeShell()));
   await tester.pump();
+}
+
+Future<void> nightSky(WidgetTester tester, OurSpace space) =>
+    real(tester, () => space.store.settings.setItem(SkyModeController.followsTimeKey, '0'));
+
+Future<void> pumpNight(WidgetTester tester, OurSpace space, {Widget? shell}) async {
+  await nightSky(tester, space);
+  await pumpLove(tester, space, shell: shell);
+  await untilFound(tester, find.byType(shell?.runtimeType ?? HomeShell));
+  await tester.pump(SkyMotion.dayNight + const Duration(milliseconds: 100));
+}
+
+Future<void> iAnswer(WidgetTester tester, OurSpace space, String text, {int? when}) async {
+  final key = space.vault.requireKey();
+  final question = space.dailyQuestion.questionForDay(key, when).question.id;
+  await drive(
+    tester,
+    () => space.dailyQuestion.saveAnswer(
+      key,
+      ownerId: space.identity.myOwnerId,
+      ownerIds: space.identity.myOwnerIds,
+      questionId: question,
+      text: text,
+      when: when,
+    ),
+  );
+}
+
+Future<void> bothAnswered(WidgetTester tester, OurSpace space, int days, {int from = 1}) async {
+  final now = DateTime.now().millisecondsSinceEpoch;
+  for (var i = from; i < from + days; i++) {
+    final when = now - i * 86400000;
+    await iAnswer(tester, space, 'Mine $i', when: when);
+    await partnerAnswers(tester, space, 'Theirs $i', when: when);
+  }
 }
 
 Future<void> partnerAnswers(
