@@ -4,18 +4,13 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../../../core/engine.dart';
+import '../../sky/sky.dart';
 import '../../space_scope.dart';
-import '../../widgets/our_widgets.dart';
+import '../../widgets/app_haptics.dart';
+import '../../widgets/confetti_burst.dart';
+import '../us/us_keys.dart';
 import 'roulette_copy.dart';
 import 'scratch_card.dart';
-
-const Map<String, LucideIconData> dateIdeaCategoryIcons = {
-  'all': AppIcons.sparkles,
-  'athome': AppIcons.home,
-  'outdoor': AppIcons.trees,
-  'food': AppIcons.utensils,
-  'budget': AppIcons.piggyBank,
-};
 
 class DateRoulette extends StatefulWidget {
   const DateRoulette({super.key});
@@ -125,105 +120,168 @@ class _DateRouletteState extends State<DateRoulette> {
     unawaited(_persist(ideaId: _idea.id, category: _category, revealed: true));
   }
 
-  Widget _categories() {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        return SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-          child: ConstrainedBox(
-            constraints: BoxConstraints(minWidth: math.max(0, constraints.maxWidth - 16)),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
+  @override
+  Widget build(BuildContext context) {
+    final night = context.sky.isNight;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        SkySectionHeader(title: RouletteCopy.title, action: RouletteCopy.anotherIdea, onAction: () => _pick()),
+        const SizedBox(height: 10),
+        ScratchPanel(
+          key: UsKeys.scratchPanel,
+          title: night ? RouletteCopy.tonight : RouletteCopy.weekend,
+          subtitle: _revealed ? RouletteCopy.revealed : RouletteCopy.hint,
+          foil: ClipRRect(
+            borderRadius: SkyRadii.all(SkyRadii.button),
+            child: Stack(
               children: [
-                for (var i = 0; i < dateIdeaCategories.length; i++) ...[
-                  if (i > 0) const SizedBox(width: 6),
-                  OurChip(
-                    label: dateIdeaCategories[i].label,
-                    icon: dateIdeaCategoryIcons[dateIdeaCategories[i].id],
-                    selected: _category == dateIdeaCategories[i].id,
-                    onTap: () => _selectCategory(dateIdeaCategories[i].id),
-                  ),
-                ],
+                ConstrainedBox(
+                  constraints: const BoxConstraints(minHeight: 132),
+                  child: DateIdeaReveal(key: ValueKey<String>(_idea.id), idea: _idea),
+                ),
+                Positioned.fill(
+                  child: ScratchCard(key: ValueKey<int>(_cardKey), revealed: _revealed, onRevealed: _onRevealed),
+                ),
               ],
             ),
           ),
-        );
-      },
-    );
-  }
-
-  Widget _card() {
-    return Center(
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: AppLayout.maxWidthSm),
-        child: AspectRatio(
-          aspectRatio: 4 / 3,
-          child: CssBox(
-            gradient: AppGradients.scratchCard,
-            border: Border.all(color: AppColors.white, width: 4),
-            borderRadius: AppRadii.all(AppRadii.x3l),
-            shadows: AppShadows.x2l,
-            child: ClipRRect(
-              borderRadius: AppRadii.all(AppRadii.x3l - 4),
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.all(20),
-                    child: OverflowBox(
-                      minHeight: 0,
-                      maxHeight: double.infinity,
-                      alignment: Alignment.center,
-                      child: DateIdeaReveal(key: ValueKey<String>(_idea.id), idea: _idea),
-                    ),
-                  ),
-                  Positioned.fill(
-                    child: ScratchCard(
-                      key: ValueKey<int>(_cardKey),
-                      revealed: _revealed,
-                      onRevealed: _onRevealed,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return OurPage(
-      children: [
-        const OurSectionHeader(
-          title: RouletteCopy.title,
-          subtitle: RouletteCopy.subtitle,
-          centered: true,
-        ),
-        _categories(),
-        _card(),
-        Padding(
-          padding: const EdgeInsets.only(top: 8),
-          child: Center(
-            child: BouncyButton(
-              onPressed: () => _pick(),
-              icon: AppIcons.refreshCw,
-              label: RouletteCopy.rollAnother,
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-              gap: 8,
-            ),
-          ),
+          categories: DateIdeaChips(selected: _category, onSelect: _selectCategory),
         ),
       ],
     );
   }
 }
 
+class ScratchPanel extends StatelessWidget {
+  const ScratchPanel({super.key, required this.title, required this.subtitle, required this.foil, this.categories});
+
+  static const List<Color> night = [Color(0xFF2E2870), Color(0xFF1A1650)];
+  static const List<Color> day = [SkyTokens.indigo, Color(0xFF4B4AA0)];
+
+  final String title;
+  final String subtitle;
+  final Widget foil;
+  final Widget? categories;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.sky;
+    final motion = skyMotionAllowed(context);
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        borderRadius: SkyRadii.all(24),
+        border: Border.all(color: t.cardBorder),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: t.isNight ? night : day,
+        ),
+        boxShadow: t.isDay ? t.softShadow : const [],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            title,
+            style: SkyType.serif(20, weight: FontWeight.w500, height: 1.25).copyWith(color: SkyTokens.white),
+          ),
+          const SizedBox(height: 3),
+          AnimatedSwitcher(
+            duration: motion ? SkyMotion.base : Duration.zero,
+            layoutBuilder: (current, previous) => Stack(
+              alignment: Alignment.topLeft,
+              children: [...previous, ?current],
+            ),
+            child: Text(
+              subtitle,
+              key: ValueKey<String>(subtitle),
+              style: SkyType.sans(12, height: 1.4).copyWith(color: SkyTokens.white.withValues(alpha: 0.7)),
+            ),
+          ),
+          const SizedBox(height: SkySpace.md),
+          foil,
+          if (categories != null) ...[const SizedBox(height: 14), categories!],
+        ],
+      ),
+    );
+  }
+}
+
+class DateIdeaChips extends StatelessWidget {
+  const DateIdeaChips({super.key = UsKeys.ideaCategories, required this.selected, required this.onSelect});
+
+  final String selected;
+  final ValueChanged<String> onSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      container: true,
+      label: RouletteCopy.categories,
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        physics: const BouncingScrollPhysics(),
+        child: Row(
+          children: [
+            for (var i = 0; i < dateIdeaCategories.length; i++) ...[
+              if (i > 0) const SizedBox(width: 6),
+              DateIdeaChip(
+                label: RouletteCopy.categoryLabel(dateIdeaCategories[i].id, dateIdeaCategories[i].label),
+                selected: selected == dateIdeaCategories[i].id,
+                onTap: () => onSelect(dateIdeaCategories[i].id),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class DateIdeaChip extends StatelessWidget {
+  const DateIdeaChip({super.key, required this.label, required this.selected, required this.onTap});
+
+  static const Color gold = Color(0xFFFFD98A);
+  static const Color ink = Color(0xFF1B1838);
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return SkyPressable(
+      onTap: onTap,
+      semanticLabel: label,
+      selected: selected,
+      excludeSemantics: true,
+      child: AnimatedContainer(
+        duration: skyMotionAllowed(context) ? SkyMotion.quick : Duration.zero,
+        curve: SkyMotion.standard,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: selected ? gold : SkyTokens.white.withValues(alpha: 0.1),
+          borderRadius: SkyRadii.all(SkyRadii.pill),
+          border: Border.all(color: selected ? gold : SkyTokens.white.withValues(alpha: 0.14)),
+        ),
+        child: Text(
+          label,
+          style: SkyType.chip.copyWith(color: selected ? ink : SkyTokens.white.withValues(alpha: 0.86)),
+        ),
+      ),
+    );
+  }
+}
+
 class DateIdeaReveal extends StatefulWidget {
   const DateIdeaReveal({super.key, required this.idea});
+
+  static const Color paper = Color(0xFFFFF8EC);
+  static const Color goldInk = Color(0xFFB07A1E);
 
   final DateIdea idea;
 
@@ -232,15 +290,18 @@ class DateIdeaReveal extends StatefulWidget {
 }
 
 class _DateIdeaRevealState extends State<DateIdeaReveal> with SingleTickerProviderStateMixin {
-  static const Duration _length = Duration(milliseconds: 600);
-
-  late final AnimationController _controller = AnimationController(vsync: this, duration: _length);
+  late final AnimationController _controller = AnimationController(vsync: this, duration: SkyMotion.slow);
+  late final Animation<double> _fade = CurvedAnimation(parent: _controller, curve: SkyMotion.gentle);
+  late final Animation<double> _scale = Tween<double>(
+    begin: 0.96,
+    end: 1,
+  ).animate(CurvedAnimation(parent: _controller, curve: const SkySpringCurve(SkyMotion.popSpring, seconds: 0.4)));
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     if (_controller.isAnimating || _controller.value > 0) return;
-    if (motionAllowed(context)) {
+    if (skyMotionAllowed(context)) {
       _controller.forward();
     } else {
       _controller.value = 1;
@@ -255,56 +316,42 @@ class _DateIdeaRevealState extends State<DateIdeaReveal> with SingleTickerProvid
 
   @override
   Widget build(BuildContext context) {
+    final t = context.sky;
     final idea = widget.idea;
-    final content = Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: spaced([
-        Center(
-          child: OurPill(
-            label: RouletteCopy.dateIdea.toUpperCase(),
-            icon: AppIcons.heart,
-            iconSize: 12,
-            iconColor: AppColors.slate800,
-            iconFill: AppColors.blush600,
-            background: AppColors.blush200.withValues(alpha: 0.6),
-            foreground: AppColors.slate800,
-            textStyle: Tw.px11.bold.trackingWider,
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8),
-          child: Text(idea.title, textAlign: TextAlign.center, style: Tw.lg.black.snug.c(AppColors.slate800)),
-        ),
-        Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: AppLayout.maxWidthXs),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              child: Text(idea.desc, textAlign: TextAlign.center, style: Tw.xs.relaxed.c(AppColors.slate600)),
+    return DecoratedBox(
+      decoration: const BoxDecoration(color: DateIdeaReveal.paper),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
+        child: FadeTransition(
+          opacity: _fade,
+          child: ScaleTransition(
+            scale: _scale,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  RouletteCopy.dateIdea.toUpperCase(),
+                  textAlign: TextAlign.center,
+                  style: SkyType.caps(9.5, weight: FontWeight.w700, tracking: 0.2, color: DateIdeaReveal.goldInk),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  idea.title,
+                  textAlign: TextAlign.center,
+                  style: SkyType.serif(19, weight: FontWeight.w500, height: 1.25).copyWith(color: t.paperInk),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  idea.desc,
+                  textAlign: TextAlign.center,
+                  style: SkyType.sans(12.5, height: 1.45).copyWith(color: t.paperMuted),
+                ),
+              ],
             ),
           ),
         ),
-      ], 8),
-    );
-
-    return AnimatedBuilder(
-      animation: _controller,
-      builder: (context, child) {
-        final seconds = _controller.value * _length.inMicroseconds / 1e6;
-        final opacity = _controller.value >= 1
-            ? 1.0
-            : AppMotion.framerEase.transform((seconds / 0.3).clamp(0.0, 1.0));
-        final scale = _controller.value >= 1
-            ? 1.0
-            : AppMotion.springValue(AppMotion.framerScaleSpring, 0.96, 1, seconds);
-        return Opacity(
-          opacity: opacity.clamp(0.0, 1.0),
-          child: Transform.scale(scale: scale, child: child),
-        );
-      },
-      child: content,
+      ),
     );
   }
 }
