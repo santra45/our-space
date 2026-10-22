@@ -5,7 +5,6 @@ import 'package:provider/provider.dart';
 
 import '../../../core/engine.dart';
 import '../../app_shell.dart';
-import '../../legacy_area.dart';
 import '../../sky/sky.dart';
 import '../bucketlist/dreams_section.dart';
 import '../countdown/constellation.dart';
@@ -35,6 +34,15 @@ extension UsSectionInfo on UsSection {
 class UsPage extends StatefulWidget {
   const UsPage({super.key, this.initialSection = UsSection.story, this.clock});
 
+  static const double skyHeight = 380;
+
+  static const SkyScene scene = SkyScene(
+    stars: 50,
+    moon: Offset(200, 104),
+    sun: false,
+    clouds: [SkyCloud(300, 110, scale: 0.9, opacity: 0.85), SkyCloud(60, 230, scale: 0.6, opacity: 0.5)],
+  );
+
   final UsSection initialSection;
   final LoveClock? clock;
 
@@ -43,22 +51,48 @@ class UsPage extends StatefulWidget {
 }
 
 class _UsPageState extends State<UsPage> {
-  late UsSection _section = widget.initialSection;
   late final LiveLoveCounter _counter = LiveLoveCounter(clock: widget.clock);
-  bool _back = false;
+  final ScrollController _scroll = ScrollController();
+  final Map<UsSection, GlobalKey> _anchors = {for (final section in UsSection.values) section: GlobalKey()};
+  UsSection? _pending;
+  bool _revealQueued = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.initialSection != UsSection.story) {
+      _pending = widget.initialSection;
+      _queueReveal();
+    }
+  }
 
   @override
   void dispose() {
     _counter.dispose();
+    _scroll.dispose();
     super.dispose();
   }
 
-  void _select(UsSection section) {
-    if (section == _section) return;
-    setState(() {
-      _back = section.index < _section.index;
-      _section = section;
+  void _queueReveal() {
+    if (_revealQueued || _pending == null) return;
+    _revealQueued = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _revealQueued = false;
+      final section = _pending;
+      final target = section == null ? null : _anchors[section]?.currentContext;
+      if (!mounted || target == null) return;
+      unawaited(Scrollable.ensureVisible(target, alignment: 0, duration: Duration.zero));
     });
+  }
+
+  bool _onLayout(SizeChangedLayoutNotification notification) {
+    _queueReveal();
+    return false;
+  }
+
+  bool _onScroll(ScrollStartNotification notification) {
+    if (notification.dragDetails != null) _pending = null;
+    return false;
   }
 
   String _startDate(BuildContext context) {
@@ -71,46 +105,7 @@ class _UsPageState extends State<UsPage> {
     unawaited(showTogetherDateSheet(context, startDate: startDate));
   }
 
-  Widget _story(String startDate) {
-    return SingleChildScrollView(
-      padding: EdgeInsets.fromLTRB(SkySpace.gutter, 0, SkySpace.gutter, SkyScrollScaffold.bottomInsetOf(context)),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          TogetherHero(key: UsKeys.hero, counter: _counter, onTap: () => _changeDay(startDate)),
-          const SizedBox(height: SkySpace.md),
-          ListenableBuilder(
-            listenable: _counter,
-            builder: (context, _) => UpcomingRow(
-              key: UsKeys.upcoming,
-              items: upcomingMilestones(startDate, DateTime.fromMillisecondsSinceEpoch(_counter.now())),
-            ),
-          ),
-          const SizedBox(height: SkySpace.sectionGap - UpcomingRow.shadowRoom),
-          OurConstellation(
-            key: UsKeys.constellation,
-            counter: _counter,
-            startDate: startDate,
-            onChangeDay: () => _changeDay(startDate),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _content(String startDate) {
-    switch (_section) {
-      case UsSection.story:
-        return _story(startDate);
-      case UsSection.dreams:
-        return SingleChildScrollView(
-          padding: EdgeInsets.fromLTRB(SkySpace.gutter, 0, SkySpace.gutter, SkyScrollScaffold.bottomInsetOf(context)),
-          child: const DreamsSection(key: UsKeys.dreams),
-        );
-      case UsSection.dates:
-        return const LegacyArea(child: DateRoulette());
-    }
-  }
+  Widget _anchored(UsSection section, Widget child) => KeyedSubtree(key: _anchors[section], child: child);
 
   @override
   Widget build(BuildContext context) {
@@ -118,50 +113,57 @@ class _UsPageState extends State<UsPage> {
     _counter.track(startDate);
     final now = DateTime.fromMillisecondsSinceEpoch(_counter.now());
     final start = parseLocalDate(startDate) ?? now;
-    return SkyScaffold(
-      scene: SkyScene.page,
-      body: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          SkyEntrance(
-            child: SkyTopBar(
-              kicker: UsCopy.since(start, now),
-              title: UsCopy.title,
-              trailing: const ShellAvatar(),
-            ),
+    return NotificationListener<ScrollStartNotification>(
+      onNotification: _onScroll,
+      child: NotificationListener<SizeChangedLayoutNotification>(
+        onNotification: _onLayout,
+        child: SkyScrollScaffold(
+          controller: _scroll,
+          scene: UsPage.scene,
+          skyHeight: UsPage.skyHeight,
+          padding: const EdgeInsets.fromLTRB(SkySpace.gutter, SkySpace.gutter, SkySpace.gutter, 0),
+          spacing: 0,
+          topBar: SkyTopBar(
+            kicker: UsCopy.since(start, now),
+            title: UsCopy.title,
+            trailing: const Padding(padding: EdgeInsets.only(top: 6), child: ShellAvatar()),
           ),
-          const SizedBox(height: SkySpace.lg),
-          SkyEntrance(
-            index: 1,
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: SkySpace.gutter),
-              child: Row(
-                children: [
-                  for (final section in UsSection.values) ...[
-                    if (section.index > 0) const SizedBox(width: SkySpace.sm),
-                    SkyChip(
-                      label: section.label,
-                      tone: section == _section ? SkyChipTone.on : SkyChipTone.plain,
-                      onTap: () => _select(section),
-                    ),
-                  ],
-                ],
+          children: [
+            _anchored(
+              UsSection.story,
+              TogetherHero(key: UsKeys.hero, counter: _counter, onTap: () => _changeDay(startDate)),
+            ),
+            Padding(
+              padding: const EdgeInsets.only(top: SkySpace.md),
+              child: ListenableBuilder(
+                listenable: _counter,
+                builder: (context, _) => UpcomingRow(
+                  key: UsKeys.upcoming,
+                  items: upcomingMilestones(startDate, DateTime.fromMillisecondsSinceEpoch(_counter.now())),
+                ),
               ),
             ),
-          ),
-          const SizedBox(height: SkySpace.md),
-          Expanded(
-            child: SkyEntrance(
-              index: 2,
-              child: SkySharedAxisSwitcher(
-                reverse: _back,
-                expand: true,
-                child: KeyedSubtree(key: ValueKey<UsSection>(_section), child: _content(startDate)),
+            Padding(
+              padding: const EdgeInsets.only(top: SkySpace.sectionGap - UpcomingRow.shadowRoom),
+              child: SizeChangedLayoutNotifier(
+                child: OurConstellation(
+                  key: UsKeys.constellation,
+                  counter: _counter,
+                  startDate: startDate,
+                  onChangeDay: () => _changeDay(startDate),
+                ),
               ),
             ),
-          ),
-        ],
+            Padding(
+              padding: const EdgeInsets.only(top: SkySpace.sectionGap),
+              child: _anchored(UsSection.dreams, const SizeChangedLayoutNotifier(child: DreamsSection(key: UsKeys.dreams))),
+            ),
+            Padding(
+              padding: const EdgeInsets.only(top: SkySpace.sectionGap),
+              child: _anchored(UsSection.dates, const DateRoulette(key: UsKeys.dateNight)),
+            ),
+          ],
+        ),
       ),
     );
   }
