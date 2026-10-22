@@ -37,6 +37,8 @@ dependencies:
   unorm_dart: ^0.3.3
   firebase_core: ^5.0.0
   firebase_messaging: ^17.0.0
+  flutter_animate: ^4.5.2
+  animations: ^3.0.0
 
 dev_dependencies:
   flutter_test:
@@ -51,6 +53,8 @@ flutter:
     - assets/svg/
     - assets/svg/icons/
     - assets/fonts/caveat/OFL.txt
+    - assets/fonts/bodoni_moda/OFL.txt
+    - assets/fonts/dm_sans/OFL.txt
 
   fonts:
     - family: Caveat
@@ -61,3 +65,11 @@ flutter:
       fonts:
         - asset: assets/fonts/caveat/Caveat-LatinExt-Regular.ttf
           weight: 400
+    - family: BodoniModa
+      fonts:
+        - asset: assets/fonts/bodoni_moda/BodoniModa-Variable.ttf
+        - asset: assets/fonts/bodoni_moda/BodoniModa-Italic-Variable.ttf
+          style: italic
+    - family: DMSans
+      fonts:
+        - asset: assets/fonts/dm_sans/DMSans-Variable.ttf

@@ -36,6 +36,8 @@ void configureAppChrome() {
 
 Stream<LicenseEntry> bundledLicenses() async* {
   yield LicenseEntryWithLineBreaks(['Caveat'], await rootBundle.loadString('assets/fonts/caveat/OFL.txt'));
+  yield LicenseEntryWithLineBreaks(['Bodoni Moda'], await rootBundle.loadString('assets/fonts/bodoni_moda/OFL.txt'));
+  yield LicenseEntryWithLineBreaks(['DM Sans'], await rootBundle.loadString('assets/fonts/dm_sans/OFL.txt'));
   yield LicenseEntryWithLineBreaks(['lucide'], await rootBundle.loadString('assets/svg/icons/LICENSE.txt'));
 }
 
