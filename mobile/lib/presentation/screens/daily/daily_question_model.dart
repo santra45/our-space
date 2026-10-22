@@ -29,6 +29,8 @@ class DailyQuestionModel extends ChangeNotifier {
   bool _showArchive = false;
   List<ArchiveDay> _archive = const [];
   DailyCatchUp? _catchUp;
+  int _stars = 0;
+  bool _failed = false;
 
   VaultKey? _key;
   String? _ownerId;
@@ -44,6 +46,9 @@ class DailyQuestionModel extends ChangeNotifier {
   bool get showArchive => _showArchive;
   List<ArchiveDay> get archive => _archive;
   DailyCatchUp? get catchUp => _catchUp;
+  int get stars => _stars;
+  bool get failed => _failed && _key != null;
+  bool get loading => _key != null && _today == null && !_failed;
 
   bool get visible => _key != null && _today != null;
   bool get answered => _day?.mine != null;
@@ -70,14 +75,29 @@ class DailyQuestionModel extends ChangeNotifier {
     try {
       final question = space.dailyQuestion.questionForDay(key);
       final day = await space.dailyQuestion.readDay(key, ownerId: ownerId, ownerIds: _ownerIds);
+      var stars = _stars;
+      try {
+        final answered = await space.dailyQuestion.listAnswered(key, ownerId: ownerId, ownerIds: _ownerIds);
+        stars = answered.where((entry) => entry.theirs != null).length;
+      } catch (_) {}
       if (_disposed || ticket != _generation) return;
       _today = question;
       _day = day;
+      _stars = stars;
+      _failed = false;
     } catch (_) {
       if (_disposed || ticket != _generation) return;
       _today = null;
+      _failed = true;
     }
     notifyListeners();
+  }
+
+  Future<void> retry() async {
+    if (_disposed) return;
+    _failed = false;
+    notifyListeners();
+    await refresh();
   }
 
   Future<void> loadArchive() async {
@@ -131,15 +151,16 @@ class DailyQuestionModel extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> save({VoidCallback? onSaved}) async {
+  Future<bool> save({VoidCallback? onSaved}) async {
     final catchUp = _catchUp;
     final today = _today;
     final questionId = catchUp?.question.id ?? today?.question.id;
-    if (_saving || draft.text.trim().isEmpty || questionId == null) return;
+    if (_saving || draft.text.trim().isEmpty || questionId == null) return false;
 
     _saving = true;
     _error = '';
     notifyListeners();
+    var saved = false;
     try {
       await space.dailyQuestion.saveAnswer(
         _key,
@@ -150,7 +171,8 @@ class DailyQuestionModel extends ChangeNotifier {
         when: catchUp == null ? null : dateFromDayKey(catchUp.day)?.millisecondsSinceEpoch,
         timestamp: space.store.clock.stamp,
       );
-      if (_disposed) return;
+      if (_disposed) return false;
+      saved = true;
       draft.clear();
       onSaved?.call();
       if (catchUp != null) {
@@ -160,14 +182,15 @@ class DailyQuestionModel extends ChangeNotifier {
       }
       await refresh();
     } catch (_) {
-      if (_disposed) return;
-      _error = DailyCopy.saveFailed;
+      if (_disposed) return false;
+      if (!saved) _error = DailyCopy.saveFailed;
     } finally {
       if (!_disposed) {
         _saving = false;
         notifyListeners();
       }
     }
+    return saved;
   }
 
   @override

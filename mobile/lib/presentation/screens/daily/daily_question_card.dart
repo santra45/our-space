@@ -1,130 +1,226 @@
-import 'package:flutter/physics.dart';
-import 'package:flutter/widgets.dart';
+import 'dart:async';
+
+import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../../core/engine.dart';
-import '../../space_scope.dart';
-import '../../widgets/our_widgets.dart';
+import '../../sky/sky.dart';
+import '../sky/sky_copy.dart';
 import 'daily_copy.dart';
 import 'daily_question_model.dart';
-import 'daily_question_sheet.dart';
 
-class DailyQuestionCard extends StatefulWidget {
-  const DailyQuestionCard({super.key});
+enum DailyCardState { open, waiting, answered, lit }
 
-  @override
-  State<DailyQuestionCard> createState() => _DailyQuestionCardState();
+abstract final class DailyKeys {
+  static const Key card = ValueKey<String>('daily-card');
+  static const Key status = ValueKey<String>('daily-status');
+  static const Key action = ValueKey<String>('daily-action');
+  static const Key sheet = ValueKey<String>('daily-sheet');
+  static const Key reveal = ValueKey<String>('daily-reveal');
+  static const Key answerField = ValueKey<String>('daily-answer-field');
+  static const Key submit = ValueKey<String>('daily-submit');
+  static const Key everyDay = ValueKey<String>('daily-every-day');
+  static const Key sendLove = ValueKey<String>('daily-send-love');
 }
 
-class _DailyQuestionCardState extends State<DailyQuestionCard> {
-  late final DailyQuestionModel _model = DailyQuestionModel(context.space);
-  bool _open = false;
+DailyCardState dailyCardState(DailyQuestionModel model) {
+  if (model.bothIn) return DailyCardState.lit;
+  if (model.answered) return DailyCardState.answered;
+  if (model.partnerWaiting) return DailyCardState.waiting;
+  return DailyCardState.open;
+}
 
-  @override
-  void dispose() {
-    _model.dispose();
-    super.dispose();
-  }
+class DailyQuestionCard extends StatelessWidget {
+  const DailyQuestionCard({
+    super.key,
+    required this.model,
+    required this.onAnswer,
+    required this.onReveal,
+    this.dayNumber,
+  });
 
-  void _celebrate() {
-    AppHaptics.celebration();
-    if (mounted) fireHeartConfetti(context);
-  }
-
-  Future<void> _openSheet() async {
-    if (_open) return;
-    AppHaptics.tap();
-    _open = true;
-    _model.resetSheet();
-    await showOurSheet<void>(
-      context: context,
-      builder: (_) => DailyQuestionSheet(model: _model, onCelebrate: _celebrate),
-    );
-    _open = false;
-  }
+  final DailyQuestionModel model;
+  final VoidCallback onAnswer;
+  final VoidCallback onReveal;
+  final int? dayNumber;
 
   @override
   Widget build(BuildContext context) {
-    final vault = context.watch<VaultService>();
     final identity = context.watch<IdentityController>();
-    final personId = identity.myOwnerId;
-    _model.bind(
-      key: vault.key,
-      ownerId: personId == null || personId.isEmpty ? context.space.device.deviceId : personId,
-      ownerIds: identity.myOwnerIds,
-    );
-
     return ListenableBuilder(
-      listenable: _model,
+      listenable: model,
       builder: (context, _) {
-        final today = _model.today;
-        if (!_model.visible || today == null) return const SizedBox.shrink();
-        final teaser = DailyQuestionTeaser(
-          question: today.question.text,
-          bothIn: _model.bothIn,
-          status: DailyCopy.status(
-            bothIn: _model.bothIn,
-            answered: _model.answered,
-            partnerWaiting: _model.partnerWaiting,
-            partnerName: identity.partnerName,
-            partnerPossessive: identity.partnerPossessive,
-            partnerGrammar: identity.partnerGrammar,
+        if (model.failed) {
+          return SkyNotice(
+            key: const ValueKey<String>('daily-failed'),
+            text: DailyCopy.loadFailed,
+            tone: SkyNoticeTone.error,
+            actionLabel: DailyCopy.tryAgain,
+            onAction: () => unawaited(model.retry()),
+          );
+        }
+        final today = model.today;
+        if (!model.visible || today == null) {
+          if (!model.loading) return const SizedBox.shrink();
+          return const _FindingCard();
+        }
+        final night = context.sky.isNight;
+        final state = dailyCardState(model);
+        return SkyCard(
+          key: DailyKeys.card,
+          padding: const EdgeInsets.fromLTRB(14, 13, 14, 14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: SkyLabel(DailyCopy.questionLabel(night), icon: SkyIcons.sparkle, tone: SkyTone.rose),
+                  ),
+                  if (dayNumber != null)
+                    Text(
+                      SkyHomeCopy.dayOfForever(dayNumber!),
+                      style: SkyType.sans(10, height: 1.3).copyWith(color: context.sky.muted),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              Text(DailyCopy.quoted(today.question.text), style: SkyType.serifBody.copyWith(color: context.sky.text)),
+              const SizedBox(height: 10),
+              _Swap(
+                child: DailyStatusRow(
+                  key: ValueKey<DailyCardState>(state),
+                  state: state,
+                  status: DailyCopy.status(
+                    bothIn: model.bothIn,
+                    answered: model.answered,
+                    partnerWaiting: model.partnerWaiting,
+                    night: night,
+                    partnerName: identity.partnerName,
+                    partnerPossessive: identity.partnerPossessive,
+                    partnerGrammar: identity.partnerGrammar,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 10),
+              _Swap(
+                child: KeyedSubtree(key: ValueKey<String>('daily-action-${state.name}'), child: _action(state, night)),
+              ),
+            ],
           ),
-          onTap: _openSheet,
         );
-        return Padding(padding: const EdgeInsets.only(bottom: 16), child: teaser);
       },
     );
   }
+
+  Widget _action(DailyCardState state, bool night) {
+    switch (state) {
+      case DailyCardState.open:
+      case DailyCardState.waiting:
+        return SkyButton(
+          key: DailyKeys.action,
+          label: DailyCopy.lightStar(night),
+          icon: SkyIcons.sparkle,
+          height: 44,
+          onPressed: onAnswer,
+        );
+      case DailyCardState.answered:
+        return SkyButton(
+          key: DailyKeys.action,
+          label: DailyCopy.seeYours,
+          icon: SkyIcons.pen,
+          variant: SkyButtonVariant.ghost,
+          height: 44,
+          onPressed: onAnswer,
+        );
+      case DailyCardState.lit:
+        return SkyButton(
+          key: DailyKeys.action,
+          label: DailyCopy.readBoth,
+          icon: SkyIcons.star,
+          variant: SkyButtonVariant.gold,
+          height: 44,
+          onPressed: onReveal,
+        );
+    }
+  }
 }
 
-class DailyQuestionTeaser extends StatelessWidget {
-  const DailyQuestionTeaser({
-    super.key,
-    required this.question,
-    required this.status,
-    required this.bothIn,
-    required this.onTap,
-  });
+class _Swap extends StatelessWidget {
+  const _Swap({required this.child});
 
-  final String question;
-  final String status;
-  final bool bothIn;
-  final VoidCallback onTap;
+  final Widget child;
 
   @override
   Widget build(BuildContext context) {
-    return PressScale(
-      onTap: onTap,
-      child: CssBox(
-        padding: const EdgeInsets.all(16),
-        color: AppColors.white.withValues(alpha: 0.8),
-        border: Border.all(color: AppColors.lavender200),
-        borderRadius: AppRadii.all(AppRadii.x3l),
-        shadows: AppShadows.sm,
-        backdropBlur: 4,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
+    if (!skyMotionAllowed(context)) return child;
+    return AnimatedSwitcher(
+      duration: SkyMotion.medium,
+      switchInCurve: SkyMotion.standard,
+      switchOutCurve: Curves.easeIn,
+      layoutBuilder: (current, previous) => Stack(
+        alignment: Alignment.topCenter,
+        children: [...previous, ?current],
+      ),
+      transitionBuilder: (child, animation) => FadeTransition(
+        opacity: animation,
+        child: ScaleTransition(scale: Tween<double>(begin: 0.97, end: 1).animate(animation), child: child),
+      ),
+      child: child,
+    );
+  }
+}
+
+class DailyStatusRow extends StatelessWidget {
+  const DailyStatusRow({super.key, required this.state, required this.status});
+
+  final DailyCardState state;
+  final DailyStatus status;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.sky;
+    final Widget icon;
+    switch (state) {
+      case DailyCardState.waiting:
+        icon = const SkyIcon(SkyIcons.sealedStar, size: 22);
+      case DailyCardState.lit:
+        icon = SkyIcon(SkyIcons.check, size: 20, color: t.gold);
+      case DailyCardState.answered:
+        icon = SkyIcon(SkyIcons.clock, size: 20, color: t.gold);
+      case DailyCardState.open:
+        icon = SkyIcon(SkyIcons.star, size: 20, color: t.gold);
+    }
+    return Semantics(
+      key: DailyKeys.status,
+      label: status.sentence,
+      excludeSemantics: true,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        decoration: BoxDecoration(
+          color: t.chip,
+          borderRadius: SkyRadii.all(SkyRadii.md),
+          border: Border.all(color: t.chipBorder),
+        ),
+        child: Row(
           children: [
-            Row(
-              children: [
-                const LucideIcon(AppIcons.messageCircleHeart, size: 16, color: AppColors.lavender400),
-                const SizedBox(width: 8),
-                Text(
-                  DailyCopy.heading.toUpperCase(),
-                  style: Tw.px11.bold.trackingWide.c(AppColors.lavender500),
+            SizedBox.square(dimension: 22, child: Center(child: icon)),
+            const SizedBox(width: 9),
+            Expanded(
+              child: Text.rich(
+                TextSpan(
+                  children: [
+                    TextSpan(
+                      text: status.strong,
+                      style: SkyType.sans(11.5, weight: FontWeight.w700, height: 1.35).copyWith(color: t.gold),
+                    ),
+                    TextSpan(text: ' · ${status.rest}'),
+                  ],
                 ),
-                if (bothIn) ...[
-                  const Spacer(),
-                  const LucideIcon(AppIcons.check, size: 14, color: AppColors.emerald500),
-                ],
-              ],
+                style: SkyType.sans(11.5, height: 1.35).copyWith(color: t.muted),
+              ),
             ),
-            const SizedBox(height: 6),
-            Text(question, style: Tw.xl.handwriting.snug.c(AppColors.slate800)),
-            const SizedBox(height: 8),
-            Text(status, style: Tw.px11.c(AppColors.slate500)),
           ],
         ),
       ),
@@ -132,57 +228,20 @@ class DailyQuestionTeaser extends StatelessWidget {
   }
 }
 
-class PressScale extends StatefulWidget {
-  const PressScale({
-    super.key,
-    required this.child,
-    required this.onTap,
-    this.pressedScale = 0.98,
-    this.semanticLabel,
-  });
-
-  final Widget child;
-  final VoidCallback? onTap;
-  final double pressedScale;
-  final String? semanticLabel;
-
-  @override
-  State<PressScale> createState() => _PressScaleState();
-}
-
-class _PressScaleState extends State<PressScale> with SingleTickerProviderStateMixin {
-  late final AnimationController _scale = AnimationController.unbounded(vsync: this, value: 1);
-
-  void _springTo(double target) {
-    if (!motionAllowed(context)) {
-      _scale.value = 1;
-      return;
-    }
-    _scale.animateWith(SpringSimulation(AppMotion.framerScaleSpring, _scale.value, target, _scale.velocity));
-  }
-
-  @override
-  void dispose() {
-    _scale.dispose();
-    super.dispose();
-  }
+class _FindingCard extends StatelessWidget {
+  const _FindingCard();
 
   @override
   Widget build(BuildContext context) {
-    return Semantics(
-      button: true,
-      label: widget.semanticLabel,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTapDown: (_) => _springTo(widget.pressedScale),
-        onTapUp: (_) => _springTo(1),
-        onTapCancel: () => _springTo(1),
-        onTap: widget.onTap,
-        child: AnimatedBuilder(
-          animation: _scale,
-          builder: (context, child) => Transform.scale(scale: _scale.value, child: child),
-          child: widget.child,
-        ),
+    final t = context.sky;
+    return SkyCard(
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          SkySpinner(size: 14, color: t.gold),
+          const SizedBox(width: 10),
+          Text(DailyCopy.finding, style: SkyType.small.copyWith(color: t.muted)),
+        ],
       ),
     );
   }
