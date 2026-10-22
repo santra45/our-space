@@ -7,7 +7,7 @@ import '../../../core/engine.dart';
 import '../../app_shell.dart';
 import '../../legacy_area.dart';
 import '../../sky/sky.dart';
-import '../bucketlist/bucket_list.dart';
+import '../bucketlist/dreams_section.dart';
 import '../countdown/constellation.dart';
 import '../countdown/live_love_counter.dart';
 import '../countdown/together_date_sheet.dart';
@@ -103,7 +103,10 @@ class _UsPageState extends State<UsPage> {
       case UsSection.story:
         return _story(startDate);
       case UsSection.dreams:
-        return const LegacyArea(child: BucketList());
+        return SingleChildScrollView(
+          padding: EdgeInsets.fromLTRB(SkySpace.gutter, 0, SkySpace.gutter, SkyScrollScaffold.bottomInsetOf(context)),
+          child: const DreamsSection(key: UsKeys.dreams),
+        );
       case UsSection.dates:
         return const LegacyArea(child: DateRoulette());
     }
