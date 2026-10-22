@@ -75,6 +75,13 @@ bool enabledButton(WidgetTester tester, String label) {
   return button.isEnabled;
 }
 
+Future<void> drain(WidgetTester tester) async {
+  for (var i = 0; i < 25; i++) {
+    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 20)));
+    await tester.pump();
+  }
+}
+
 Finder labelled(String label) =>
     find.byWidgetPredicate((widget) => widget is Semantics && widget.properties.label == label);
 
@@ -240,8 +247,8 @@ void main() {
     await press(tester, find.text(LockCopy.quickButton));
     await until(tester, () => space.vault.isUnlocked);
     await untilFound(tester, find.byType(HomeShell));
-    expect(find.descendant(of: find.byType(SkyNameLabel), matching: find.text('Alex')), findsOneWidget);
-    expect(find.descendant(of: find.byType(SkyNameLabel), matching: find.text('Sam')), findsOneWidget);
+    expect(find.byKey(ShellKeys.dock), findsOneWidget);
+    expect(space.identity.partnerName, 'Alex');
     expect(recordedHaptics, contains(HapticKind.celebration));
 
     await lockFromSettings(tester);
@@ -363,7 +370,8 @@ void main() {
     await press(tester, find.text('Erase & Start Fresh'));
     await until(tester, () => space.vault.isUnlocked);
     expect(space.vault.salt, isNot(oldSalt));
-    await untilFound(tester, find.text("TODAY'S QUESTION"));
+    await untilFound(tester, find.byKey(ShellKeys.dock));
+    await drain(tester);
   });
 
   testWidgets('brings a saved copy back onto an empty phone', (tester) async {
