@@ -10,6 +10,7 @@ import 'package:our_space_mobile/presentation/screens/settings/widgets/names_she
 import 'package:our_space_mobile/presentation/screens/sync/add_phone_page.dart';
 import 'package:our_space_mobile/presentation/screens/sync/backup_dialogs.dart';
 import 'package:our_space_mobile/presentation/screens/sync/together_now.dart';
+import 'package:our_space_mobile/presentation/sky/sky.dart';
 import 'package:our_space_mobile/presentation/widgets/app_haptics.dart';
 
 import '../../widgets/harness.dart' show recordHaptics, recordedHaptics;
@@ -224,6 +225,60 @@ void main() {
       NamesCopy.swapBody(blank, blank, null),
       'You and your partner trade places, along with which phone is whose. Do this on one phone only. The other one follows by itself the next time you two connect.',
     );
+  });
+
+  test('names copy stays warm: no emoji and no technical words', () {
+    const me = Person(
+      personId: 'person-aaaaaaaa',
+      name: 'Sam',
+      pronoun: 'she',
+      deviceIds: [],
+      lastActiveAt: null,
+      createdAt: 1,
+      updatedAt: 1,
+    );
+    const blank = Person(
+      personId: 'person-bbbbbbbb',
+      name: '',
+      pronoun: 'they',
+      deviceIds: [],
+      lastActiveAt: null,
+      createdAt: 1,
+      updatedAt: 1,
+    );
+    final copy = <String>[
+      NamesCopy.title,
+      NamesCopy.subtitle,
+      NamesCopy.thisPhone,
+      NamesCopy.noNameYet,
+      NamesCopy.imThisOne,
+      NamesCopy.yourName,
+      NamesCopy.theirName,
+      NamesCopy.save,
+      NamesCopy.cancel,
+      NamesCopy.swappedLink,
+      NamesCopy.swapTitle,
+      NamesCopy.swapAction,
+      NamesCopy.swapped,
+      NamesCopy.swapFailed,
+      NamesCopy.claimFailed,
+      NamesCopy.tooMany,
+      NamesCopy.sealed,
+      ...NamesCopy.pronounLabels.values,
+      NamesCopy.editLabel(me),
+      NamesCopy.claimTitle(me),
+      NamesCopy.claimBody(blank),
+      NamesCopy.claimConfirm(me),
+      NamesCopy.swapBody(me, blank, 'Sun, Oct 4, 5:10 PM'),
+    ];
+    final technical = RegExp(
+      r'\b(sync\w*|devices?|pair\w*|servers?|upload\w*|download\w*|data|peers?|relay\w*|mailbox\w*|encrypt\w*|keys?)\b',
+      caseSensitive: false,
+    );
+    for (final line in copy) {
+      expect(skyCalmText(line), line, reason: line);
+      expect(technical.hasMatch(line), isFalse, reason: line);
+    }
   });
 
   testWidgets('add another phone and their phones open from the two of us', (tester) async {

@@ -6,7 +6,6 @@ import 'package:provider/provider.dart';
 import 'package:our_space_mobile/core/engine.dart';
 import 'package:our_space_mobile/presentation/home_shell.dart';
 import 'package:our_space_mobile/presentation/screens/people/people_setup.dart';
-import 'package:our_space_mobile/presentation/screens/people/who_is_who.dart';
 import 'package:our_space_mobile/presentation/screens/people/widgets/couple_orbs.dart';
 import 'package:our_space_mobile/presentation/screens/people/widgets/person_choice.dart';
 import 'package:our_space_mobile/presentation/sky/sky.dart';
@@ -174,8 +173,6 @@ void main() {
     });
 
     test('the copy stays warm: no emoji and no technical words', () {
-      final me = person('p-1', 'Sam', pronoun: 'she');
-      final blank = person('p-2', '');
       final copy = <String>[
         PeopleSetupCopy.claimEyebrow,
         PeopleSetupCopy.claimTitle,
@@ -195,28 +192,6 @@ void main() {
         PeopleSetupCopy.dismiss,
         PeopleSetupCopy.failed,
         PeopleSetupCopy.together('25 September'),
-        WhoIsWhoCopy.title,
-        WhoIsWhoCopy.sheetLabel,
-        WhoIsWhoCopy.sheetBody,
-        WhoIsWhoCopy.thisPhone,
-        WhoIsWhoCopy.noNameYet,
-        WhoIsWhoCopy.imThisOne,
-        WhoIsWhoCopy.yourName,
-        WhoIsWhoCopy.theirName,
-        WhoIsWhoCopy.save,
-        WhoIsWhoCopy.cancel,
-        WhoIsWhoCopy.swappedLink,
-        WhoIsWhoCopy.swapTitle,
-        WhoIsWhoCopy.swapAction,
-        WhoIsWhoCopy.swapped,
-        WhoIsWhoCopy.swapFailed,
-        WhoIsWhoCopy.tooMany,
-        WhoIsWhoCopy.sealed,
-        WhoIsWhoCopy.editLabel(me),
-        WhoIsWhoCopy.claimTitle(me),
-        WhoIsWhoCopy.claimBody(blank),
-        WhoIsWhoCopy.claimConfirm(me),
-        WhoIsWhoCopy.swapBody(me, blank, 'Sun, Oct 4, 5:10 PM'),
       ];
       final technical = RegExp(
         r'\b(sync\w*|devices?|pair\w*|servers?|upload\w*|download\w*|data|peers?|relay\w*|mailbox\w*|encrypt\w*|keys?)\b',
@@ -492,33 +467,5 @@ void main() {
     expect(start, greaterThan(middle));
     expect(middle, greaterThan(end));
     expect(tester.getBottomLeft(find.byType(SkySheet)).dy, tester.view.physicalSize.height / tester.view.devicePixelRatio);
-  });
-
-  testWidgets('the who-is-who sheet opens from anywhere with the names inside', (tester) async {
-    final space = await real(tester, openPeopleSpace);
-    await real(tester, () => space.vault.create(passphrase: passphrase, iterations: fastIterations));
-    await real(tester, () => space.identity.createCouple(myName: 'Qalbi', partnerName: 'Farhu'));
-    await settleIdentity(tester, space);
-    await tester.pumpWidget(MaterialApp(
-      builder: (context, navigator) =>
-          ChangeNotifierProvider<IdentityController>.value(value: space.identity, child: navigator!),
-      home: Builder(
-        builder: (context) => Scaffold(
-          body: Center(
-            child: TextButton(onPressed: () => showWhoIsWhoSheet(context), child: const Text('open')),
-          ),
-        ),
-      ),
-    ));
-    await tester.tap(find.text('open'));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 600));
-    expect(find.byType(SkySheet), findsOneWidget);
-    expect(find.text(WhoIsWhoCopy.title), findsOneWidget);
-    expect(find.text('THE TWO OF US'), findsOneWidget);
-    expect(find.text('WHO IS WHO'), findsNothing);
-    expect(find.text('Qalbi'), findsOneWidget);
-    expect(find.text('Farhu'), findsOneWidget);
-    expect(find.byType(SkyCard), findsNothing);
   });
 }
