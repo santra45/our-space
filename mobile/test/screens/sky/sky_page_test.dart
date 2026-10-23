@@ -6,6 +6,7 @@ import 'package:our_space_mobile/presentation/app_shell.dart';
 import 'package:our_space_mobile/presentation/home_shell.dart';
 import 'package:our_space_mobile/presentation/screens/daily/daily_copy.dart';
 import 'package:our_space_mobile/presentation/screens/daily/daily_question_card.dart';
+import 'package:our_space_mobile/presentation/screens/letters/letter_shelf.dart';
 import 'package:our_space_mobile/presentation/screens/letters/letters_page.dart';
 import 'package:our_space_mobile/presentation/screens/settings/settings_page.dart';
 import 'package:our_space_mobile/presentation/screens/sky/sky_copy.dart';
@@ -320,6 +321,27 @@ void main() {
     await drive(tester, () => space.letters.markOpened(row!['id'] as String));
     await untilGone(tester, find.byKey(SkyPageKeys.letterTip));
     await until(tester, () => statLabel(tester, SkyPageKeys.lettersStat) == 'No letters waiting to open');
+    expect(homeScene(tester).shootingStar, isNull);
+    await settle(tester, space);
+  });
+
+  testWidgets('a letter written on this phone does not fall from her own sky', (tester) async {
+    calm(tester);
+    final space = await coupleSpace(tester);
+    final settings = space.store.settings;
+    final mine = await drive(tester, () => space.letters.writeLetter(title: 'For you', content: 'Hello you'));
+    await drive(tester, () => LettersWrittenHere.remember(settings, mine!['id'] as String));
+    await pumpNight(tester, space);
+    await waitForCard(tester);
+    expect(find.byKey(SkyPageKeys.letterTip), findsNothing);
+    expect(homeScene(tester).shootingStar, isNull);
+    expect(statLabel(tester, SkyPageKeys.lettersStat), 'No letters waiting to open');
+
+    final another = await drive(tester, () => space.letters.writeLetter(title: 'Again', content: 'Still you'));
+    await untilFound(tester, find.byKey(SkyPageKeys.letterTip));
+    await drive(tester, () => LettersWrittenHere.remember(settings, another!['id'] as String));
+    await untilGone(tester, find.byKey(SkyPageKeys.letterTip));
+    expect(statLabel(tester, SkyPageKeys.lettersStat), 'No letters waiting to open');
     expect(homeScene(tester).shootingStar, isNull);
     await settle(tester, space);
   });

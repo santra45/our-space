@@ -69,6 +69,10 @@ class LetterShelf {
 abstract final class LettersWrittenHere {
   static const String settingsKey = 'lettersWrittenHere';
 
+  static final Expando<ValueNotifier<int>> _changes = Expando<ValueNotifier<int>>('LettersWrittenHere');
+
+  static Listenable changes(LocalSettings settings) => _changes[settings] ??= ValueNotifier<int>(0);
+
   static Set<String> read(LocalSettings settings) {
     final raw = settings.getItem(settingsKey);
     if (raw == null || raw.isEmpty) return <String>{};
@@ -82,6 +86,8 @@ abstract final class LettersWrittenHere {
   static Future<Set<String>> remember(LocalSettings settings, String id) async {
     final ids = read(settings)..add(id);
     await settings.setItem(settingsKey, jsonEncode(ids.toList()));
+    final changes = _changes[settings];
+    if (changes != null) changes.value++;
     return ids;
   }
 }

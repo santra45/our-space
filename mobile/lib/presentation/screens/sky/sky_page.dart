@@ -56,7 +56,8 @@ class _OurSkyPageState extends State<OurSkyPage> with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
-    _letters = SkyLettersWatch(context.space.letters);
+    final space = context.space;
+    _letters = SkyLettersWatch(space.letters, settings: space.store.settings);
     WidgetsBinding.instance.addObserver(this);
   }
 
