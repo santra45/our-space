@@ -137,10 +137,12 @@ List<String> engineMessages() => [
 
 void main() {
   test('every lock screen line is warm, plain English and free of emoji', () {
+    final sampleNames = RegExp(r'(qalbi|farhu)', caseSensitive: false);
     for (final line in lockStrings()) {
       expect(line.trim(), isNotEmpty);
       expect(technical.hasMatch(line), isFalse, reason: line);
       expect(emoji.hasMatch(line), isFalse, reason: line);
+      expect(sampleNames.hasMatch(line), isFalse, reason: line);
     }
   });
 

@@ -55,7 +55,7 @@ abstract final class LockCopy {
       'and you will both see the same things.';
   static const String freshAction = 'Join your partner’s space instead';
   static const String namesLabel = 'What should we call you two?';
-  static const String namesHint = 'e.g. Qalbi & Farhu';
+  static const String namesHint = 'e.g. Jo & Max';
   static const String startLabel = 'When did your story begin?';
   static const String sharedPassphraseLabel = 'Your shared passphrase';
   static const String setupHint = 'Make up a shared passphrase';
