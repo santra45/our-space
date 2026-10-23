@@ -153,6 +153,7 @@ class _DockSlot extends StatelessWidget {
             : AnimatedSize(
                 duration: SkyMotion.base,
                 curve: SkyMotion.standard,
+                clipBehavior: Clip.none,
                 child: AnimatedSwitcher(
                   duration: SkyMotion.quick,
                   switchInCurve: SkyMotion.standard,

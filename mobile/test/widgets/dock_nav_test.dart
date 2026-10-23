@@ -173,6 +173,9 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 60));
     expect(find.byType(AnimatedSize), findsWidgets);
+    for (final size in tester.widgetList<AnimatedSize>(find.byType(AnimatedSize))) {
+      expect(size.clipBehavior, Clip.none);
+    }
     await tester.pumpAndSettle();
     expect(selected, [3]);
     expect(tester.takeException(), isNull);
