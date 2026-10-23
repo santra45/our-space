@@ -7,6 +7,26 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:our_space_mobile/presentation/sky/sky.dart';
 
+class _LineCounter implements Canvas {
+  int lines = 0;
+
+  @override
+  void drawLine(Offset p1, Offset p2, Paint paint) => lines++;
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => null;
+}
+
+int heartLines(HeartConstellation heart) {
+  final canvas = _LineCounter();
+  SkyLivePainter(
+    scene: SkyScene(heart: heart, twinkle: false, stars: 0, dayStars: 0),
+    tokens: SkyTokens.night,
+    time: SkyTime(),
+  ).paint(canvas, const Size(390, 484));
+  return canvas.lines;
+}
+
 Widget skyHost(
   Widget child, {
   SkyTokens tokens = SkyTokens.night,
@@ -159,6 +179,15 @@ void main() {
       expect(bounds.top, 416);
       expect(bounds.bottom, 600);
     });
+  });
+
+  test('only the home heart draws the dotted guides and the plus into the empty star', () {
+    const home = HeartConstellation();
+    final quiet = home.copyWith(gapGuide: false);
+    final lit = home.copyWith(complete: true);
+    expect(heartLines(quiet), heartLines(lit) - 2);
+    expect(heartLines(home), greaterThan(heartLines(quiet) + 2));
+    expect(heartLines(lit), heartLines(lit.copyWith(gapGuide: false)));
   });
 
   group('sky canvas', () {

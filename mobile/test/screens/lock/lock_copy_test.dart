@@ -170,6 +170,7 @@ void main() {
     expect(heart.dim, LockMetrics.heartDim);
     expect(heart.presence, isFalse);
     expect(heart.gap, isNotNull);
+    expect(heart.gapGuide, isFalse);
     final scene = metrics.scene;
     expect(scene.moon, const Offset(312, 92));
     expect(scene.skyline, closeTo(844 - 58, 0.01));

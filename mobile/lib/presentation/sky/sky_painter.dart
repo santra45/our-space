@@ -434,7 +434,7 @@ class SkyLivePainter extends CustomPainter {
     for (var i = 0; i < n; i++) {
       final p = pts[i];
       if (heart.hasOpenGap && i == gap) {
-        _paintGap(canvas, p);
+        _paintGap(canvas, p, plus: heart.gapGuide);
         continue;
       }
       if (heart.unlit.contains(i)) {
@@ -477,7 +477,7 @@ class SkyLivePainter extends CustomPainter {
     if (layer) canvas.restore();
   }
 
-  void _paintGap(Canvas canvas, Offset p) {
+  void _paintGap(Canvas canvas, Offset p, {required bool plus}) {
     final night = tokens.isNight;
     final breathe = time.still ? 1.0 : 0.85 + 0.3 * _wave(0, 2.4);
     canvas.drawCircle(p, 12 * breathe, Paint()..color = tokens.star.withValues(alpha: night ? 0.08 : 0.25));
@@ -493,11 +493,12 @@ class SkyLivePainter extends CustomPainter {
         d += 4.6;
       }
     }
-    final plus = Paint()
+    if (!plus) return;
+    final cross = Paint()
       ..color = tokens.gapStroke.withValues(alpha: 0.7)
       ..strokeWidth = 1;
-    canvas.drawLine(p - const Offset(0, 3.5), p + const Offset(0, 3.5), plus);
-    canvas.drawLine(p - const Offset(3.5, 0), p + const Offset(3.5, 0), plus);
+    canvas.drawLine(p - const Offset(0, 3.5), p + const Offset(0, 3.5), cross);
+    canvas.drawLine(p - const Offset(3.5, 0), p + const Offset(3.5, 0), cross);
   }
 
   void _paintPresence(Canvas canvas, Offset p) {

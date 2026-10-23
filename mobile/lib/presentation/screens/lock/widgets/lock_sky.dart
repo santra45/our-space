@@ -47,7 +47,13 @@ class LockMetrics {
     final height = 29 * scale * k;
     final heartTop = top + math.max(0.0, room - height) * heartLift;
     final centerY = (heartTop + 12 * scale * k) / k;
-    return HeartConstellation(center: Offset(designWidth / 2, centerY), scale: scale, dim: heartDim, presence: false);
+    return HeartConstellation(
+      center: Offset(designWidth / 2, centerY),
+      scale: scale,
+      dim: heartDim,
+      presence: false,
+      gapGuide: false,
+    );
   }
 
   SkyScene get scene => sceneWithHeart(1);
