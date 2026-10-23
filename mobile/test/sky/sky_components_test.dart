@@ -456,6 +456,38 @@ void main() {
       expect(find.text('row 2'), findsOneWidget);
       expect(find.text('FALLEN FROM THE SKY'), findsOneWidget);
     });
+
+    testWidgets('scroll scaffold lifts a focused field above the keyboard', (tester) async {
+      usePhoneSize(tester, bottom: 16);
+      addTearDown(tester.view.resetViewInsets);
+      const keyboard = 320.0;
+      final field = GlobalKey();
+      late double inset;
+      await tester.pumpWidget(
+        skyApp(
+          Builder(
+            builder: (context) {
+              inset = SkyScrollScaffold.bottomInsetOf(context);
+              return SkyScrollScaffold(
+                topBar: const SkyTopBar(title: 'Add another phone'),
+                children: [
+                  for (var i = 0; i < 6; i++) SizedBox(height: 90, child: Text('row $i')),
+                  TextField(key: field, autofocus: true),
+                ],
+              );
+            },
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final screen = tester.view.physicalSize.height / tester.view.devicePixelRatio;
+      expect(tester.getRect(find.byKey(field)).bottom, greaterThan(screen - keyboard));
+
+      tester.view.viewInsets = const FakeViewPadding(bottom: keyboard * 3);
+      await tester.pumpAndSettle();
+      expect(tester.getRect(find.byKey(field)).bottom, lessThanOrEqualTo(screen - keyboard));
+      expect(inset, SkySpace.lg);
+    });
   });
 
   group('overlays', () {

@@ -94,7 +94,8 @@ class SkyScrollScaffold extends StatelessWidget {
 
   static double bottomInsetOf(BuildContext context) {
     final media = MediaQuery.of(context);
-    return math.max(media.padding.bottom + SkySpace.xl, media.viewInsets.bottom + SkySpace.lg);
+    if (media.viewInsets.bottom > 0) return SkySpace.lg;
+    return math.max(media.padding.bottom + SkySpace.xl, SkySpace.lg);
   }
 
   @override
@@ -108,47 +109,50 @@ class SkyScrollScaffold extends StatelessWidget {
     return SkyScaffold(
       showSky: false,
       overlays: overlays,
-      body: LayoutBuilder(
-        builder: (context, constraints) {
-          final bottom = bottomInsetOf(context);
-          return SingleChildScrollView(
-            controller: controller,
-            physics: physics,
-            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-            child: ConstrainedBox(
-              constraints: BoxConstraints(minHeight: constraints.maxHeight),
-              child: Stack(
-                children: [
-                  Positioned(
-                    top: 0,
-                    left: 0,
-                    right: 0,
-                    height: skyHeight,
-                    child: SkyBackdrop(scene: scene, fade: fadeSky, anchors: anchors),
-                  ),
-                  Padding(
-                    padding: EdgeInsets.only(bottom: bottom),
-                    child: Center(
-                      child: ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: SkySizes.maxContentWidth),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            if (topBar != null) stagger ? SkyEntrance(child: topBar!) : topBar!,
-                            Padding(
-                              padding: padding,
-                              child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: items),
-                            ),
-                          ],
+      body: Padding(
+        padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final bottom = bottomInsetOf(context);
+            return SingleChildScrollView(
+              controller: controller,
+              physics: physics,
+              keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+              child: ConstrainedBox(
+                constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                child: Stack(
+                  children: [
+                    Positioned(
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      height: skyHeight,
+                      child: SkyBackdrop(scene: scene, fade: fadeSky, anchors: anchors),
+                    ),
+                    Padding(
+                      padding: EdgeInsets.only(bottom: bottom),
+                      child: Center(
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: SkySizes.maxContentWidth),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              if (topBar != null) stagger ? SkyEntrance(child: topBar!) : topBar!,
+                              Padding(
+                                padding: padding,
+                                child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: items),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
-          );
-        },
+            );
+          },
+        ),
       ),
     );
   }
