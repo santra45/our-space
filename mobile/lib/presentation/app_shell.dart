@@ -418,7 +418,7 @@ class ShellNotices extends StatelessWidget {
                       key: ValueKey<String>('shell-error-$error'),
                       offset: const Offset(0, -10),
                       child: SkyNotice(
-                        text: error,
+                        text: skyCalmText(error),
                         tone: SkyNoticeTone.error,
                         elevated: true,
                         actionLabel: onOpenSettings == null ? null : ShellCopy.openSettings,

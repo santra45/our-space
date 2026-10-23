@@ -4,6 +4,7 @@ import 'package:our_space_mobile/core/engine.dart';
 import 'package:our_space_mobile/presentation/screens/settings/widgets/sheet_parts.dart';
 import 'package:our_space_mobile/presentation/screens/sync/add_phone_page.dart';
 import 'package:our_space_mobile/presentation/screens/sync/invite_qr.dart';
+import 'package:our_space_mobile/presentation/screens/sync/notice_copy.dart';
 import 'package:our_space_mobile/presentation/screens/sync/peer_link.dart';
 import 'package:our_space_mobile/presentation/screens/sync/qr_scanner.dart';
 import 'package:our_space_mobile/presentation/screens/sync/together_now.dart';
@@ -145,7 +146,7 @@ void main() {
     await openAddPhonePage(tester, space);
     await type(tester, fieldWithHint(AddPhoneCopy.pasteHint), 'love-abcdefgh');
     await press(tester, find.text(AddPhoneCopy.connect));
-    await untilFound(tester, find.text('We could not reach love-abcdefgh. Check they have Our Space open, then try again.'));
+    await untilFound(tester, find.text(NoticeCopy.cannotReach(space.identity.partnerName)));
 
     expect(space.peer.partnerId, 'love-abcdefgh');
     expect(find.text(TogetherNowCopy.tryAgain), findsOneWidget);

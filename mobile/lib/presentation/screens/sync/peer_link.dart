@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 
 import '../../../core/engine.dart';
+import 'notice_copy.dart';
 
 enum PeerRoute { direct, relayed }
 
@@ -88,7 +89,12 @@ class HubPeerLink extends PeerLink {
           : hub.isRelayed
               ? PeerRoute.relayed
               : null,
-      error: error == null ? null : PeerLinkError(text: error.text, code: error.code),
+      error: error == null
+          ? null
+          : PeerLinkError(
+              text: NoticeCopy.warmError(code: error.code, text: error.text, partner: hub.identity.partnerName),
+              code: error.code,
+            ),
       lastConnectedAt: hub.lastConnectedAt,
       pendingInvite: hub.pendingInvite,
     );

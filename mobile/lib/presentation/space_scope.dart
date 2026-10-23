@@ -4,6 +4,7 @@ import 'package:flutter/widgets.dart';
 import 'package:provider/provider.dart';
 
 import '../core/engine.dart';
+import 'screens/sync/notice_copy.dart';
 import 'screens/sync/peer_link.dart';
 import 'sky/sky.dart';
 
@@ -41,14 +42,16 @@ class AppNotices extends ChangeNotifier {
 
   void _onNotice(SyncNotice notice) {
     if (!vault.isUnlocked) return;
+    final text = NoticeCopy.warm(notice.text, partner: sync.identity.partnerName);
+    if (text.isEmpty) return;
     if (notice.kind == SyncNoticeKind.warning) {
       _warningTimer?.cancel();
-      _syncWarning = notice.text;
+      _syncWarning = text;
       _warningTimer = Timer(warningTtl, clearSyncWarning);
       notifyListeners();
       return;
     }
-    toast.show(notice.text);
+    toast.show(text);
   }
 
   void _onBursts(int total) {
