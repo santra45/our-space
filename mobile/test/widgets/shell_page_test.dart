@@ -198,4 +198,52 @@ void main() {
       findsOneWidget,
     );
   });
+
+  testWidgets('a tab you leave keeps its place for when you come back', (tester) async {
+    usePhoneSize(tester);
+    await pumpHost(tester, SkyShell(pageBuilder: _fakePage), scaffold: false);
+    double offset() => tester.state<ScrollableState>(find.byType(Scrollable).first).position.pixels;
+    Finder pageOf(SkyTab tab) => find.descendant(
+          of: find.byKey(ValueKey<SkyTab>(tab), skipOffstage: false),
+          matching: find.byType(ListView, skipOffstage: false),
+          skipOffstage: false,
+        );
+
+    await tester.drag(find.byType(ListView), const Offset(0, -600));
+    await tester.pumpAndSettle();
+    final scrolled = offset();
+    expect(scrolled, greaterThan(0));
+
+    await tester.tap(inDock('Letters'));
+    await tester.pumpAndSettle();
+    expect(find.text('page:letters'), findsOneWidget);
+    expect(offset(), 0);
+    expect(TickerMode.of(tester.element(pageOf(SkyTab.sky))), isFalse);
+    expect(TickerMode.of(tester.element(pageOf(SkyTab.letters))), isTrue);
+
+    await tester.tap(inDock('Sky'));
+    await tester.pumpAndSettle();
+    expect(offset(), scrolled);
+    expect(TickerMode.of(tester.element(pageOf(SkyTab.sky))), isTrue);
+  });
+
+  testWidgets('the other tabs get ready quietly a moment after the sky opens', (tester) async {
+    usePhoneSize(tester);
+    SkyShell.warmTabs = true;
+    addTearDown(() => SkyShell.warmTabs = false);
+    await pumpHost(tester, SkyShell(pageBuilder: _fakePage), scaffold: false);
+    expect(find.text('page:letters', skipOffstage: false), findsNothing);
+
+    await tester.pump(SkyMotion.tabWarmDelay);
+    expect(find.text('page:letters', skipOffstage: false), findsOneWidget);
+    expect(find.text('page:memories', skipOffstage: false), findsNothing);
+
+    await tester.pump(SkyMotion.tabWarmStep);
+    await tester.pump(SkyMotion.tabWarmStep);
+    for (final id in ['letters', 'memories', 'us']) {
+      expect(find.text('page:$id', skipOffstage: false), findsOneWidget);
+      expect(find.text('page:$id'), findsNothing);
+    }
+    expect(find.text('page:sky'), findsOneWidget);
+  });
 }

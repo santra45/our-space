@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import 'screens/letters/letters_page.dart';
@@ -168,6 +169,7 @@ class SkyShellScope extends InheritedWidget {
   const SkyShellScope({
     super.key,
     required this.tab,
+    required this.activeTab,
     required this.selectTab,
     required this.openSettings,
     required this.openLove,
@@ -179,6 +181,7 @@ class SkyShellScope extends InheritedWidget {
   });
 
   final SkyTab tab;
+  final ValueListenable<SkyTab> activeTab;
   final ValueChanged<SkyTab> selectTab;
   final VoidCallback openSettings;
   final VoidCallback openLove;
@@ -189,6 +192,9 @@ class SkyShellScope extends InheritedWidget {
 
   static SkyShellScope? maybeOf(BuildContext context) => context.dependOnInheritedWidgetOfExactType<SkyShellScope>();
 
+  static ValueListenable<SkyTab>? activeTabOf(BuildContext context) =>
+      context.getInheritedWidgetOfExactType<SkyShellScope>()?.activeTab;
+
   static SkyShellScope of(BuildContext context) {
     final scope = maybeOf(context);
     assert(scope != null, 'No SkyShellScope above this context.');
@@ -197,7 +203,7 @@ class SkyShellScope extends InheritedWidget {
 
   @override
   bool updateShouldNotify(SkyShellScope oldWidget) =>
-      oldWidget.tab != tab ||
+      oldWidget.activeTab != activeTab ||
       oldWidget.presence != presence ||
       oldWidget.myName != myName ||
       oldWidget.partnerName != partnerName ||
@@ -263,21 +269,68 @@ class SkyShell extends StatefulWidget {
 
   static const List<SkyTab> tabs = SkyTab.values;
 
+  static bool warmTabs = true;
+
   @override
   State<SkyShell> createState() => SkyShellState();
 }
 
-class SkyShellState extends State<SkyShell> {
+class SkyShellState extends State<SkyShell> with SingleTickerProviderStateMixin {
   late SkyTab _tab = widget.initialTab;
+  SkyTab? _leaving;
+  late final Set<SkyTab> _visited = {widget.initialTab};
+  late final ValueNotifier<SkyTab> _active = ValueNotifier<SkyTab>(widget.initialTab);
+  late final AnimationController _swap = AnimationController(vsync: this, duration: SkyMotion.tabSwap, value: 1)
+    ..addStatusListener(_onSwap);
+  late final Animation<double> _fadeIn = CurvedAnimation(parent: _swap, curve: SkyMotion.standard);
+  late final Animation<double> _fadeOut = ReverseAnimation(_fadeIn);
+  Timer? _warm;
   SkyToastController? _ownToast;
 
   SkyTab get tab => _tab;
 
   SkyToastController get _toast => widget.toastController ?? (_ownToast ??= SkyToastController());
 
+  @override
+  void initState() {
+    super.initState();
+    if (!SkyShell.warmTabs) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) => _warmLater(SkyMotion.tabWarmDelay));
+  }
+
+  void _warmLater(Duration delay) {
+    _warm?.cancel();
+    _warm = Timer(delay, () {
+      if (!mounted) return;
+      for (final next in SkyShell.tabs) {
+        if (_visited.contains(next)) continue;
+        setState(() => _visited.add(next));
+        _warmLater(SkyMotion.tabWarmStep);
+        return;
+      }
+    });
+  }
+
+  void _onSwap(AnimationStatus status) {
+    if (status == AnimationStatus.completed && _leaving != null && mounted) {
+      setState(() => _leaving = null);
+    }
+  }
+
   void selectTab(SkyTab tab) {
     if (tab == _tab) return;
-    setState(() => _tab = tab);
+    final motion = skyMotionAllowed(context);
+    setState(() {
+      _leaving = motion ? _tab : null;
+      _tab = tab;
+      _visited.add(tab);
+    });
+    _active.value = tab;
+    if (motion) {
+      _swap.forward(from: 0);
+    } else {
+      _swap.value = 1;
+    }
     widget.onTabChanged?.call(tab);
   }
 
@@ -306,15 +359,28 @@ class SkyShellState extends State<SkyShell> {
 
   @override
   void dispose() {
+    _warm?.cancel();
+    _swap.dispose();
+    _active.dispose();
     _ownToast?.dispose();
     super.dispose();
   }
 
-  Widget _page(BuildContext context) {
+  Widget _pages(BuildContext context) {
     final builder = widget.pageBuilder ?? skyTabPage;
-    return KeyedSubtree(
-      key: ValueKey<SkyTab>(_tab),
-      child: Builder(builder: (context) => builder(context, _tab)),
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        for (final tab in SkyShell.tabs)
+          if (_visited.contains(tab))
+            _TabLayer(
+              key: ValueKey<SkyTab>(tab),
+              live: tab == _tab,
+              shown: tab == _tab || tab == _leaving,
+              opacity: tab == _tab ? _fadeIn : _fadeOut,
+              child: Builder(builder: (context) => builder(context, tab)),
+            ),
+      ],
     );
   }
 
@@ -333,6 +399,7 @@ class SkyShellState extends State<SkyShell> {
             controller: _toast,
             child: SkyShellScope(
               tab: _tab,
+              activeTab: _active,
               selectTab: selectTab,
               openSettings: _openSettings,
               openLove: _openLove,
@@ -345,7 +412,7 @@ class SkyShellState extends State<SkyShell> {
                 children: [
                   MediaQuery(
                     data: media.copyWith(padding: media.padding.copyWith(bottom: clearance)),
-                    child: SkyFadeThroughSwitcher(child: _page(context)),
+                    child: _pages(context),
                   ),
                   Positioned(
                     left: SkySizes.dockSide,
@@ -379,6 +446,35 @@ class SkyShellState extends State<SkyShell> {
                   ...widget.overlays,
                 ],
               ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _TabLayer extends StatelessWidget {
+  const _TabLayer({super.key, required this.live, required this.shown, required this.opacity, required this.child});
+
+  final bool live;
+  final bool shown;
+  final Animation<double> opacity;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Offstage(
+      offstage: !shown,
+      child: TickerMode(
+        enabled: live,
+        child: IgnorePointer(
+          ignoring: !live,
+          child: ExcludeSemantics(
+            excluding: !live,
+            child: FadeTransition(
+              opacity: opacity,
+              child: RepaintBoundary(child: child),
             ),
           ),
         ),
