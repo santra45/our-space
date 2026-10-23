@@ -10,6 +10,7 @@ import 'screens/settings/settings_page.dart';
 import 'screens/sky/sky_page.dart';
 import 'screens/us/us_page.dart';
 import 'sky/sky.dart';
+import 'widgets/confetti_burst.dart';
 
 enum SkyTab { sky, letters, memories, us }
 
@@ -271,6 +272,8 @@ class SkyShell extends StatefulWidget {
 
   static bool warmTabs = true;
 
+  static const List<SkyTab> warmOrder = [SkyTab.letters, SkyTab.us, SkyTab.memories];
+
   @override
   State<SkyShell> createState() => SkyShellState();
 }
@@ -285,6 +288,7 @@ class SkyShellState extends State<SkyShell> with SingleTickerProviderStateMixin 
   late final Animation<double> _fadeIn = CurvedAnimation(parent: _swap, curve: SkyMotion.standard);
   late final Animation<double> _fadeOut = ReverseAnimation(_fadeIn);
   Timer? _warm;
+  bool _calm = true;
   SkyToastController? _ownToast;
 
   SkyTab get tab => _tab;
@@ -298,11 +302,23 @@ class SkyShellState extends State<SkyShell> with SingleTickerProviderStateMixin 
     WidgetsBinding.instance.addPostFrameCallback((_) => _warmLater(SkyMotion.tabWarmDelay));
   }
 
+  bool get _busy => _swap.isAnimating || ConfettiBurst.activeController != null;
+
   void _warmLater(Duration delay) {
     _warm?.cancel();
     _warm = Timer(delay, () {
       if (!mounted) return;
-      for (final next in SkyShell.tabs) {
+      if (_busy) {
+        _calm = false;
+        _warmLater(SkyMotion.tabWarmRetry);
+        return;
+      }
+      if (!_calm) {
+        _calm = true;
+        _warmLater(SkyMotion.tabWarmRetry);
+        return;
+      }
+      for (final next in SkyShell.warmOrder) {
         if (_visited.contains(next)) continue;
         setState(() => _visited.add(next));
         _warmLater(SkyMotion.tabWarmStep);

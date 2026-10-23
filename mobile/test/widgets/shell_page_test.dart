@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:our_space_mobile/presentation/app_shell.dart';
 import 'package:our_space_mobile/presentation/sky/sky.dart';
 import 'package:our_space_mobile/presentation/widgets/app_haptics.dart';
+import 'package:our_space_mobile/presentation/widgets/confetti_burst.dart';
 
 import 'harness.dart';
 
@@ -218,13 +219,13 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('page:letters'), findsOneWidget);
     expect(offset(), 0);
-    expect(TickerMode.of(tester.element(pageOf(SkyTab.sky))), isFalse);
-    expect(TickerMode.of(tester.element(pageOf(SkyTab.letters))), isTrue);
+    expect(TickerMode.valuesOf(tester.element(pageOf(SkyTab.sky))).enabled, isFalse);
+    expect(TickerMode.valuesOf(tester.element(pageOf(SkyTab.letters))).enabled, isTrue);
 
     await tester.tap(inDock('Sky'));
     await tester.pumpAndSettle();
     expect(offset(), scrolled);
-    expect(TickerMode.of(tester.element(pageOf(SkyTab.sky))), isTrue);
+    expect(TickerMode.valuesOf(tester.element(pageOf(SkyTab.sky))).enabled, isTrue);
   });
 
   testWidgets('the other tabs get ready quietly a moment after the sky opens', (tester) async {
@@ -245,5 +246,35 @@ void main() {
       expect(find.text('page:$id'), findsNothing);
     }
     expect(find.text('page:sky'), findsOneWidget);
+  });
+
+  testWidgets('the tabs wait for the confetti to finish before getting ready', (tester) async {
+    usePhoneSize(tester);
+    SkyShell.warmTabs = true;
+    addTearDown(() => SkyShell.warmTabs = false);
+    await pumpHost(tester, SkyShell(pageBuilder: _fakePage), animations: true, scaffold: false);
+    fireCelebrationBurst(tester.element(find.text('page:sky')));
+    await tester.pump();
+    expect(ConfettiBurst.activeController, isNotNull);
+
+    await tester.pump(SkyMotion.tabWarmDelay);
+    expect(find.text('page:letters', skipOffstage: false), findsNothing);
+
+    for (var i = 0; i < 200 && ConfettiBurst.activeController != null; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    expect(ConfettiBurst.activeController, isNull);
+    expect(find.text('page:letters', skipOffstage: false), findsNothing);
+
+    await tester.pump(SkyMotion.tabWarmRetry);
+    await tester.pump(SkyMotion.tabWarmRetry);
+    expect(find.text('page:letters', skipOffstage: false), findsOneWidget);
+    expect(find.text('page:memories', skipOffstage: false), findsNothing);
+
+    await tester.pump(SkyMotion.tabWarmStep);
+    expect(find.text('page:us', skipOffstage: false), findsOneWidget);
+    expect(find.text('page:memories', skipOffstage: false), findsNothing);
+    await tester.pump(SkyMotion.tabWarmStep);
+    expect(find.text('page:memories', skipOffstage: false), findsOneWidget);
   });
 }
