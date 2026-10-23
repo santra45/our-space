@@ -437,6 +437,41 @@ void main() {
       expect(find.text('drag me'), findsNothing);
     });
 
+    testWidgets('a sheet that may not close springs back when dragged and can be dragged again', (tester) async {
+      usePhoneSize(tester);
+      await tester.pumpWidget(
+        skyApp(
+          _Launcher(
+            (context) => showSkySheet<void>(
+              context: context,
+              builder: (_) => const PopScope(canPop: false, child: SizedBox(height: 300, child: Text('stay'))),
+            ),
+          ),
+          animations: true,
+        ),
+      );
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+      double top() => tester.getTopLeft(find.byType(SkySheet)).dy;
+      final rest = top();
+
+      await tester.fling(find.text('stay'), const Offset(0, 400), 1500);
+      await tester.pumpAndSettle();
+      expect(find.text('stay'), findsOneWidget);
+      expect(top(), moreOrLessEquals(rest, epsilon: 0.5));
+
+      final gesture = await tester.startGesture(tester.getCenter(find.text('stay')));
+      for (var i = 0; i < 6; i++) {
+        await gesture.moveBy(const Offset(0, 15));
+        await tester.pump(const Duration(milliseconds: 16));
+      }
+      expect(top(), greaterThan(rest + 30));
+      await gesture.up();
+      await tester.pumpAndSettle();
+      expect(find.text('stay'), findsOneWidget);
+      expect(top(), moreOrLessEquals(rest, epsilon: 0.5));
+    });
+
     testWidgets('confirm resolves yes and not now', (tester) async {
       final answers = <bool>[];
       await tester.pumpWidget(

@@ -208,7 +208,7 @@ class _SheetDrag extends StatefulWidget {
   const _SheetDrag({required this.enabled, required this.onDismiss, required this.child});
 
   final bool enabled;
-  final VoidCallback onDismiss;
+  final Future<bool> Function() onDismiss;
   final Widget child;
 
   @override
@@ -224,15 +224,23 @@ class _SheetDragState extends State<_SheetDrag> with SingleTickerProviderStateMi
     _offset.value = math.max(0, _offset.value + details.delta.dy);
   }
 
-  void _end(DragEndDetails details) {
+  Future<void> _end(DragEndDetails details) async {
     if (_leaving) return;
     final height = context.size?.height ?? 400;
     final velocity = details.velocity.pixelsPerSecond.dy;
     if (velocity > 700 || _offset.value > height * 0.3) {
+      final route = ModalRoute.of(context);
       _leaving = true;
-      widget.onDismiss();
+      await widget.onDismiss();
+      if (!mounted || route == null || !route.isCurrent) return;
+      _leaving = false;
+      _springBack(0);
       return;
     }
+    _springBack(velocity);
+  }
+
+  void _springBack(double velocity) {
     _offset.animateWith(SpringSimulation(SkyMotion.sheetSpring, _offset.value, 0, velocity));
   }
 
@@ -247,7 +255,7 @@ class _SheetDragState extends State<_SheetDrag> with SingleTickerProviderStateMi
     if (!widget.enabled) return widget.child;
     return GestureDetector(
       onVerticalDragUpdate: _update,
-      onVerticalDragEnd: _end,
+      onVerticalDragEnd: (details) => unawaited(_end(details)),
       child: AnimatedBuilder(
         animation: _offset,
         builder: (context, child) => Transform.translate(offset: Offset(0, _offset.value), child: child),
