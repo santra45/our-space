@@ -5,12 +5,11 @@ import 'package:provider/provider.dart';
 
 import '../core/engine.dart';
 import 'screens/sync/peer_link.dart';
-import 'theme/app_motion.dart';
-import 'widgets/our_feedback.dart';
+import 'sky/sky.dart';
 
 class AppNotices extends ChangeNotifier {
   AppNotices({required this.vault, required this.sync, this.warningTtl = const Duration(milliseconds: 7000)})
-      : toast = OurToastController(ttl: AppMotion.toast) {
+      : toast = SkyToastController() {
     _notices = sync.notices.listen(_onNotice);
     _bursts = sync.loveBurstArrivals.listen(_onBursts);
     _wasUnlocked = vault.isUnlocked;
@@ -20,7 +19,7 @@ class AppNotices extends ChangeNotifier {
   final VaultService vault;
   final SyncService sync;
   final Duration warningTtl;
-  final OurToastController toast;
+  final SkyToastController toast;
 
   late final StreamSubscription<SyncNotice> _notices;
   late final StreamSubscription<int> _bursts;

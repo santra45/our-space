@@ -4,7 +4,6 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/physics.dart';
 
-import '../widgets/our_feedback.dart';
 import 'sky_controls.dart';
 import 'sky_icons.dart';
 import 'sky_metrics.dart';
@@ -479,10 +478,50 @@ class SkyToastPill extends StatelessWidget {
   }
 }
 
+class SkyToastController extends ChangeNotifier {
+  SkyToastController({this.ttl = SkyMotion.toast});
+
+  final Duration ttl;
+  String? _message;
+  Timer? _timer;
+
+  String? get message => _message;
+
+  void show(String message) {
+    _timer?.cancel();
+    _message = message;
+    notifyListeners();
+    _timer = Timer(ttl, clear);
+  }
+
+  void clear() {
+    _timer?.cancel();
+    _timer = null;
+    if (_message == null) return;
+    _message = null;
+    notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+}
+
+class SkyToastScope extends InheritedNotifier<SkyToastController> {
+  const SkyToastScope({super.key, required SkyToastController controller, required super.child})
+    : super(notifier: controller);
+
+  static SkyToastController? maybeOf(BuildContext context) {
+    return context.getInheritedWidgetOfExactType<SkyToastScope>()?.notifier;
+  }
+}
+
 class SkyToastHost extends StatelessWidget {
   const SkyToastHost({super.key, required this.controller});
 
-  final OurToastController controller;
+  final SkyToastController controller;
 
   @override
   Widget build(BuildContext context) {
@@ -521,7 +560,7 @@ class SkyToastHost extends StatelessWidget {
 
 abstract final class SkyToast {
   static void show(BuildContext context, String message) {
-    final scoped = OurToastScope.maybeOf(context);
+    final scoped = SkyToastScope.maybeOf(context);
     if (scoped != null) {
       scoped.show(message);
       return;
@@ -547,7 +586,7 @@ abstract final class SkyToast {
       ),
     );
     overlay.insert(entry);
-    Timer(const Duration(milliseconds: 4000), () {
+    Timer(SkyMotion.toast, () {
       if (entry.mounted) entry.remove();
       entry.dispose();
     });

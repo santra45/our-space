@@ -12,7 +12,6 @@ import 'presentation/space_scope.dart';
 import 'presentation/sky/sky.dart';
 import 'presentation/theme/app_theme.dart';
 import 'presentation/vault_gate.dart';
-import 'presentation/widgets/our_feedback.dart';
 
 typedef VaultGateBuilder = Widget Function(BuildContext context, Widget shell);
 
@@ -30,7 +29,16 @@ void configureAppChrome() {
   SystemChrome.setPreferredOrientations(const [DeviceOrientation.portraitUp]);
   LicenseRegistry.addLicense(bundledLicenses);
   if (!kDebugMode) {
-    ErrorWidget.builder = (details) => const Material(type: MaterialType.transparency, child: OurErrorCard());
+    ErrorWidget.builder = (details) => const Material(
+      type: MaterialType.transparency,
+      child: Center(
+        child: SkyErrorState(
+          title: 'Something went a bit wrong',
+          message:
+              'This part of Our Space did not open properly. Nothing has been lost, and your memories are still safe on this phone.',
+        ),
+      ),
+    );
   }
 }
 

@@ -9,7 +9,6 @@ import 'screens/settings/settings_page.dart';
 import 'screens/sky/sky_page.dart';
 import 'screens/us/us_page.dart';
 import 'sky/sky.dart';
-import 'widgets/our_feedback.dart';
 
 enum SkyTab { sky, letters, memories, us }
 
@@ -255,7 +254,7 @@ class SkyShell extends StatefulWidget {
   final VoidCallback? onOpenSettings;
   final VoidCallback? onOpenLove;
   final VoidCallback? onLock;
-  final OurToastController? toastController;
+  final SkyToastController? toastController;
   final PartnerPresence presence;
   final ShellStatus status;
   final String? myName;
@@ -270,11 +269,11 @@ class SkyShell extends StatefulWidget {
 
 class SkyShellState extends State<SkyShell> {
   late SkyTab _tab = widget.initialTab;
-  OurToastController? _ownToast;
+  SkyToastController? _ownToast;
 
   SkyTab get tab => _tab;
 
-  OurToastController get _toast => widget.toastController ?? (_ownToast ??= OurToastController());
+  SkyToastController get _toast => widget.toastController ?? (_ownToast ??= SkyToastController());
 
   void selectTab(SkyTab tab) {
     if (tab == _tab) return;
@@ -330,7 +329,7 @@ class SkyShellState extends State<SkyShell> {
         value: tokens.statusBar,
         child: Material(
           color: tokens.page,
-          child: OurToastScope(
+          child: SkyToastScope(
             controller: _toast,
             child: SkyShellScope(
               tab: _tab,
@@ -392,7 +391,7 @@ class ShellNotices extends StatelessWidget {
   const ShellNotices({super.key, required this.status, required this.toast, this.onOpenSettings});
 
   final ShellStatus status;
-  final OurToastController toast;
+  final SkyToastController toast;
   final VoidCallback? onOpenSettings;
 
   @override

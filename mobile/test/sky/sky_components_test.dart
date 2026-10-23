@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:our_space_mobile/presentation/sky/sky.dart';
 import 'package:our_space_mobile/presentation/widgets/app_haptics.dart';
-import 'package:our_space_mobile/presentation/widgets/our_feedback.dart';
 
 import '../widgets/harness.dart' show recordHaptics, recordedHaptics, usePhoneSize;
 
@@ -469,7 +468,7 @@ void main() {
     });
 
     testWidgets('the toast host shows calm text and clears on tap', (tester) async {
-      final controller = OurToastController();
+      final controller = SkyToastController();
       addTearDown(controller.dispose);
       await tester.pumpWidget(skyApp(SizedBox(width: 340, child: SkyToastHost(controller: controller))));
       controller.show('Love burst sent to Alex! 💕');
@@ -482,11 +481,11 @@ void main() {
     });
 
     testWidgets('SkyToast uses the scoped controller when there is one', (tester) async {
-      final controller = OurToastController();
+      final controller = SkyToastController();
       addTearDown(controller.dispose);
       await tester.pumpWidget(
         skyApp(
-          OurToastScope(
+          SkyToastScope(
             controller: controller,
             child: Builder(
               builder: (context) =>

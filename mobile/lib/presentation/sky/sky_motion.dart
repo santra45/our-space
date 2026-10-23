@@ -19,6 +19,7 @@ abstract final class SkyMotion {
   static const Duration dayNight = Duration(milliseconds: 700);
   static const Duration twinkle = Duration(milliseconds: 3200);
   static const Duration presence = Duration(milliseconds: 2200);
+  static const Duration toast = Duration(milliseconds: 4000);
   static const Duration staggerStep = Duration(milliseconds: 45);
   static const int staggerCap = 8;
 
