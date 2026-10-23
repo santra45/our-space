@@ -312,6 +312,21 @@ void main() {
     await drain(tester);
   });
 
+  testWidgets('a long press on the newest letter gives feedback and offers its options', (tester) async {
+    calm(tester);
+    final space = await real(tester, openReadySpace);
+    await real(tester, () => space.letters.writeLetter(title: 'Newest', content: 'Hello you'));
+    await openLetters(tester, space);
+    await untilFound(tester, find.byKey(LettersKeys.feature));
+
+    recordedHaptics.clear();
+    await tester.longPress(find.text('Newest'));
+    await settleRoutes(tester);
+    expect(recordedHaptics, contains(HapticKind.tap));
+    expect(find.text(LettersCopy.readIt), findsOneWidget);
+    await drain(tester);
+  });
+
   testWidgets('deletes letters after asking, from the list and from an open letter', (tester) async {
     calm(tester);
     final space = await real(tester, openReadySpace);

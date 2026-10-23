@@ -25,9 +25,10 @@ class LetterFeatureCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final t = context.sky;
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
+    return SkyPressable(
       onLongPress: onLongPress,
+      pressedScale: 0.98,
+      button: false,
       child: SkyFeatureCard(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
