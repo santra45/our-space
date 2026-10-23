@@ -2,10 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../../core/engine.dart';
-import '../../widgets/our_widgets.dart';
+import '../../sky/sky.dart';
+import '../../widgets/app_haptics.dart';
+import 'widgets/people_sheet.dart';
+import 'widgets/pronoun_picker.dart';
 
 abstract final class WhoIsWhoCopy {
   static const String title = 'Who is who';
+  static const String sheetLabel = 'The two of us';
+  static const String sheetBody = 'Your names, and which one of you this phone belongs to.';
   static const String thisPhone = 'this phone';
   static const String noNameYet = 'No name yet';
   static const String imThisOne = 'I\'m this one';
@@ -16,12 +21,11 @@ abstract final class WhoIsWhoCopy {
   static const String swappedLink = 'Names or answers look swapped?';
   static const String swapTitle = 'Swap us back?';
   static const String swapAction = 'Swap us back';
-  static const String swapped = 'Swapped back. Your answers are where they belong again 💕';
+  static const String swapped = 'Swapped back. Your answers are where they belong again.';
   static const String swapFailed = 'That did not work, and nothing was changed. Try again in a moment.';
   static const String tooMany =
       'More than two people are in here, which should not happen. Pick yourself and tell the other phone to do the same.';
-  static const String sealed =
-      'Names are sealed in your vault like everything else, and only ever appear on your two phones.';
+  static const String sealed = 'Your names stay sealed like everything else, and only ever appear on your two phones.';
 
   static const Map<String, String> pronounLabels = {
     'she': 'she / her',
@@ -42,7 +46,7 @@ abstract final class WhoIsWhoCopy {
 
   static String swapBody(Person me, Person partner, String? since) {
     final moved = since == null ? '' : ' Answers written since $since move with them.';
-    return '${_or(me.name, 'You')} and ${_or(partner.name, 'your partner')} trade places, along with which phone is whose.$moved Do this on one phone only. The other one follows by itself the next time it syncs.';
+    return '${_or(me.name, 'You')} and ${_or(partner.name, 'your partner')} trade places, along with which phone is whose.$moved Do this on one phone only. The other one follows by itself the next time the two of you catch up.';
   }
 
   static String _or(String value, String fallback) => value.isEmpty ? fallback : value;
@@ -54,8 +58,33 @@ String formatSwapMoment(BuildContext context, int ms) {
   return '${localizations.formatMediumDate(date)}, ${localizations.formatTimeOfDay(TimeOfDay.fromDateTime(date))}';
 }
 
+Future<void> showWhoIsWhoSheet(BuildContext context) {
+  return showSkySheet<void>(
+    context: context,
+    builder: (sheetContext) => const SingleChildScrollView(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          PeopleSheetHeader(
+            label: WhoIsWhoCopy.sheetLabel,
+            icon: SkyIcons.us,
+            tone: SkyTone.rose,
+            title: WhoIsWhoCopy.title,
+            body: WhoIsWhoCopy.sheetBody,
+          ),
+          SizedBox(height: SkySpace.lg),
+          WhoIsWho(framed: false),
+        ],
+      ),
+    ),
+  );
+}
+
 class WhoIsWho extends StatefulWidget {
-  const WhoIsWho({super.key});
+  const WhoIsWho({super.key, this.framed = true});
+
+  final bool framed;
 
   @override
   State<WhoIsWho> createState() => _WhoIsWhoState();
@@ -68,6 +97,7 @@ class _WhoIsWhoState extends State<WhoIsWho> {
   String? _confirmClaim;
   bool _swapOpen = false;
   String _swapNote = '';
+  bool _swapWorked = false;
 
   @override
   void dispose() {
@@ -109,30 +139,34 @@ class _WhoIsWhoState extends State<WhoIsWho> {
       AppHaptics.celebration();
       setState(() {
         _swapOpen = false;
+        _swapWorked = true;
         _swapNote = WhoIsWhoCopy.swapped;
       });
     } else {
-      setState(() => _swapNote = WhoIsWhoCopy.swapFailed);
+      setState(() {
+        _swapWorked = false;
+        _swapNote = WhoIsWhoCopy.swapFailed;
+      });
     }
   }
 
   Widget _editRow(Person person, bool isMe, IdentityController identity) {
+    final t = context.sky;
     final canSave = !identity.busy && _name.text.trim().isNotEmpty;
-    return CssBox(
+    return Container(
       key: ValueKey('edit-${person.personId}'),
-      padding: const EdgeInsets.all(10),
-      color: AppColors.white,
-      border: Border.all(color: AppColors.lavender200),
-      borderRadius: AppRadii.all(AppRadii.x2l),
+      padding: const EdgeInsets.all(SkySpace.md),
+      decoration: BoxDecoration(
+        color: t.surface2,
+        borderRadius: SkyRadii.all(SkyRadii.tile),
+        border: Border.all(color: t.roseBorder),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
         children: [
-          OurTextField(
+          SkyTextField(
             controller: _name,
-            style: OurFieldStyle.soft.copyWith(
-              radius: AppRadii.xl,
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            ),
             hint: isMe ? WhoIsWhoCopy.yourName : WhoIsWhoCopy.theirName,
             maxLength: maxNameLength,
             autofocus: true,
@@ -141,35 +175,32 @@ class _WhoIsWhoState extends State<WhoIsWho> {
             onSubmitted: (_) {
               if (canSave) _commit(identity);
             },
-            semanticLabel: isMe ? WhoIsWhoCopy.yourName : WhoIsWhoCopy.theirName,
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: SkySpace.sm + 2),
+          PronounPicker(dense: true, value: _pronoun, onChanged: (value) => setState(() => _pronoun = value)),
+          const SizedBox(height: SkySpace.md),
           Row(
             children: [
-              for (var i = 0; i < pronouns.length; i++) ...[
-                if (i > 0) const SizedBox(width: 6),
-                Expanded(child: _pronounChip(pronouns[i])),
-              ],
-            ],
-          ),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              _Action(
-                label: WhoIsWhoCopy.save,
-                icon: AppIcons.check,
-                color: AppColors.emerald700,
-                enabled: canSave,
-                onTap: () => _commit(identity),
+              Expanded(
+                child: SkyButton(
+                  label: WhoIsWhoCopy.save,
+                  icon: SkyIcons.check,
+                  variant: SkyButtonVariant.gold,
+                  height: 40,
+                  onPressed: canSave ? () => _commit(identity) : null,
+                ),
               ),
-              const SizedBox(width: 12),
-              _Action(
-                label: WhoIsWhoCopy.cancel,
-                color: AppColors.slate400,
-                onTap: () {
-                  AppHaptics.tap();
-                  setState(() => _editing = null);
-                },
+              const SizedBox(width: SkySpace.sm + 2),
+              Expanded(
+                child: SkyButton(
+                  label: WhoIsWhoCopy.cancel,
+                  variant: SkyButtonVariant.ghost,
+                  height: 40,
+                  onPressed: () {
+                    AppHaptics.tap();
+                    setState(() => _editing = null);
+                  },
+                ),
               ),
             ],
           ),
@@ -178,76 +209,57 @@ class _WhoIsWhoState extends State<WhoIsWho> {
     );
   }
 
-  Widget _pronounChip(String pronoun) {
-    final selected = _pronoun == pronoun;
-    return Semantics(
-      button: true,
-      selected: selected,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: () => setState(() => _pronoun = pronoun),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 150),
-          padding: const EdgeInsets.symmetric(vertical: 4),
-          decoration: BoxDecoration(
-            color: selected ? AppColors.lavender500 : AppColors.lavender50,
-            borderRadius: AppRadii.all(AppRadii.lg),
-          ),
-          child: Text(
-            WhoIsWhoCopy.pronounLabel(pronoun),
-            textAlign: TextAlign.center,
-            style: Tw.px10.bold.c(selected ? AppColors.white : AppColors.lavender600),
-          ),
-        ),
-      ),
-    );
-  }
-
   Widget _row(Person person, bool isMe, IdentityController identity) {
     if (_editing == person.personId) return _editRow(person, isMe, identity);
-    return CssBox(
+    final t = context.sky;
+    return Container(
       key: ValueKey('row-${person.personId}'),
-      padding: const EdgeInsets.all(10),
-      color: AppColors.white,
-      border: Border.all(color: AppColors.slate200.withValues(alpha: 0.7)),
-      borderRadius: AppRadii.all(AppRadii.x2l),
+      padding: const EdgeInsets.fromLTRB(SkySpace.md, 10, 10, 10),
+      decoration: BoxDecoration(
+        color: t.surface2,
+        borderRadius: SkyRadii.all(SkyRadii.tile),
+        border: Border.all(color: t.hairline),
+      ),
       child: Row(
         children: [
+          SkyAvatar(
+            initial: SkyAvatar.initialOf(person.name, fallback: ''),
+            style: isMe ? SkyAvatarStyle.me : SkyAvatarStyle.partner,
+            size: 36,
+          ),
+          const SizedBox(width: SkySpace.md),
           Expanded(
-            child: Row(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
               children: [
-                LucideIcon(AppIcons.userRound, size: 14, color: isMe ? AppColors.blush400 : AppColors.lavender400),
-                const SizedBox(width: 8),
-                Flexible(
-                  child: Text(
-                    person.name.isEmpty ? WhoIsWhoCopy.noNameYet : person.name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: Tw.xs.bold.c(AppColors.slate700),
-                  ),
+                Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        person.name.isEmpty ? WhoIsWhoCopy.noNameYet : person.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: SkyType.bodyStrong.copyWith(color: person.name.isEmpty ? t.muted : t.text),
+                      ),
+                    ),
+                    if (isMe) ...[
+                      const SizedBox(width: SkySpace.sm),
+                      const SkyChip(label: WhoIsWhoCopy.thisPhone, tone: SkyChipTone.rose, dense: true),
+                    ],
+                  ],
                 ),
-                if (isMe) ...[
-                  const SizedBox(width: 8),
-                  CssBox(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    color: AppColors.blush50,
-                    border: Border.all(color: AppColors.blush100),
-                    borderRadius: AppRadii.all(AppRadii.full),
-                    child: Text(WhoIsWhoCopy.thisPhone, style: Tw.px9.bold.c(AppColors.blush600)),
-                  ),
-                ],
-                const SizedBox(width: 8),
-                Text(WhoIsWhoCopy.pronounLabel(person.pronoun), style: Tw.px10.c(AppColors.slate400)),
+                const SizedBox(height: 2),
+                Text(WhoIsWhoCopy.pronounLabel(person.pronoun), style: SkyType.small.copyWith(color: t.muted)),
               ],
             ),
           ),
-          const SizedBox(width: 8),
           if (!isMe) ...[
-            _Action(
+            const SizedBox(width: SkySpace.sm),
+            PeopleTextLink(
               label: WhoIsWhoCopy.imThisOne,
-              color: AppColors.lavender600,
-              small: true,
-              underline: true,
+              color: t.rose,
+              size: 12,
               enabled: !identity.busy,
               onTap: () {
                 AppHaptics.tap();
@@ -257,24 +269,83 @@ class _WhoIsWhoState extends State<WhoIsWho> {
                 });
               },
             ),
-            const SizedBox(width: 8),
           ],
-          Semantics(
-            button: true,
-            label: WhoIsWhoCopy.editLabel(person),
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: () => _startEdit(person),
-              child: CssBox(
-                width: 24,
-                height: 24,
-                color: AppColors.slate100,
-                borderRadius: AppRadii.all(AppRadii.full),
-                child: const Center(child: LucideIcon(AppIcons.pencil, size: 12, color: AppColors.slate500)),
-              ),
-            ),
+          const SizedBox(width: SkySpace.sm),
+          SkyIconButton(
+            icon: SkyIcons.pen,
+            semanticLabel: WhoIsWhoCopy.editLabel(person),
+            tone: SkyIconButtonTone.ghost,
+            size: 32,
+            iconSize: 15,
+            iconColor: t.muted,
+            onPressed: () => _startEdit(person),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _panel({
+    required Key key,
+    required SkyTone tone,
+    required SkyIcons icon,
+    required String title,
+    required String body,
+    required Widget confirm,
+    required VoidCallback onCancel,
+  }) {
+    final t = context.sky;
+    final accent = tone.foreground(t);
+    return SkyEntrance(
+      key: key,
+      offset: const Offset(0, 8),
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: Color.alphaBlend(tone.background(t), t.surface),
+          borderRadius: SkyRadii.all(SkyRadii.tile),
+          border: Border.all(color: accent.withValues(alpha: 0.35)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.only(top: 1),
+                  child: SkyIcon(icon, size: 17, color: accent),
+                ),
+                const SizedBox(width: SkySpace.sm + 2),
+                Expanded(
+                  child: Semantics(
+                    header: true,
+                    child: Text(title, style: SkyType.bodyStrong.copyWith(color: t.text)),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Text(body, style: SkyType.bodySmall.copyWith(color: t.muted, height: 1.45)),
+            const SizedBox(height: SkySpace.md),
+            Row(
+              children: [
+                Expanded(flex: 3, child: confirm),
+                const SizedBox(width: SkySpace.sm + 2),
+                Expanded(
+                  flex: 2,
+                  child: SkyButton(
+                    label: WhoIsWhoCopy.cancel,
+                    variant: SkyButtonVariant.ghost,
+                    height: 40,
+                    onPressed: onCancel,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -284,194 +355,130 @@ class _WhoIsWhoState extends State<WhoIsWho> {
     final identity = context.watch<IdentityController>();
     final me = identity.me;
     if (identity.status != IdentityStatus.ready || me == null) return const SizedBox.shrink();
+    final t = context.sky;
     final partner = identity.partner;
     final people = identity.everyone;
     final pair = partner != null && people.length == 2;
     final traded = tradedPlacesAt(people);
 
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 16),
-      child: CssBox(
-        padding: const EdgeInsets.all(14),
-        color: AppColors.slate50,
-        border: Border.all(color: AppColors.slate200.withValues(alpha: 0.7)),
-        borderRadius: AppRadii.all(AppRadii.x2l),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
+    final children = <Widget>[
+      if (widget.framed) ...[
+        const SkyLabel(WhoIsWhoCopy.title, icon: SkyIcons.us),
+        const SizedBox(height: SkySpace.md),
+      ],
+      _row(me, true, identity),
+      if (partner != null) ...[
+        const SizedBox(height: SkySpace.sm),
+        _row(partner, false, identity),
+      ],
+      if (partner != null && _confirmClaim == partner.personId) ...[
+        const SizedBox(height: SkySpace.sm + 2),
+        _panel(
+          key: ValueKey('claim-${partner.personId}'),
+          tone: SkyTone.gold,
+          icon: SkyIcons.phone,
+          title: WhoIsWhoCopy.claimTitle(partner),
+          body: WhoIsWhoCopy.claimBody(me),
+          confirm: SkyButton(
+            label: WhoIsWhoCopy.claimConfirm(partner),
+            variant: SkyButtonVariant.gold,
+            height: 40,
+            onPressed: identity.busy ? null : () => _claim(identity),
+          ),
+          onCancel: () {
+            AppHaptics.tap();
+            setState(() => _confirmClaim = null);
+          },
+        ),
+      ],
+      if (pair && !_swapOpen) ...[
+        const SizedBox(height: SkySpace.xs),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: PeopleTextLink(
+            label: WhoIsWhoCopy.swappedLink,
+            size: 12,
+            underline: true,
+            align: TextAlign.start,
+            onTap: () {
+              AppHaptics.tap();
+              setState(() {
+                _confirmClaim = null;
+                _swapNote = '';
+                _swapOpen = true;
+              });
+            },
+          ),
+        ),
+      ],
+      if (pair && _swapOpen) ...[
+        const SizedBox(height: SkySpace.sm + 2),
+        _panel(
+          key: const ValueKey('swap-panel'),
+          tone: SkyTone.lavender,
+          icon: SkyIcons.refresh,
+          title: WhoIsWhoCopy.swapTitle,
+          body: WhoIsWhoCopy.swapBody(me, partner, traded == null ? null : formatSwapMoment(context, traded)),
+          confirm: SkyButton(
+            label: WhoIsWhoCopy.swapAction,
+            variant: SkyButtonVariant.gold,
+            height: 40,
+            onPressed: identity.busy ? null : () => _swap(identity),
+          ),
+          onCancel: () {
+            AppHaptics.tap();
+            setState(() => _swapOpen = false);
+          },
+        ),
+      ],
+      if (_swapNote.isNotEmpty) ...[
+        const SizedBox(height: SkySpace.sm),
+        SkyEntrance(
+          key: ValueKey('note-$_swapNote'),
+          offset: const Offset(0, 8),
+          child: SkyNotice(
+            text: _swapNote,
+            tone: _swapWorked ? SkyNoticeTone.love : SkyNoticeTone.error,
+          ),
+        ),
+      ],
+      const SizedBox(height: SkySpace.md),
+      if (people.length > 2)
+        const SkyNotice(text: WhoIsWhoCopy.tooMany, tone: SkyNoticeTone.warning)
+      else
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              WhoIsWhoCopy.title.toUpperCase(),
-              style: Tw.px11.semibold.trackingWider.c(AppColors.slate500),
+            Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: SkyIcon(SkyIcons.lock, size: 12, color: t.faint),
             ),
-            const SizedBox(height: 8),
-            _row(me, true, identity),
-            if (partner != null) ...[
-              const SizedBox(height: 8),
-              _row(partner, false, identity),
-            ],
-            if (partner != null && _confirmClaim == partner.personId) ...[
-              const SizedBox(height: 8),
-              CssBox(
-                padding: const EdgeInsets.all(12),
-                color: AppColors.amber50,
-                border: Border.all(color: AppColors.amber200),
-                borderRadius: AppRadii.all(AppRadii.x2l),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(WhoIsWhoCopy.claimTitle(partner), style: Tw.px11.bold.relaxed.c(AppColors.amber900)),
-                    const SizedBox(height: 4),
-                    Text(WhoIsWhoCopy.claimBody(me), style: Tw.px11.relaxed.c(AppColors.amber900)),
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        Flexible(
-                          child: _Action(
-                            label: WhoIsWhoCopy.claimConfirm(partner),
-                            color: AppColors.amber800,
-                            underline: true,
-                            enabled: !identity.busy,
-                            onTap: () => _claim(identity),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        _Action(
-                          label: WhoIsWhoCopy.cancel,
-                          color: AppColors.slate400,
-                          onTap: () {
-                            AppHaptics.tap();
-                            setState(() => _confirmClaim = null);
-                          },
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ],
-            if (pair && !_swapOpen) ...[
-              const SizedBox(height: 8),
-              Align(
-                alignment: Alignment.centerLeft,
-                child: _Action(
-                  label: WhoIsWhoCopy.swappedLink,
-                  color: AppColors.slate400,
-                  small: true,
-                  underline: true,
-                  onTap: () {
-                    AppHaptics.tap();
-                    setState(() {
-                      _confirmClaim = null;
-                      _swapNote = '';
-                      _swapOpen = true;
-                    });
-                  },
-                ),
-              ),
-            ],
-            if (pair && _swapOpen) ...[
-              const SizedBox(height: 8),
-              CssBox(
-                padding: const EdgeInsets.all(12),
-                color: AppColors.lavender50,
-                border: Border.all(color: AppColors.lavender200),
-                borderRadius: AppRadii.all(AppRadii.x2l),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(WhoIsWhoCopy.swapTitle, style: Tw.px11.bold.relaxed.c(AppColors.lavender700)),
-                    const SizedBox(height: 4),
-                    Text(
-                      WhoIsWhoCopy.swapBody(me, partner, traded == null ? null : formatSwapMoment(context, traded)),
-                      style: Tw.px11.relaxed.c(AppColors.slate700),
-                    ),
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        _Action(
-                          label: WhoIsWhoCopy.swapAction,
-                          color: AppColors.lavender700,
-                          underline: true,
-                          enabled: !identity.busy,
-                          onTap: () => _swap(identity),
-                        ),
-                        const SizedBox(width: 12),
-                        _Action(
-                          label: WhoIsWhoCopy.cancel,
-                          color: AppColors.slate400,
-                          onTap: () {
-                            AppHaptics.tap();
-                            setState(() => _swapOpen = false);
-                          },
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ],
-            if (_swapNote.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              Semantics(
-                liveRegion: true,
-                child: Text(_swapNote, style: Tw.px11.semibold.c(AppColors.slate600)),
-              ),
-            ],
-            const SizedBox(height: 8),
-            Text(
-              people.length > 2 ? WhoIsWhoCopy.tooMany : WhoIsWhoCopy.sealed,
-              style: Tw.px10.relaxed.c(AppColors.slate400),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(WhoIsWhoCopy.sealed, style: SkyType.caption.copyWith(color: t.faint, height: 1.45)),
             ),
           ],
         ),
-      ),
+    ];
+
+    Widget body = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: children,
     );
-  }
-}
-
-class _Action extends StatelessWidget {
-  const _Action({
-    required this.label,
-    required this.color,
-    required this.onTap,
-    this.icon,
-    this.small = false,
-    this.underline = false,
-    this.enabled = true,
-  });
-
-  final String label;
-  final Color color;
-  final VoidCallback onTap;
-  final LucideIconData? icon;
-  final bool small;
-  final bool underline;
-  final bool enabled;
-
-  @override
-  Widget build(BuildContext context) {
-    var style = (small ? Tw.px10 : Tw.px11).bold.c(color);
-    if (underline) style = style.underline.copyWith(decorationColor: color);
-    final text = Text(label, style: style);
-    return Semantics(
-      button: true,
-      enabled: enabled,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: enabled ? onTap : null,
-        child: Opacity(
-          opacity: enabled ? 1 : 0.4,
-          child: icon == null
-              ? text
-              : Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    LucideIcon(icon!, size: 12, color: color),
-                    const SizedBox(width: 4),
-                    Flexible(child: text),
-                  ],
-                ),
-        ),
+    if (skyMotionAllowed(context)) {
+      body = AnimatedSize(
+        duration: SkyMotion.base,
+        curve: SkyMotion.standard,
+        alignment: Alignment.topCenter,
+        child: body,
+      );
+    }
+    if (!widget.framed) return SkyTheme(child: body);
+    return SkyTheme(
+      child: Padding(
+        padding: const EdgeInsets.only(bottom: SkySpace.lg),
+        child: SkyCard(padding: const EdgeInsets.all(14), child: body),
       ),
     );
   }
