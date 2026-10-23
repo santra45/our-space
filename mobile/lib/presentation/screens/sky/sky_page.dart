@@ -40,7 +40,6 @@ class OurSkyPage extends StatefulWidget {
   static const double sheetTop = 444;
   static const double sheetTopMin = 404;
   static const Offset letterTipAt = Offset(140, 152);
-  static const Rect letterTipArea = Rect.fromLTWH(140, 152, 166, 28);
 
   @override
   State<OurSkyPage> createState() => _OurSkyPageState();
@@ -152,6 +151,9 @@ class _OurSkyPageState extends State<OurSkyPage> with WidgetsBindingObserver {
     final aside = SkyHeartPlan.tonightAside(stars: stars, litToday: litToday);
     final showTonight = _daily.visible && !litToday;
     final tonightAt = aside ? SkyHeartPlan.asideStar : (heart.gap == null ? null : heart.pointAt(heart.gap!));
+    final scaler = MediaQuery.textScalerOf(context);
+    final k = SkyPageFrame.scaleOf(MediaQuery.sizeOf(context).width);
+    final letterTip = SkyTip.measure(SkyHomeCopy.letterFell, textScaler: scaler) / k;
     final avoid = [
       ...SkyHeartPlan.labelAreas(
         heart,
@@ -159,10 +161,11 @@ class _OurSkyPageState extends State<OurSkyPage> with WidgetsBindingObserver {
         partner: partner != null,
         partnerChip: presence.label != null,
       ),
-      if (waiting > 0) OurSkyPage.letterTipArea,
+      if (waiting > 0) OurSkyPage.letterTipAt & letterTip,
     ];
     final tipTitle = SkyHomeCopy.tonightStar(night);
     final tipSubtitle = _daily.answered ? SkyHomeCopy.almostLit : SkyHomeCopy.answerToLight;
+    final tipSize = SkyTip.measureTwo(tipTitle, tipSubtitle, textScaler: scaler) / k;
     final placement = tonightAt == null
         ? null
         : (aside
@@ -171,7 +174,7 @@ class _OurSkyPageState extends State<OurSkyPage> with WidgetsBindingObserver {
                   tonightAt,
                   heart: heart,
                   avoid: avoid,
-                  size: SkyHeartPlan.tipSizeFor(tipTitle, tipSubtitle),
+                  size: tipSize,
                 ));
 
     final anchors = <SkyAnchor>[

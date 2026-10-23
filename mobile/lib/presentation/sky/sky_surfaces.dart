@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import 'sky_controls.dart';
@@ -303,6 +305,37 @@ class SkyTip extends StatelessWidget {
   final VoidCallback? onTap;
   final Alignment tapAlignment;
 
+  static const double maxWidth = 180;
+  static final TextStyle titleStyle = SkyType.sans(11, weight: FontWeight.w700, height: 1.3);
+  static final TextStyle subtitleStyle = SkyType.sans(10.5, weight: FontWeight.w700, height: 1.3);
+
+  static Size _text(String text, TextStyle style, TextScaler scaler, double room) {
+    final painter = TextPainter(
+      text: TextSpan(text: text, style: style),
+      textDirection: TextDirection.ltr,
+      textScaler: scaler,
+    )..layout(maxWidth: math.max(0, room));
+    final size = painter.size;
+    painter.dispose();
+    return size;
+  }
+
+  static Size measure(String text, {required TextScaler textScaler, bool icon = true}) {
+    final lead = icon ? 11 + 6.0 : 0.0;
+    final label = _text(text, SkyType.tip, textScaler, maxWidth - 24 - lead);
+    return Size(24 + lead + label.width, 14 + math.max(label.height, icon ? 11.0 : 0.0));
+  }
+
+  static Size measureTwo(String title, String subtitle, {required TextScaler textScaler, bool icon = true}) {
+    final lead = icon ? 10 + 5.0 : 0.0;
+    final head = _text(title, titleStyle, textScaler, maxWidth - 24 - lead);
+    final tail = _text(subtitle, subtitleStyle, textScaler, maxWidth - 24);
+    return Size(
+      24 + math.max(lead + head.width, tail.width),
+      16 + math.max(head.height, icon ? 10.0 : 0.0) + 1 + tail.height,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final t = context.sky;
@@ -321,7 +354,7 @@ class SkyTip extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             if (icon != null) ...[SkyIcon(icon!, size: 11, color: t.tipText), const SizedBox(width: 6)],
-            Text(text, style: SkyType.tip.copyWith(color: t.tipText)),
+            Flexible(child: Text(text, style: SkyType.tip.copyWith(color: t.tipText))),
           ],
         ),
       );
@@ -345,17 +378,11 @@ class SkyTip extends StatelessWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     if (icon != null) ...[SkyIcon(icon!, size: 10, color: t.tipText), const SizedBox(width: 5)],
-                    Text(
-                      title!,
-                      style: SkyType.sans(11, weight: FontWeight.w700, height: 1.3).copyWith(color: t.tipText),
-                    ),
+                    Flexible(child: Text(title!, style: titleStyle.copyWith(color: t.tipText))),
                   ],
                 ),
                 const SizedBox(height: 1),
-                Text(
-                  subtitle!,
-                  style: SkyType.sans(10.5, weight: FontWeight.w700, height: 1.3).copyWith(color: t.rose),
-                ),
+                Text(subtitle!, style: subtitleStyle.copyWith(color: t.rose)),
               ],
             ),
           ),
@@ -382,6 +409,7 @@ class SkyTip extends StatelessWidget {
       );
     }
     final label = title == null ? text : '$title, $subtitle';
+    body = ConstrainedBox(constraints: const BoxConstraints(maxWidth: maxWidth), child: body);
     if (onTap == null) return Semantics(label: label, excludeSemantics: true, child: body);
     return SkyPressable(
       onTap: onTap,

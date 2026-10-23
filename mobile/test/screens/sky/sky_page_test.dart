@@ -115,7 +115,7 @@ void main() {
       expect(SkyHeartPlan.reveal(stars: 31).gap, SkyHeartPlan.order[1]);
     });
 
-    test('the tooltip sits beside the gap like the design and avoids names and lit stars', () {
+    testWidgets('the tooltip sits beside the gap like the design and avoids names and lit stars', (tester) async {
       final design = SkyHeartPlan.home(stars: 28, litToday: false, presence: true);
       final gap = design.pointAt(design.gap!);
       expect(SkyHeartPlan.tipFor(gap, heart: design), SkyHeartPlan.right);
@@ -125,7 +125,7 @@ void main() {
         final heart = SkyHeartPlan.home(stars: stars, litToday: false, presence: true);
         final at = heart.pointAt(heart.gap!);
         final labels = SkyHeartPlan.labelAreas(heart, me: true, partner: true, partnerChip: true);
-        final size = SkyHeartPlan.tipSizeFor("Tonight's star", SkyHomeCopy.answerToLight);
+        final size = SkyTip.measureTwo("Tonight's star", SkyHomeCopy.answerToLight, textScaler: TextScaler.noScaling);
         final placement = SkyHeartPlan.tipFor(at, heart: heart, avoid: labels, size: size);
         final rect = SkyHeartPlan.tipRect(at, placement, size);
         expect(rect.left, greaterThanOrEqualTo(0), reason: '$stars');
@@ -296,6 +296,26 @@ void main() {
     expect(find.byKey(DailyKeys.sheet), findsOneWidget);
     await press(tester, iconButton(DailyCopy.close));
     await settleRoute(tester);
+    await settle(tester, space);
+  });
+
+  testWidgets("with bigger text on a small phone tonight's tip still fits inside the sky", (tester) async {
+    calm(tester);
+    tester.view.physicalSize = const Size(1080, 2340);
+    tester.platformDispatcher.textScaleFactorTestValue = 1.3;
+    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+    final space = await coupleSpace(tester);
+    await bothAnswered(tester, space, 2);
+    await pumpNight(tester, space);
+    await waitForCard(tester);
+
+    expect(homeHeart(tester).gap, SkyHeartPlan.order[2]);
+    final sky = tester.getRect(find.byKey(SkyPageKeys.canvas));
+    final tip = tester.getRect(find.byKey(SkyPageKeys.tonightTip));
+    expect(sky.width, 360);
+    expect(tip.left, greaterThanOrEqualTo(sky.left));
+    expect(tip.right, lessThanOrEqualTo(sky.right));
+    expect(tip.top, greaterThanOrEqualTo(sky.top));
     await settle(tester, space);
   });
 

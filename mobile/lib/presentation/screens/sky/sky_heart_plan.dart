@@ -127,9 +127,6 @@ abstract final class SkyHeartPlan {
     arrow: false,
   );
 
-  static Size tipSizeFor(String title, String subtitle) =>
-      Size(22 + math.max(15 + title.length * 5.4, subtitle.length * 5.0), tipSize.height);
-
   static Rect tipRect(Offset point, SkyTipPlacement placement, [Size size = tipSize]) {
     final top = point.dy + placement.offset.dy;
     switch (placement.side) {
