@@ -9,7 +9,6 @@ import 'package:our_space_mobile/presentation/app_shell.dart';
 import 'package:our_space_mobile/presentation/deep_links.dart';
 import 'package:our_space_mobile/presentation/home_shell.dart';
 import 'package:our_space_mobile/presentation/sky/sky.dart';
-import 'package:our_space_mobile/presentation/widgets/our_widgets.dart';
 
 import '../../support/fake_mailbox_worker.dart';
 import '../../support/harness.dart';
@@ -56,9 +55,7 @@ Future<void> settleIdentity(WidgetTester tester, OurSpace space) => real(tester,
     });
 
 Finder fieldWithHint(String hint) => find.descendant(
-      of: find.byWidgetPredicate(
-        (widget) => (widget is OurTextField && widget.hint == hint) || (widget is SkyTextField && widget.hint == hint),
-      ),
+      of: find.byWidgetPredicate((widget) => widget is SkyTextField && widget.hint == hint),
       matching: find.byType(TextField),
     );
 

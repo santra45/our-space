@@ -13,7 +13,6 @@ import 'package:our_space_mobile/presentation/home_shell.dart';
 import 'package:our_space_mobile/presentation/sky/sky.dart';
 import 'package:our_space_mobile/presentation/screens/polaroids/photo_compression.dart';
 import 'package:our_space_mobile/presentation/screens/polaroids/photo_picker.dart';
-import 'package:our_space_mobile/presentation/widgets/our_widgets.dart';
 
 import '../../support/harness.dart';
 import '../../widgets/harness.dart' show recordHaptics, usePhoneSize;
@@ -99,7 +98,7 @@ Future<void> settleRoutes(WidgetTester tester) async {
 }
 
 Finder fieldWithHint(String hint) => find.descendant(
-      of: find.byWidgetPredicate((widget) => widget is OurTextField && widget.hint == hint),
+      of: find.byWidgetPredicate((widget) => widget is SkyTextField && widget.hint == hint),
       matching: find.byType(TextField),
     );
 
@@ -124,8 +123,7 @@ Future<void> typeInto(WidgetTester tester, Finder finder, String text) async {
 }
 
 bool buttonEnabled(WidgetTester tester, String label) {
-  final button = tester.widget<BouncyButton>(find.ancestor(of: find.text(label), matching: find.byType(BouncyButton)));
-  return button.isEnabled;
+  return tester.widget<SkyButton>(find.ancestor(of: find.text(label), matching: find.byType(SkyButton))).enabled;
 }
 
 Future<Uint8List> testPng(int width, int height, {Color color = const Color(0xFFFF85A3)}) async {

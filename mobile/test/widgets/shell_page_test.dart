@@ -2,15 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:our_space_mobile/presentation/app_shell.dart';
 import 'package:our_space_mobile/presentation/sky/sky.dart';
-import 'package:our_space_mobile/presentation/theme/app_colors.dart';
 import 'package:our_space_mobile/presentation/widgets/app_haptics.dart';
-import 'package:our_space_mobile/presentation/widgets/our_feedback.dart';
-import 'package:our_space_mobile/presentation/widgets/our_page.dart';
 
 import 'harness.dart';
 
 Widget _fakePage(BuildContext context, SkyTab tab) {
-  return OurPage(children: [Text('page:${tab.id}'), const SizedBox(height: 2000)]);
+  return ListView(children: [Text('page:${tab.id}'), const SizedBox(height: 2000)]);
 }
 
 Finder labelled(String label) =>
@@ -151,7 +148,7 @@ void main() {
   testWidgets('toasts show in the shell notices without emoji and clear after four seconds', (tester) async {
     usePhoneSize(tester);
     await pumpHost(tester, SkyShell(pageBuilder: _fakePage), scaffold: false);
-    OurToast.show(tester.element(find.text('page:sky')), 'Could not send that just now 💕');
+    SkyToast.show(tester.element(find.text('page:sky')), 'Could not send that just now 💕');
     await tester.pump();
     expect(
       find.descendant(of: find.byKey(ShellKeys.notices), matching: find.text('Could not send that just now')),
@@ -200,54 +197,5 @@ void main() {
       find.descendant(of: find.byKey(ShellKeys.notices), matching: find.text('Running low on space')),
       findsOneWidget,
     );
-  });
-
-  testWidgets('OurCenteredPage centres short content like min-h-screen justify-center', (tester) async {
-    usePhoneSize(tester, top: 0, bottom: 0);
-    await pumpHost(
-      tester,
-      const OurScaffold(
-        particles: false,
-        body: OurCenteredPage(child: SizedBox(width: 100, height: 100, child: Text('lock'))),
-      ),
-      scaffold: false,
-    );
-    final center = tester.getCenter(find.text('lock'));
-    expect(center.dy, closeTo(844 / 2, 1));
-    expect(center.dx, closeTo(390 / 2, 1));
-  });
-
-  testWidgets('OurPage spaces children 16px apart and caps width at max-w-md', (tester) async {
-    tester.view.physicalSize = const Size(1600, 1200);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.reset);
-    await pumpHost(
-      tester,
-      const OurPage(
-        children: [
-          SizedBox(height: 10, child: Text('a')),
-          SizedBox(height: 10, child: Text('b')),
-        ],
-      ),
-      scaffold: false,
-    );
-    final a = tester.getRect(find.text('a'));
-    final b = tester.getRect(find.text('b'));
-    expect(b.top - a.bottom, 16);
-    expect(a.width, 448);
-  });
-
-  test('spaced inserts gaps only between children', () {
-    final out = spaced(const [Text('1'), Text('2'), Text('3')], 8);
-    expect(out.length, 5);
-    expect((out[1] as SizedBox).height, 8);
-    expect(spaced(const [Text('1')], 8).length, 1);
-  });
-
-  test('body gradient keeps the web colours', () {
-    final painter = BodyGradientPainter(ValueNotifier<DocumentScroll?>(null));
-    expect(BodyGradientPainter.documentRect(const Size(100, 200), null), const Rect.fromLTWH(0, 0, 100, 200));
-    expect(painter.scroll.value, isNull);
-    expect(AppColors.blush50.toARGB32(), 0xFFFFF5F7);
   });
 }

@@ -3,8 +3,8 @@ import 'dart:math' as math;
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/widgets.dart';
 
+import '../sky/sky_motion.dart';
 import '../theme/app_colors.dart';
-import 'tw_animations.dart';
 
 enum ConfettiShape { square, circle, heart }
 
@@ -387,7 +387,7 @@ abstract final class ConfettiBurst {
   static ConfettiCanvasController? get activeController => _controller;
 
   static void fire(BuildContext context, List<ConfettiOptions> bursts) {
-    if (!motionAllowed(context)) return;
+    if (!skyMotionAllowed(context)) return;
     final overlay = Overlay.maybeOf(context, rootOverlay: true);
     if (overlay == null) return;
     if (_controller == null || _entry == null || !_entry!.mounted) {

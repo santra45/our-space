@@ -11,7 +11,7 @@ import 'package:our_space_mobile/presentation/screens/settings/widgets/settings_
 import 'package:our_space_mobile/presentation/screens/sync/backup_dialogs.dart';
 import 'package:our_space_mobile/presentation/screens/sync/keep_a_copy.dart';
 import 'package:our_space_mobile/presentation/sky/sky.dart';
-import 'package:our_space_mobile/presentation/widgets/our_widgets.dart';
+import 'package:our_space_mobile/presentation/widgets/app_haptics.dart';
 
 import '../../widgets/harness.dart' show recordHaptics, recordedHaptics;
 import 'hub_harness.dart';

@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:our_space_mobile/core/engine.dart';
 import 'package:our_space_mobile/presentation/app_shell.dart';
-import 'package:our_space_mobile/presentation/legacy_area.dart';
 import 'package:our_space_mobile/presentation/screens/bucketlist/bucket_copy.dart';
 import 'package:our_space_mobile/presentation/screens/bucketlist/dream_row.dart';
 import 'package:our_space_mobile/presentation/screens/bucketlist/layout_glide.dart';
@@ -61,7 +60,6 @@ void main() {
     await pumpUs(tester, space);
     await untilFound(tester, find.text(BucketCopy.count(0, 6)));
 
-    expect(find.byType(LegacyArea), findsNothing);
     expect(find.byType(ShellAvatar), findsOneWidget);
     expect(find.text('SINCE 14 JUNE 2021'), findsOneWidget);
     final order = [

@@ -8,7 +8,8 @@ import 'package:our_space_mobile/presentation/screens/sync/peer_link.dart';
 import 'package:our_space_mobile/presentation/screens/sync/qr_scanner.dart';
 import 'package:our_space_mobile/presentation/screens/sync/together_now.dart';
 import 'package:our_space_mobile/presentation/sky/sky.dart';
-import 'package:our_space_mobile/presentation/widgets/our_widgets.dart';
+import 'package:our_space_mobile/presentation/theme/app_colors.dart';
+import 'package:our_space_mobile/presentation/widgets/app_haptics.dart';
 
 import '../../widgets/harness.dart' show recordHaptics, recordedHaptics;
 import 'hub_harness.dart';

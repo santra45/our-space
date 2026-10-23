@@ -14,7 +14,7 @@ import 'package:our_space_mobile/presentation/screens/settings/widgets/settings_
 import 'package:our_space_mobile/presentation/screens/sync/add_phone_page.dart';
 import 'package:our_space_mobile/presentation/screens/sync/peer_link.dart';
 import 'package:our_space_mobile/presentation/space_scope.dart';
-import 'package:our_space_mobile/presentation/widgets/our_widgets.dart';
+import 'package:our_space_mobile/presentation/theme/app_theme.dart';
 import 'package:provider/provider.dart';
 
 import '../../support/harness.dart';
@@ -106,9 +106,7 @@ Future<void> settle(WidgetTester tester, {int rounds = 10}) async {
 }
 
 Finder fieldWithHint(String hint) => find.descendant(
-      of: find.byWidgetPredicate(
-        (widget) => (widget is OurTextField && widget.hint == hint) || (widget is SettingsField && widget.hint == hint),
-      ),
+      of: find.byWidgetPredicate((widget) => widget is SettingsField && widget.hint == hint),
       matching: find.byType(TextField),
     );
 

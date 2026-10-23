@@ -7,7 +7,6 @@ import 'package:our_space_mobile/core/engine.dart';
 import 'package:our_space_mobile/main.dart';
 import 'package:our_space_mobile/presentation/home_shell.dart';
 import 'package:our_space_mobile/presentation/sky/sky.dart';
-import 'package:our_space_mobile/presentation/widgets/our_widgets.dart';
 
 import '../../support/harness.dart';
 import '../../widgets/harness.dart' show usePhoneSize;
@@ -66,17 +65,12 @@ Future<void> untilFound(WidgetTester tester, Finder finder) => until(tester, () 
 Future<void> untilGone(WidgetTester tester, Finder finder) => until(tester, () => finder.evaluate().isEmpty);
 
 Finder fieldWithHint(String hint) => find.descendant(
-      of: find.byWidgetPredicate(
-        (widget) => (widget is OurTextField && widget.hint == hint) || (widget is SkyTextField && widget.hint == hint),
-      ),
+      of: find.byWidgetPredicate((widget) => widget is SkyTextField && widget.hint == hint),
       matching: find.byType(TextField),
     );
 
-Finder iconButton(String label) => find.byWidgetPredicate(
-      (widget) =>
-          (widget is OurIconButton && widget.semanticLabel == label) ||
-          (widget is SkyIconButton && widget.semanticLabel == label),
-    );
+Finder iconButton(String label) =>
+    find.byWidgetPredicate((widget) => widget is SkyIconButton && widget.semanticLabel == label);
 
 Finder semanticsLabelled(String label) =>
     find.byWidgetPredicate((widget) => widget is Semantics && widget.properties.label == label);
@@ -104,10 +98,7 @@ Future<void> settleRoute(WidgetTester tester) async {
 }
 
 bool buttonEnabled(WidgetTester tester, String label) {
-  final sky = find.ancestor(of: find.text(label), matching: find.byType(SkyButton));
-  if (sky.evaluate().isNotEmpty) return tester.widget<SkyButton>(sky).enabled;
-  final button = tester.widget<BouncyButton>(find.ancestor(of: find.text(label), matching: find.byType(BouncyButton)));
-  return button.isEnabled;
+  return tester.widget<SkyButton>(find.ancestor(of: find.text(label), matching: find.byType(SkyButton))).enabled;
 }
 
 void calm(WidgetTester tester) {

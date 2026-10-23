@@ -2,7 +2,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/widgets.dart';
 
-import '../../widgets/our_widgets.dart';
+import '../../sky/sky_motion.dart';
 
 const Duration layoutGlideDuration = Duration(milliseconds: 450);
 const Curve layoutGlideCurve = Cubic(0.4, 0, 0.1, 1);
@@ -36,7 +36,7 @@ class _LayoutGlideState extends State<LayoutGlide> with SingleTickerProviderStat
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    _motion = motionAllowed(context);
+    _motion = skyMotionAllowed(context);
     if (!_motion) {
       _controller.stop();
       _controller.value = 1;

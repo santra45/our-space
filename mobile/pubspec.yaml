@@ -50,8 +50,6 @@ flutter:
   uses-material-design: true
 
   assets:
-    - assets/svg/
-    - assets/svg/icons/
     - assets/fonts/caveat/OFL.txt
     - assets/fonts/bodoni_moda/OFL.txt
     - assets/fonts/dm_sans/OFL.txt

@@ -16,7 +16,7 @@ import 'package:our_space_mobile/presentation/screens/settings/settings_page.dar
 import 'package:our_space_mobile/presentation/sky/sky.dart';
 import 'package:our_space_mobile/presentation/space_scope.dart';
 import 'package:our_space_mobile/presentation/vault_gate.dart';
-import 'package:our_space_mobile/presentation/widgets/our_widgets.dart';
+import 'package:our_space_mobile/presentation/widgets/app_haptics.dart';
 
 import '../screens/lock/lock_harness.dart' show lockButtonEnabled, lockField, touchEnabled;
 import '../support/fake_quick_unlock.dart';

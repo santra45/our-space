@@ -8,7 +8,6 @@ import 'package:our_space_mobile/main.dart';
 import 'package:our_space_mobile/presentation/app_shell.dart';
 import 'package:our_space_mobile/presentation/home_shell.dart';
 import 'package:our_space_mobile/presentation/sky/sky.dart';
-import 'package:our_space_mobile/presentation/widgets/our_widgets.dart';
 
 import '../../support/harness.dart';
 import '../../widgets/harness.dart' show recordHaptics, usePhoneSize;
@@ -87,12 +86,12 @@ Future<void> settleRoutes(WidgetTester tester) async {
 }
 
 Finder fieldWithHint(String hint) => find.descendant(
-      of: find.byWidgetPredicate((widget) => widget is OurTextField && widget.hint == hint),
+      of: find.byWidgetPredicate((widget) => widget is SkyTextField && widget.hint == hint),
       matching: find.byType(TextField),
     );
 
 Finder iconButton(String label) =>
-    find.byWidgetPredicate((widget) => widget is OurIconButton && widget.semanticLabel == label);
+    find.byWidgetPredicate((widget) => widget is SkyIconButton && widget.semanticLabel == label);
 
 Future<void> reveal(WidgetTester tester, Finder finder) async {
   unawaited(Scrollable.ensureVisible(tester.element(finder), alignment: 0.5));
@@ -112,8 +111,7 @@ Future<void> typeInto(WidgetTester tester, Finder finder, String text) async {
 }
 
 bool buttonEnabled(WidgetTester tester, String label) {
-  final button = tester.widget<BouncyButton>(find.ancestor(of: find.text(label), matching: find.byType(BouncyButton)));
-  return button.isEnabled;
+  return tester.widget<SkyButton>(find.ancestor(of: find.text(label), matching: find.byType(SkyButton))).enabled;
 }
 
 String inDays(int days) => toLocalDateInput(DateTime.now().add(Duration(days: days)));

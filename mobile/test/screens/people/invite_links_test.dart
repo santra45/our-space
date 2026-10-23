@@ -8,7 +8,7 @@ import 'package:our_space_mobile/core/engine/p2p/peer_hub.dart' show pairedPartn
 import 'package:our_space_mobile/presentation/deep_links.dart';
 import 'package:our_space_mobile/presentation/home_shell.dart';
 import 'package:our_space_mobile/presentation/screens/lock/lock_screen.dart';
-import 'package:our_space_mobile/presentation/widgets/our_widgets.dart';
+import 'package:our_space_mobile/presentation/sky/sky.dart';
 
 import '../lock/lock_harness.dart' show lockField;
 import 'people_harness.dart';
@@ -166,9 +166,9 @@ void main() {
     await tester.pump();
     expect(space.vault.isUnlocked, isTrue);
 
-    unawaited(showOurModal<void>(
+    unawaited(showSkySheet<void>(
       context: tester.element(find.byType(HomeShell)),
-      builder: (_) => const OurModalCard(child: Text('A little sheet')),
+      builder: (_) => const Text('A little sheet'),
     ));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));

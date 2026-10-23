@@ -3,10 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:our_space_mobile/presentation/theme/app_colors.dart';
-import 'package:our_space_mobile/presentation/theme/app_gradients.dart';
 import 'package:our_space_mobile/presentation/theme/app_metrics.dart';
-import 'package:our_space_mobile/presentation/theme/app_motion.dart';
-import 'package:our_space_mobile/presentation/theme/app_shadows.dart';
 import 'package:our_space_mobile/presentation/theme/app_theme.dart';
 import 'package:our_space_mobile/presentation/theme/app_typography.dart';
 
@@ -101,40 +98,6 @@ void main() {
     expect(Tw.xs.c(AppColors.blush600).color, AppColors.blush600);
   });
 
-  test('CSS blur radii convert to the same Gaussian sigma in Flutter', () {
-    for (final blur in [2.0, 4.0, 10.0, 25.0, 30.0, 50.0]) {
-      final radius = AppShadows.blurRadiusFromCss(blur);
-      expect(Shadow.convertRadiusToSigma(radius), closeTo(blur / 2, 1e-3), reason: '$blur');
-    }
-    expect(AppShadows.blurRadiusFromCss(0), 0);
-  });
-
-  test('named shadows keep the web geometry', () {
-    final glass = AppShadows.glassPanel.single;
-    expect(glass.offset, const Offset(0, 10));
-    expect(glass.spreadRadius, -5);
-    expect(glass.color, const Color(0x40FFB6C1));
-    expect(AppShadows.md.length, 2);
-    expect(AppShadows.primaryButton.first.color, AppColors.blush300.withValues(alpha: 0.4));
-    expect(AppShadows.bottomNav.single.offset, const Offset(0, -8));
-  });
-
-  test('corner gradients follow the CSS angle rules', () {
-    final square = AppGradients.headerLogo.endpoints(const Rect.fromLTWH(0, 0, 32, 32));
-    expect(square.$1.dx, closeTo(0, 1e-9));
-    expect(square.$1.dy, closeTo(32, 1e-9));
-    expect(square.$2.dx, closeTo(32, 1e-9));
-    expect(square.$2.dy, closeTo(0, 1e-9));
-
-    expect(AppGradients.angleDegrees(AppGradients.headerLogo, const Size(32, 32)), closeTo(45, 1e-9));
-    expect(AppGradients.angleDegrees(AppGradients.scratchCard, const Size(400, 300)), closeTo(36.869898, 1e-5));
-
-    final vertical = AppGradients.body.endpoints(const Rect.fromLTWH(0, 0, 100, 500));
-    expect(vertical.$1, const Offset(50, 0));
-    expect(vertical.$2, const Offset(50, 500));
-    expect(AppGradients.body.colors, [AppColors.blush50, AppColors.cream50, AppColors.lavender50]);
-  });
-
   test('radii and layout constants mirror the web utilities', () {
     expect(AppRadii.x2l, 16);
     expect(AppRadii.x3l, 24);
@@ -142,15 +105,6 @@ void main() {
     expect(TwSpace.of(3.5), 14);
     expect(AppLayout.maxWidthMd, 448);
     expect(AppLayout.maxWidthSm, 384);
-  });
-
-  test('spring curve settles at 1 and overshoots like an underdamped framer spring', () {
-    final curve = SpringCurve(stiffness: 350, damping: 20);
-    expect(curve.transform(0), 0);
-    expect(curve.transform(1), 1);
-    final peak = [for (var i = 1; i < 100; i++) curve.transform(i / 100)].reduce((a, b) => a > b ? a : b);
-    expect(peak, greaterThan(1));
-    expect(curve.duration, greaterThan(Duration.zero));
   });
 
   test('light theme uses the web selection colours and no ink splashes', () {

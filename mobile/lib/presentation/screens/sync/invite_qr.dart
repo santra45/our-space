@@ -1,7 +1,7 @@
 import 'package:flutter/widgets.dart';
 import 'package:qr_flutter/qr_flutter.dart' show QrCode, QrErrorCorrectLevel, QrImage;
 
-import '../../widgets/our_widgets.dart';
+import '../../theme/app_colors.dart';
 
 @immutable
 class InviteQrMatrix {

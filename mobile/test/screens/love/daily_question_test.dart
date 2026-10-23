@@ -10,7 +10,7 @@ import 'package:our_space_mobile/presentation/screens/love/love_sheet.dart';
 import 'package:our_space_mobile/presentation/screens/sky/sky_days.dart';
 import 'package:our_space_mobile/presentation/screens/sky/sky_heart_plan.dart';
 import 'package:our_space_mobile/presentation/sky/sky.dart';
-import 'package:our_space_mobile/presentation/widgets/our_widgets.dart';
+import 'package:our_space_mobile/presentation/widgets/app_haptics.dart';
 
 import '../../widgets/harness.dart' show recordHaptics, recordedHaptics;
 import 'love_harness.dart';
