@@ -68,6 +68,7 @@ class SkyDock extends StatelessWidget {
               ),
               padding: const EdgeInsets.symmetric(horizontal: 10),
               child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   _slot(context, 0),
                   _slot(context, 1),
@@ -146,32 +147,34 @@ class _DockSlot extends StatelessWidget {
       semanticLabel: item.label,
       selected: active,
       excludeSemantics: true,
-      child: !motion
-          ? face
-          : AnimatedSize(
-              duration: SkyMotion.base,
-              curve: SkyMotion.standard,
-              child: AnimatedSwitcher(
-                duration: SkyMotion.quick,
-                switchInCurve: SkyMotion.standard,
-                transitionBuilder: (child, animation) => FadeTransition(
-                  opacity: animation,
-                  child: ScaleTransition(scale: Tween<double>(begin: 0.86, end: 1).animate(animation), child: child),
+      child: Center(
+        child: !motion
+            ? face
+            : AnimatedSize(
+                duration: SkyMotion.base,
+                curve: SkyMotion.standard,
+                child: AnimatedSwitcher(
+                  duration: SkyMotion.quick,
+                  switchInCurve: SkyMotion.standard,
+                  transitionBuilder: (child, animation) => FadeTransition(
+                    opacity: animation,
+                    child: ScaleTransition(scale: Tween<double>(begin: 0.86, end: 1).animate(animation), child: child),
+                  ),
+                  layoutBuilder: (current, previous) => Stack(
+                    alignment: Alignment.center,
+                    clipBehavior: Clip.none,
+                    children: [
+                      for (final child in previous)
+                        Positioned.fill(
+                          child: OverflowBox(maxWidth: double.infinity, maxHeight: double.infinity, child: child),
+                        ),
+                      ?current,
+                    ],
+                  ),
+                  child: face,
                 ),
-                layoutBuilder: (current, previous) => Stack(
-                  alignment: Alignment.center,
-                  clipBehavior: Clip.none,
-                  children: [
-                    for (final child in previous)
-                      Positioned.fill(
-                        child: OverflowBox(maxWidth: double.infinity, maxHeight: double.infinity, child: child),
-                      ),
-                    ?current,
-                  ],
-                ),
-                child: face,
               ),
-            ),
+      ),
     );
   }
 }

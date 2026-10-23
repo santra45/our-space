@@ -61,6 +61,27 @@ class _DockDemoState extends State<_DockDemo> {
 void main() {
   setUp(recordHaptics);
 
+  testWidgets('every tab answers a tap anywhere across the full height of the pill', (tester) async {
+    final selected = <int>[];
+    await tester.pumpWidget(
+      dockHost(
+        tokens: SkyTokens.night,
+        child: _DockDemo(onLove: () {}, selected: selected),
+      ),
+    );
+    final pill = tester.getRect(find.byType(SkyDock));
+    final top = pill.bottom - SkySizes.dockHeight + 4;
+    final bottom = pill.bottom - 4;
+    for (final index in [1, 2, 3, 0]) {
+      final x = tester.getCenter(labelled(items[index].label)).dx;
+      await tester.tapAt(Offset(x, index.isEven ? top : bottom));
+      await tester.pumpAndSettle();
+      expect(selected.last, index);
+    }
+    final slot = tester.getSize(labelled(items[1].label));
+    expect(slot.height, greaterThanOrEqualTo(44));
+  });
+
   testWidgets('lays the four tabs out around the love heart and reports taps', (tester) async {
     final selected = <int>[];
     var love = 0;
