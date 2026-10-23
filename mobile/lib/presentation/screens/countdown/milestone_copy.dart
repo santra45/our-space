@@ -56,6 +56,15 @@ abstract final class MilestoneCopy {
 
   static String today(int day) => 'Today · day $day';
 
+  static String todayLit(int star) => 'Star $star lit, you both answered';
+
+  static String todayWaiting({required bool night}) => night ? "Tonight's star is waiting" : "Today's star is waiting";
+
+  static String todayStar({required bool? lit, required int stars, required bool night}) {
+    if (lit == null) return todayNote;
+    return lit ? todayLit(stars) : todayWaiting(night: night);
+  }
+
   static String beganNote(String date) => '$date · the first star';
 
   static String openMoment(String title, String date) => '$title, $date. $editTitle';

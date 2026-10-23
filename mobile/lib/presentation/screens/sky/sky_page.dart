@@ -112,12 +112,7 @@ class _OurSkyPageState extends State<OurSkyPage> with WidgetsBindingObserver {
     final vault = context.watch<VaultService>();
     final identity = context.watch<IdentityController>();
     final scope = SkyShellScope.maybeOf(context);
-    final personId = identity.myOwnerId;
-    _daily.bind(
-      key: vault.key,
-      ownerId: personId == null || personId.isEmpty ? context.space.device.deviceId : personId,
-      ownerIds: identity.myOwnerIds,
-    );
+    _daily.bindTo(vault: vault, identity: identity);
     final presence = scope?.presence ?? const PartnerPresence.unknown();
     final me = identity.me != null ? identity.myName : null;
     final partner = identity.partner != null ? identity.partnerName : null;

@@ -46,6 +46,12 @@ void main() {
       expect(MilestoneCopy.years(14), '14 years');
       expect(MilestoneCopy.hundred(1500), 'Day 1500');
       expect(MilestoneCopy.today(28), 'Today · day 28');
+      expect(MilestoneCopy.todayLit(29), 'Star 29 lit, you both answered');
+      expect(MilestoneCopy.todayWaiting(night: true), "Tonight's star is waiting");
+      expect(MilestoneCopy.todayWaiting(night: false), "Today's star is waiting");
+      expect(MilestoneCopy.todayStar(lit: true, stars: 29, night: true), MilestoneCopy.todayLit(29));
+      expect(MilestoneCopy.todayStar(lit: false, stars: 28, night: false), MilestoneCopy.todayWaiting(night: false));
+      expect(MilestoneCopy.todayStar(lit: null, stars: 3, night: true), MilestoneCopy.todayNote);
       expect(MilestoneCopy.clock(1, 1, 1), 'Together 1 day, 1 hour and 1 minute');
       expect(MilestoneCopy.clock(28, 14, 32), 'Together 28 days, 14 hours and 32 minutes');
       expect(twoDigitCount(7), '07');
@@ -137,6 +143,28 @@ void main() {
       counter.dispose();
       expect(counter.ticking, isFalse);
     });
+  });
+
+  testWidgets("today on our constellation says whether tonight's star is lit yet", (tester) async {
+    calm(tester);
+    final space = await usSpace(tester);
+    await pumpUs(tester, space);
+    final today = find.byKey(UsKeys.todayStep);
+    await untilFound(tester, find.descendant(of: today, matching: find.textContaining('star is waiting')));
+
+    await drive(tester, () async {
+      final key = space.vault.key;
+      await space.dailyQuestion.saveAnswer(key, ownerId: space.identity.myOwnerId, questionId: null, text: 'Mine');
+      await space.dailyQuestion.saveAnswer(
+        key,
+        ownerId: space.identity.partner!.personId,
+        questionId: null,
+        text: 'Theirs',
+      );
+    });
+    await untilFound(tester, find.descendant(of: today, matching: find.text(MilestoneCopy.todayLit(1))));
+    expect(find.textContaining('star is waiting'), findsNothing);
+    await rest(tester, space);
   });
 
   testWidgets('the counter ticks live, with the days in gold and the next milestones beside it', (tester) async {

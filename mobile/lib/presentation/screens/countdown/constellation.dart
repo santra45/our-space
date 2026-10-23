@@ -8,6 +8,7 @@ import '../../sky/sky.dart';
 import '../../space_scope.dart';
 import '../../widgets/app_haptics.dart';
 import '../../widgets/confetti_burst.dart';
+import '../daily/daily_question_model.dart';
 import '../us/us_copy.dart';
 import '../us/us_keys.dart';
 import '../us/widgets/us_sheet_frame.dart';
@@ -28,6 +29,7 @@ class OurConstellation extends StatefulWidget {
 
 class _OurConstellationState extends State<OurConstellation> {
   late final Stream<TableSnapshot<MilestoneRecord>> _items;
+  late final DailyQuestionModel _daily = DailyQuestionModel(context.space);
   String _error = '';
   bool _writing = false;
 
@@ -35,6 +37,12 @@ class _OurConstellationState extends State<OurConstellation> {
   void initState() {
     super.initState();
     _items = context.space.milestones.watch();
+  }
+
+  @override
+  void dispose() {
+    _daily.dispose();
+    super.dispose();
   }
 
   bool get _unlocked => context.read<VaultService>().key != null;
@@ -101,6 +109,8 @@ class _OurConstellationState extends State<OurConstellation> {
 
   @override
   Widget build(BuildContext context) {
+    _daily.bindTo(vault: context.watch<VaultService>(), identity: context.watch<IdentityController>());
+    final night = context.sky.isNight;
     final now = DateTime.fromMillisecondsSinceEpoch(widget.counter.now());
     final start = parseLocalDate(widget.startDate) ?? now;
     return StreamBuilder<TableSnapshot<MilestoneRecord>>(
@@ -112,10 +122,14 @@ class _OurConstellationState extends State<OurConstellation> {
         final steps = <Widget>[
           ListenableBuilder(
             key: UsKeys.todayStep,
-            listenable: widget.counter,
+            listenable: Listenable.merge([widget.counter, _daily]),
             builder: (context, _) => ConstellationStep(
               title: MilestoneCopy.today(widget.counter.value.totalDays),
-              note: MilestoneCopy.todayNote,
+              note: MilestoneCopy.todayStar(
+                lit: _daily.visible ? _daily.bothIn : null,
+                stars: _daily.stars,
+                night: night,
+              ),
               tone: ConstellationTone.now,
             ),
           ),

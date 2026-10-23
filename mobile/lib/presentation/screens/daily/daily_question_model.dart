@@ -67,6 +67,15 @@ class DailyQuestionModel extends ChangeNotifier {
     if (changed) unawaited(refresh());
   }
 
+  void bindTo({required VaultService vault, required IdentityController identity}) {
+    final personId = identity.myOwnerId;
+    bind(
+      key: vault.key,
+      ownerId: personId == null || personId.isEmpty ? space.device.deviceId : personId,
+      ownerIds: identity.myOwnerIds,
+    );
+  }
+
   Future<void>? _running;
 
   Future<void> refresh() {
