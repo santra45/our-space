@@ -1,11 +1,12 @@
 import 'dart:async';
 import 'dart:math' as math;
-import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../../core/engine.dart';
+import '../../app_shell.dart';
 import '../../sky/sky.dart';
 import '../../space_scope.dart';
 import 'add_memory_sheet.dart';
@@ -49,6 +50,9 @@ class _MemoriesPageState extends State<MemoriesPage> {
   String _partnerName = '';
   final Set<String> _fresh = <String>{};
   final Set<String> _entered = <String>{};
+  ValueListenable<SkyTab>? _activeTab;
+
+  bool get _onScreen => _activeTab == null || _activeTab!.value == SkyTab.memories;
 
   @override
   void initState() {
@@ -59,8 +63,31 @@ class _MemoriesPageState extends State<MemoriesPage> {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final active = SkyShellScope.activeTabOf(context);
+    if (identical(active, _activeTab)) return;
+    _activeTab?.removeListener(_onActiveTab);
+    _activeTab = active?..addListener(_onActiveTab);
+  }
+
+  void _onActiveTab() {
+    if (!mounted) return;
+    if (_onScreen) {
+      if (_locked || _error.isNotEmpty) {
+        _listen();
+        return;
+      }
+      setState(_noteFresh);
+    } else if (_fresh.isNotEmpty) {
+      setState(_fresh.clear);
+    }
+  }
+
+  @override
   void dispose() {
     _subscription?.cancel();
+    _activeTab?.removeListener(_onActiveTab);
     _marks.removeListener(_onMarks);
     _visibleIds.dispose();
     _scroll.dispose();
@@ -121,6 +148,7 @@ class _MemoriesPageState extends State<MemoriesPage> {
 
   void _noteFresh() {
     _fresh.retainWhere(_order.containsKey);
+    if (!_onScreen) return;
     final arrivals = [
       for (final memory in _items)
         if (_marks.isNew(memory.id)) memory.id,
