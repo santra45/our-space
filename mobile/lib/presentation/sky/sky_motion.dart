@@ -17,6 +17,7 @@ abstract final class SkyMotion {
   static const Duration medium = Duration(milliseconds: 300);
   static const Duration slow = Duration(milliseconds: 350);
   static const Duration sheet = Duration(milliseconds: 420);
+  static const Duration dockSlide = Duration(milliseconds: 420);
   static const Duration streak = Duration(milliseconds: 900);
   static const Duration burst = Duration(milliseconds: 1200);
   static const Duration celebration = Duration(milliseconds: 1600);

@@ -115,10 +115,10 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      final pill = tester.widget<Container>(
-        find.ancestor(of: find.text('Memories'), matching: find.byType(Container)).first,
-      );
+      final pill = tester.widget<Container>(find.byKey(SkyDock.pillKey));
       expect((pill.decoration! as BoxDecoration).color, tokens.activeBg);
+      final pillRect = tester.getRect(find.byKey(SkyDock.pillKey));
+      expect(pillRect.center.dx, closeTo(tester.getCenter(find.text('Memories')).dx, 12));
       final label = tester.widget<Text>(find.text('Memories'));
       expect(label.style?.color, tokens.activeFg);
       final idle = tester.widget<Text>(find.text('Sky'));
@@ -169,16 +169,40 @@ void main() {
         child: _DockDemo(onLove: () {}, selected: selected),
       ),
     );
+    await tester.pumpAndSettle();
+    final start = tester.getRect(find.byKey(SkyDock.pillKey));
+
     await tester.tap(find.text('Us'));
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 60));
-    expect(find.byType(AnimatedSize), findsWidgets);
-    for (final size in tester.widgetList<AnimatedSize>(find.byType(AnimatedSize))) {
-      expect(size.clipBehavior, Clip.none);
-    }
+    await tester.pump(const Duration(milliseconds: 150));
+    final middle = tester.getRect(find.byKey(SkyDock.pillKey));
+    expect(find.byKey(SkyDock.pillKey), findsOneWidget);
+
     await tester.pumpAndSettle();
+    final end = tester.getRect(find.byKey(SkyDock.pillKey));
     expect(selected, [3]);
+    expect(end.center.dx, greaterThan(start.center.dx));
+    expect(middle.left, greaterThanOrEqualTo(start.left));
+    expect(middle.right, lessThanOrEqualTo(end.right));
+    expect(middle.right, greaterThan(start.right));
+    expect(middle.width, greaterThan(start.width > end.width ? start.width : end.width));
+    expect(end.center.dx, closeTo(tester.getCenter(find.text('Us')).dx, 12));
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('without motion the pill jumps straight to the new tab', (tester) async {
+    final selected = <int>[];
+    await tester.pumpWidget(
+      dockHost(
+        tokens: SkyTokens.night,
+        child: _DockDemo(onLove: () {}, selected: selected),
+      ),
+    );
+    await tester.tap(find.text('Memories'));
+    await tester.pump();
+    expect(tester.getRect(find.byKey(SkyDock.pillKey)).center.dx,
+        closeTo(tester.getCenter(find.text('Memories')).dx, 12));
+    expect(find.text('Memories'), findsOneWidget);
   });
 
   test('dock clearance keeps pages above the dock and the safe area', () {
