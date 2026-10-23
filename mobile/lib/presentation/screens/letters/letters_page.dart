@@ -350,9 +350,9 @@ class _LettersPageState extends State<LettersPage> {
     final List<Widget> view;
     switch (_segment) {
       case LetterSegment.waiting:
-        view = _waiting(shelf);
+        view = _waiting(shelf, partner);
       case LetterSegment.opened:
-        view = _opened(shelf);
+        view = _opened(shelf, partner);
       case LetterSegment.sent:
         view = _sent(shelf, partner);
     }
@@ -370,7 +370,7 @@ class _LettersPageState extends State<LettersPage> {
     );
   }
 
-  List<Widget> _waiting(LetterShelf shelf) {
+  List<Widget> _waiting(LetterShelf shelf, String partner) {
     final t = context.sky;
     final now = DateTime.now();
     final blocks = <Widget>[];
@@ -398,7 +398,7 @@ class _LettersPageState extends State<LettersPage> {
             key: LettersKeys.feature,
             label: LettersCopy.newLabel(feature.writtenAt, now, night: t.isNight),
             title: feature.title,
-            meta: LettersCopy.sealedWhen(feature.writtenAt, now),
+            meta: LettersCopy.from(partner, LettersCopy.lowerFirst(LettersCopy.sealedWhen(feature.writtenAt, now))),
             busy: _openingId == feature.id,
             onBreak: () => unawaited(_open(feature)),
             onLongPress: () => unawaited(_options(feature)),
@@ -421,7 +421,7 @@ class _LettersPageState extends State<LettersPage> {
     }
     for (final letter in shelf.capsules) {
       blocks.add(const SizedBox(height: SkySpace.md));
-      blocks.add(enter(ValueKey<String>('capsule-${letter.id}'), _capsule(letter, LettersCopy.capsule)));
+      blocks.add(enter(ValueKey<String>('capsule-${letter.id}'), _capsule(letter, LettersCopy.capsuleFrom(partner))));
     }
     if (shelf.opened.isNotEmpty) {
       blocks.add(const SizedBox(height: 20));
@@ -449,13 +449,13 @@ class _LettersPageState extends State<LettersPage> {
         ),
       );
       for (final letter in shelf.opened.take(LettersPage.openedPreview)) {
-        blocks.add(enter(ValueKey<String>('opened-${letter.id}'), _row(letter, _openedLine(letter, now))));
+        blocks.add(enter(ValueKey<String>('opened-${letter.id}'), _row(letter, _openedLine(letter, now, partner))));
       }
     }
     return blocks;
   }
 
-  List<Widget> _opened(LetterShelf shelf) {
+  List<Widget> _opened(LetterShelf shelf, String partner) {
     final now = DateTime.now();
     if (shelf.opened.isEmpty) {
       return const [
@@ -475,7 +475,7 @@ class _LettersPageState extends State<LettersPage> {
         SkyEntrance(
           key: ValueKey<String>('opened-${letter.id}'),
           index: index++,
-          child: _row(letter, _openedLine(letter, now)),
+          child: _row(letter, _openedLine(letter, now, partner)),
         ),
     ];
   }
@@ -514,7 +514,7 @@ class _LettersPageState extends State<LettersPage> {
     for (final letter in rest) {
       final sealed = LettersCopy.sealedWhen(letter.writtenAt, now);
       final state = letter.isOpened
-          ? _lowerFirst(LettersCopy.openedWhen(letter.openedAt, now))
+          ? LettersCopy.lowerFirst(LettersCopy.openedWhen(letter.openedAt, now))
           : LettersCopy.waitingFor(partner);
       blocks.add(
         SkyEntrance(
@@ -527,14 +527,11 @@ class _LettersPageState extends State<LettersPage> {
     return blocks;
   }
 
-  String _openedLine(LetterRecord letter, DateTime now) {
-    if (_mine.contains(letter.id)) {
-      return '${LettersCopy.fromYou} · ${LettersCopy.shortDate(DateTime.fromMillisecondsSinceEpoch(letter.writtenAt), now)}';
-    }
-    return LettersCopy.openedWhen(letter.openedAt, now);
+  String _openedLine(LetterRecord letter, DateTime now, String partner) {
+    final written = LettersCopy.shortDate(DateTime.fromMillisecondsSinceEpoch(letter.writtenAt), now);
+    if (_mine.contains(letter.id)) return '${LettersCopy.fromYou} · $written';
+    return LettersCopy.from(partner, written);
   }
-
-  static String _lowerFirst(String text) => text.isEmpty ? text : text[0].toLowerCase() + text.substring(1);
 
   Widget _row(LetterRecord letter, String subtitle, {bool sealed = false}) {
     return LetterRow(

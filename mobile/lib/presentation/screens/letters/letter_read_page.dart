@@ -115,7 +115,7 @@ class _LetterReadPageState extends State<LetterReadPage> {
         children: [
           Padding(
             padding: EdgeInsets.fromLTRB(SkySpace.gutter, media.viewPadding.top + 10, SkySpace.gutter, 0),
-            child: _topBar(t),
+            child: _topBar(t, identity),
           ),
           Expanded(
             child: SingleChildScrollView(
@@ -173,9 +173,9 @@ class _LetterReadPageState extends State<LetterReadPage> {
     );
   }
 
-  Widget _topBar(SkyTokens t) {
-    final kicker = widget.mine ? LettersCopy.letterFrom : LettersCopy.letter;
-    final name = widget.mine ? LettersCopy.you : LettersCopy.betweenUs;
+  Widget _topBar(SkyTokens t, IdentityController identity) {
+    const kicker = LettersCopy.letterFrom;
+    final name = widget.mine ? LettersCopy.you : LettersCopy.capitalized(identity.partnerName);
     return Row(
       children: [
         const SkyBackButton(semanticLabel: LettersCopy.back),
@@ -212,7 +212,10 @@ class _LetterReadPageState extends State<LetterReadPage> {
     final letter = widget.letter;
     final split = LettersCopy.splitTitle(letter.title);
     final meta = SkyType.caption.copyWith(color: t.paperMuted);
-    final signature = widget.mine && identity.me != null ? LettersCopy.signature(identity.myName) : LettersCopy.withLove;
+    final author = widget.mine ? identity.me : identity.partner;
+    final signature = author == null
+        ? LettersCopy.withLove
+        : LettersCopy.signature(widget.mine ? identity.myName : identity.partnerName);
     return Stack(
       clipBehavior: Clip.none,
       children: [

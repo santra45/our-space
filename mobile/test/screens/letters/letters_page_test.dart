@@ -137,7 +137,7 @@ void main() {
 
     expect(find.text(LettersCopy.newTonight.toUpperCase()), findsOneWidget);
     expect(find.text('Open when you miss me'), findsOneWidget);
-    expect(find.textContaining('Sealed '), findsOneWidget);
+    expect(find.textContaining('From Alex · sealed '), findsOneWidget);
     expect(segmentLabel(tester, LetterSegment.waiting), 'Waiting · 1');
     expect(find.text(body), findsNothing);
 
@@ -147,9 +147,9 @@ void main() {
     expect(find.text(LettersCopy.openWhen.toUpperCase()), findsOneWidget);
     expect(find.text('you miss me'), findsOneWidget);
     expect(find.text(body), findsOneWidget);
-    expect(find.text(LettersCopy.letter.toUpperCase()), findsOneWidget);
-    expect(find.text(LettersCopy.betweenUs), findsOneWidget);
-    expect(find.text(LettersCopy.withLove), findsOneWidget);
+    expect(find.text(LettersCopy.letterFrom.toUpperCase()), findsOneWidget);
+    expect(find.text('Alex'), findsOneWidget);
+    expect(find.text(LettersCopy.signature('Alex')), findsOneWidget);
     expect(find.textContaining('Kept sealed until'), findsNothing);
     expect(find.text(LettersCopy.writeBack), findsOneWidget);
 
@@ -180,7 +180,8 @@ void main() {
     await untilFound(tester, find.text(LettersCopy.openedTogether.toUpperCase()));
     expect(segmentLabel(tester, LetterSegment.opened), 'Opened · 1');
     expect(segmentLabel(tester, LetterSegment.waiting), 'Waiting · 0');
-    expect(find.text(LettersCopy.openedWhen(stored.single.openedAt, DateTime.now())), findsOneWidget);
+    final written = DateTime.fromMillisecondsSinceEpoch(stored.single.writtenAt);
+    expect(find.text(LettersCopy.from('Alex', LettersCopy.shortDate(written, DateTime.now()))), findsOneWidget);
 
     await press(tester, find.text('Open when you miss me'));
     await settleRoutes(tester);
@@ -199,7 +200,7 @@ void main() {
     await openLetters(tester, space);
     await untilFound(tester, find.byType(CapsuleCard));
 
-    expect(find.text(LettersCopy.capsule), findsOneWidget);
+    expect(find.text(LettersCopy.capsuleFrom('Alex')), findsOneWidget);
     expect(find.textContaining('Opens ${LettersCopy.longDate(unlockDate)} · 40 nights'), findsOneWidget);
     expect(find.text(LettersCopy.breakSeal), findsNothing);
     expect(segmentLabel(tester, LetterSegment.waiting), 'Waiting · 1');

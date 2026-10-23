@@ -84,10 +84,21 @@ void main() {
     expect(LettersCopy.openedWhen(null, now), 'Opened');
   });
 
-  test('marks a letter from today as new tonight or today', () {
+  test('marks a letter sealed today or last night as new tonight or today', () {
     expect(LettersCopy.newLabel(at(2026, 10, 22, 8), now, night: true), 'New tonight');
     expect(LettersCopy.newLabel(at(2026, 10, 22, 8), now, night: false), 'New today');
+    expect(LettersCopy.newLabel(at(2026, 10, 21, 23, 40), now, night: true), 'New tonight');
+    expect(LettersCopy.newLabel(at(2026, 10, 21, 10), now, night: false), 'New today');
     expect(LettersCopy.newLabel(at(2026, 10, 20), now, night: true), 'Waiting for you');
+  });
+
+  test('says who a letter is from like the design', () {
+    final sealed = LettersCopy.lowerFirst(LettersCopy.sealedWhen(at(2026, 10, 21, 23), now));
+    expect(LettersCopy.from('Farhu', sealed), 'From Farhu · sealed last night');
+    expect(LettersCopy.capsuleFrom('Farhu'), 'A time capsule from Farhu');
+    expect(LettersCopy.from('Farhu', LettersCopy.shortDate(DateTime(2026, 10, 12), now)), 'From Farhu · 12 Oct');
+    expect(LettersCopy.capitalized('your partner'), 'Your partner');
+    expect(LettersCopy.signature('Farhu'), '— Farhu');
   });
 
   test('counts nights at night and days by day', () {

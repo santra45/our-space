@@ -19,11 +19,12 @@ abstract final class LettersCopy {
   static const String alsoWaiting = 'Also waiting';
   static const String openedTogether = 'Opened together';
   static const String seeAll = 'See all';
-  static const String capsule = 'A time capsule, still sealed';
+  static String capsuleFrom(String partner) => 'A time capsule from $partner';
   static String capsuleFor(String partner) => 'A time capsule for $partner';
   static const String readyToOpen = 'ready to open';
   static String waitingFor(String partner) => 'waiting for $partner';
   static const String fromYou = 'From you';
+  static String from(String who, String when) => 'From $who · $when';
 
   static const String emptyTitle = 'No letters yet';
   static String emptyMessage(String partner) =>
@@ -53,9 +54,7 @@ abstract final class LettersCopy {
   static const String moreFor = 'More for this letter';
 
   static const String letterFrom = 'A letter from';
-  static const String letter = 'A letter';
   static const String you = 'You';
-  static const String betweenUs = 'Between us';
   static const String openWhen = 'Open when';
   static const String writeBack = 'Write back';
   static const String writeAnother = 'Write another';
@@ -129,6 +128,10 @@ abstract final class LettersCopy {
 
   static bool isNightHour(DateTime time) => time.hour >= 18 || time.hour < 6;
 
+  static String capitalized(String text) => text.isEmpty ? text : text[0].toUpperCase() + text.substring(1);
+
+  static String lowerFirst(String text) => text.isEmpty ? text : text[0].toLowerCase() + text.substring(1);
+
   static int daysBetween(DateTime from, DateTime to) {
     final a = DateTime.utc(from.year, from.month, from.day);
     final b = DateTime.utc(to.year, to.month, to.day);
@@ -161,7 +164,7 @@ abstract final class LettersCopy {
   }
 
   static String newLabel(int writtenAt, DateTime now, {required bool night}) {
-    if (writtenAt > 0 && daysBetween(DateTime.fromMillisecondsSinceEpoch(writtenAt), now) <= 0) {
+    if (writtenAt > 0 && daysBetween(DateTime.fromMillisecondsSinceEpoch(writtenAt), now) <= 1) {
       return night ? newTonight : newToday;
     }
     return waitingForYou;
