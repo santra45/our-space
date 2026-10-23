@@ -12,6 +12,7 @@ import 'package:our_space_mobile/presentation/screens/sync/backup_dialogs.dart';
 import 'package:our_space_mobile/presentation/screens/sync/together_now.dart';
 import 'package:our_space_mobile/presentation/sky/sky.dart';
 import 'package:our_space_mobile/presentation/widgets/app_haptics.dart';
+import 'package:provider/provider.dart';
 
 import '../../widgets/harness.dart' show recordHaptics, recordedHaptics;
 import '../sync/hub_harness.dart';
@@ -19,6 +20,77 @@ import '../sync/hub_harness.dart';
 Finder rowText(Key row, String text) => find.descendant(of: find.byKey(row), matching: find.text(text));
 
 Finder inNames(Finder finder) => find.descendant(of: find.byType(NamesSheet), matching: finder);
+
+Person someone(String id, String name) => Person(
+  personId: id,
+  name: name,
+  pronoun: 'they',
+  deviceIds: const [],
+  lastActiveAt: null,
+  createdAt: 1,
+  updatedAt: 1,
+);
+
+class CastIdentity extends IdentityController {
+  CastIdentity(OurSpace space, this.cast, {this.works = false})
+    : super(store: space.store, vault: space.vault, people: space.peopleService, repair: space.repair);
+
+  final List<Person> cast;
+  final bool works;
+  int swaps = 0;
+  int claims = 0;
+
+  @override
+  IdentityStatus get status => IdentityStatus.ready;
+
+  @override
+  Person? get me => cast.first;
+
+  @override
+  Person? get partner => cast.length > 1 ? cast[1] : null;
+
+  @override
+  List<Person> get everyone => cast;
+
+  @override
+  bool get busy => false;
+
+  @override
+  Future<bool> swapUsBack() async {
+    swaps++;
+    return works;
+  }
+
+  @override
+  Future<bool> claimPerson(String personId) async {
+    claims++;
+    return works;
+  }
+}
+
+Future<void> openNamesWith(WidgetTester tester, IdentityController identity) async {
+  await tester.pumpWidget(
+    MaterialApp(
+      debugShowCheckedModeBanner: false,
+      builder: (context, navigator) =>
+          ChangeNotifierProvider<IdentityController>.value(value: identity, child: navigator!),
+      home: Scaffold(
+        body: Builder(
+          builder: (context) => Center(
+            child: TextButton(onPressed: () => showNamesSheet(context), child: const Text('names')),
+          ),
+        ),
+      ),
+    ),
+  );
+  await tester.tap(find.text('names'));
+  await tester.pump();
+  await tester.pump(const Duration(milliseconds: 500));
+  expect(find.byType(NamesSheet), findsOneWidget);
+}
+
+SkyNoticeTone noticeTone(WidgetTester tester, String text) =>
+    tester.widget<SkyNotice>(find.ancestor(of: find.text(text), matching: find.byType(SkyNotice))).tone;
 
 Future<OurSpace> coupled(WidgetTester tester) async {
   final space = await openUnlockedSpace(tester);
@@ -205,6 +277,56 @@ void main() {
     expect(space.identity.me!.personId, isNot(before));
     expect(space.identity.me!.name, 'Sam');
     expect(space.identity.partner!.personId, before);
+  });
+
+  testWidgets('a crowded space warns instead of offering a swap, and a blank name says so', (tester) async {
+    calm(tester);
+    final space = await real(tester, openHubSpace);
+    final identity = CastIdentity(space, [someone('p-1', ''), someone('p-2', 'Alex'), someone('p-3', 'Kai')]);
+    addTearDown(identity.dispose);
+    await openNamesWith(tester, identity);
+
+    expect(inNames(find.text(NamesCopy.noNameYet)), findsOneWidget);
+    expect(inNames(find.text(NamesCopy.tooMany)), findsOneWidget);
+    expect(inNames(find.text(NamesCopy.sealed)), findsNothing);
+    expect(inNames(find.text(NamesCopy.swappedLink)), findsNothing);
+    expect(semanticsLabelled('Edit this person'), findsOneWidget);
+  });
+
+  testWidgets('a swap that does not work says nothing changed', (tester) async {
+    calm(tester);
+    final space = await real(tester, openHubSpace);
+    final identity = CastIdentity(space, [someone('p-1', 'Sam'), someone('p-2', 'Alex')]);
+    addTearDown(identity.dispose);
+    await openNamesWith(tester, identity);
+    expect(inNames(find.text(NamesCopy.sealed)), findsOneWidget);
+
+    await press(tester, find.text(NamesCopy.swappedLink));
+    expect(find.text(NamesCopy.swapTitle), findsOneWidget);
+    await press(tester, find.text(NamesCopy.swapAction));
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(identity.swaps, 1);
+    expect(find.text(NamesCopy.swapTitle), findsNothing);
+    expect(inNames(find.text(NamesCopy.swapFailed)), findsOneWidget);
+    expect(noticeTone(tester, NamesCopy.swapFailed), SkyNoticeTone.error);
+    expect(inNames(find.text(NamesCopy.swapped)), findsNothing);
+  });
+
+  testWidgets('a claim that does not work says nothing changed', (tester) async {
+    calm(tester);
+    final space = await real(tester, openHubSpace);
+    final identity = CastIdentity(space, [someone('p-1', 'Sam'), someone('p-2', 'Alex')]);
+    addTearDown(identity.dispose);
+    await openNamesWith(tester, identity);
+
+    await press(tester, find.text(NamesCopy.imThisOne));
+    expect(find.text('Make this phone Alex?'), findsOneWidget);
+    await press(tester, find.text("Yes, I'm Alex"));
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(identity.claims, 1);
+    expect(find.text('Make this phone Alex?'), findsNothing);
+    expect(inNames(find.text(NamesCopy.claimFailed)), findsOneWidget);
+    expect(noticeTone(tester, NamesCopy.claimFailed), SkyNoticeTone.error);
   });
 
   testWidgets('names copy keeps its fallbacks for missing names', (tester) async {
