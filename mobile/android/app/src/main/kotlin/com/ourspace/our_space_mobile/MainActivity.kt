@@ -7,5 +7,6 @@ class MainActivity : FlutterFragmentActivity() {
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         QuickUnlockChannel(this, flutterEngine.dartExecutor.binaryMessenger)
+        SystemSettingsChannel(this, flutterEngine.dartExecutor.binaryMessenger)
     }
 }
