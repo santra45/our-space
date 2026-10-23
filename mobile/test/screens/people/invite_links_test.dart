@@ -10,14 +10,15 @@ import 'package:our_space_mobile/presentation/home_shell.dart';
 import 'package:our_space_mobile/presentation/screens/lock/lock_screen.dart';
 import 'package:our_space_mobile/presentation/widgets/our_widgets.dart';
 
+import '../lock/lock_harness.dart' show lockField;
 import 'people_harness.dart';
 
 const String webOrigin = 'https://sameskytonight.vercel.app';
 const String sampleSalt = 'AAECAwQFBgcICQoLDA0ODw==';
-const String pasteHint = 'Paste link (e.g. https://...#connect=...)';
-const String invitedLine = 'Your partner invited you! 💕';
-const String foundLine = 'Found your partner\'s invite! Enter the passphrase you both chose.';
-const String hereLine = 'Your partner\'s invite is here. Unlock, and we\'ll offer to connect to their phone.';
+const String pasteHint = LockCopy.inviteHint;
+const String invitedLine = LockCopy.joinInvited;
+const String foundLine = LockCopy.inviteFound;
+const String hereLine = LockCopy.inviteHere;
 
 String inviteFor(String? salt, {String peerId = 'love-abc123xyz', String? names}) =>
     buildInviteUrl(peerId, salt, baseUrl: '$webOrigin/', coupleNames: names, startDate: '2021-06-14');
@@ -90,19 +91,19 @@ void main() {
     final inbox = InviteInbox(launch.stream);
     final phone = await real(tester, openPeopleSpace);
     await pumpOurSpace(tester, phone, inbox: inbox);
-    await untilFound(tester, find.text('Setup Your Private Space'));
+    await untilFound(tester, find.text(LockCopy.setupTitle));
 
     launch.add(link);
     await tester.pump();
     await tester.pump();
 
-    expect(find.text('Join Partner\'s Space 💕'), findsOneWidget);
+    expect(find.text(LockCopy.joinTitle), findsOneWidget);
     expect(find.text(invitedLine), findsOneWidget);
     expect(find.text(foundLine), findsOneWidget);
-    expect(fieldWithHint(pasteHint), findsNothing);
+    expect(lockField(pasteHint), findsNothing);
 
-    await type(tester, fieldWithHint('Enter the secret phrase you both agreed on...'), passphrase);
-    await press(tester, find.text('Pair & Enter Our Space 💕'));
+    await type(tester, lockField(LockCopy.joinHint), passphrase);
+    await press(tester, find.text(LockCopy.joinButton));
     await until(tester, () => phone.vault.isUnlocked);
     await untilFound(tester, find.byType(HomeShell));
     expect(phone.vault.salt, partner.vault.salt);
@@ -125,7 +126,7 @@ void main() {
     await pumpOurSpace(tester, phone, inbox: inbox);
     await untilFound(tester, find.text(invitedLine));
     expect(find.text(foundLine), findsOneWidget);
-    expect(fieldWithHint(pasteHint), findsNothing);
+    expect(lockField(pasteHint), findsNothing);
   });
 
   testWidgets('a link that arrives while the lock screen is open switches it to joining', (tester) async {
@@ -133,21 +134,21 @@ void main() {
     final inbox = InviteInbox();
     final phone = await real(tester, openPeopleSpace);
     await pumpOurSpace(tester, phone, inbox: inbox);
-    await untilFound(tester, find.text('Setup Your Private Space'));
+    await untilFound(tester, find.text(LockCopy.setupTitle));
 
-    await press(tester, find.text('Join Partner\'s Space'));
-    await press(tester, find.text('Create New Space'));
-    await type(tester, fieldWithHint('e.g. Romeo & Juliet'), 'Half typed');
-    expect(find.text('Setup Your Private Space'), findsOneWidget);
+    await press(tester, find.text(LockCopy.segmentJoin));
+    await press(tester, find.text(LockCopy.segmentStart));
+    await type(tester, lockField(LockCopy.namesHint), 'Half typed');
+    expect(find.text(LockCopy.setupTitle), findsOneWidget);
 
     expect(inbox.deliver(inviteFor(sampleSalt)), isTrue);
     await tester.pump();
     await tester.pump();
 
-    expect(find.text('Setup Your Private Space'), findsNothing);
+    expect(find.text(LockCopy.setupTitle), findsNothing);
     expect(find.text(invitedLine), findsOneWidget);
     expect(find.text(foundLine), findsOneWidget);
-    expect(fieldWithHint(pasteHint), findsNothing);
+    expect(lockField(pasteHint), findsNothing);
   });
 
   testWidgets('a link that arrives while unlocked closes everything and shows the lock screen', (tester) async {
@@ -182,11 +183,11 @@ void main() {
     expect(find.text('A little sheet'), findsNothing);
     expect(find.byType(LockScreen), findsOneWidget);
     expect(find.text('Locked'), findsOneWidget);
-    expect(find.textContaining('That invite is for a ', findRichText: true), findsOneWidget);
+    expect(find.textContaining(LockCopy.inviteElsewhereLead, findRichText: true), findsOneWidget);
     expect(find.text(hereLine), findsNothing);
 
-    await type(tester, fieldWithHint('Enter your secret passphrase (min 16 chars)...'), passphrase);
-    await press(tester, find.text('Unlock Our Space 💕'));
+    await type(tester, lockField(LockCopy.unlockHint), passphrase);
+    await press(tester, find.text(LockCopy.unlockButton));
     await until(tester, () => space.vault.isUnlocked);
     await untilFound(tester, find.byType(HomeShell));
     expect(space.vault.salt, isNot('EBESExQVFhcYGRobHB0eHw=='));
@@ -196,7 +197,7 @@ void main() {
     await tester.pump();
     await tester.pump();
     expect(find.text('Locked'), findsOneWidget);
-    expect(find.textContaining('That invite is for a ', findRichText: true), findsNothing);
+    expect(find.textContaining(LockCopy.inviteElsewhereLead, findRichText: true), findsNothing);
   });
 
   testWidgets('an invite for this same space just says it is here', (tester) async {
@@ -215,8 +216,8 @@ void main() {
     expect(find.text('Locked'), findsOneWidget);
     expect(find.text(hereLine), findsOneWidget);
 
-    await type(tester, fieldWithHint('Enter your secret passphrase (min 16 chars)...'), passphrase);
-    await press(tester, find.text('Unlock Our Space 💕'));
+    await type(tester, lockField(LockCopy.unlockHint), passphrase);
+    await press(tester, find.text(LockCopy.unlockButton));
     await until(tester, () => space.vault.isUnlocked);
     await untilFound(tester, find.byType(HomeShell));
     expect(space.store.settings.getItem(pairedPartnerKey), 'love-abc123xyz');

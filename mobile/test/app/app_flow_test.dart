@@ -18,6 +18,7 @@ import 'package:our_space_mobile/presentation/space_scope.dart';
 import 'package:our_space_mobile/presentation/vault_gate.dart';
 import 'package:our_space_mobile/presentation/widgets/our_widgets.dart';
 
+import '../screens/lock/lock_harness.dart' show lockButtonEnabled, lockField, touchEnabled;
 import '../support/fake_quick_unlock.dart';
 import '../support/harness.dart';
 import '../widgets/harness.dart' show recordHaptics, recordedHaptics, usePhoneSize;
@@ -48,10 +49,7 @@ Future<void> until(WidgetTester tester, bool Function() done, {int tries = 1500}
 
 Future<void> untilFound(WidgetTester tester, Finder finder) => until(tester, () => finder.evaluate().isNotEmpty);
 
-Finder fieldWithHint(String hint) => find.descendant(
-      of: find.byWidgetPredicate((widget) => widget is OurTextField && widget.hint == hint),
-      matching: find.byType(TextField),
-    );
+Finder fieldWithHint(String hint) => lockField(hint);
 
 Future<void> reveal(WidgetTester tester, Finder finder) async {
   unawaited(Scrollable.ensureVisible(tester.element(finder), alignment: 0.5));
@@ -70,10 +68,7 @@ Future<void> press(WidgetTester tester, Finder finder) async {
   await tester.pump();
 }
 
-bool enabledButton(WidgetTester tester, String label) {
-  final button = tester.widget<BouncyButton>(find.ancestor(of: find.text(label), matching: find.byType(BouncyButton)));
-  return button.isEnabled;
-}
+bool enabledButton(WidgetTester tester, String label) => lockButtonEnabled(tester, label);
 
 Future<void> drain(WidgetTester tester) async {
   for (var i = 0; i < 25; i++) {
@@ -161,24 +156,22 @@ void main() {
     calm(tester);
     final space = await real(tester, openTestSpace);
     await pumpApp(tester, () async => space);
-    await untilFound(tester, find.text('Setup Your Private Space'));
+    await untilFound(tester, find.text(LockCopy.setupTitle));
 
-    expect(find.text('Create New Space'), findsOneWidget);
-    expect(find.text('Join Partner\'s Space'), findsOneWidget);
-    expect(find.text('This makes a brand-new, empty space.'), findsOneWidget);
-    expect(find.text('Locked with your passphrase. Only you two can open it.'), findsOneWidget);
-    expect(find.text('Bring back a copy you saved'), findsOneWidget);
+    expect(find.text(LockCopy.segmentStart), findsOneWidget);
+    expect(find.text(LockCopy.segmentJoin), findsOneWidget);
+    expect(find.text(LockCopy.freshTitle), findsOneWidget);
+    expect(labelled(LockCopy.footer), findsOneWidget);
+    expect(find.text(LockCopy.moreRestore), findsOneWidget);
+    expect(enabledButton(tester, LockCopy.createButton), isFalse);
 
-    await type(tester, fieldWithHint('e.g. Romeo & Juliet'), 'Sam & Alex');
-    await type(tester, fieldWithHint('Create a shared secret phrase (min 16 chars)...'), 'too short');
-    await press(tester, find.text('Create a New Space 💕'));
-    expect(
-      find.text('Please choose a memorable secret passphrase of at least 16 characters.'),
-      findsOneWidget,
-    );
+    await type(tester, fieldWithHint(LockCopy.namesHint), 'Sam & Alex');
+    await type(tester, fieldWithHint(LockCopy.setupHint), 'too short');
+    await press(tester, find.text(LockCopy.createButton));
+    expect(find.text(LockCopy.setupTooShort()), findsOneWidget);
 
-    await type(tester, fieldWithHint('Create a shared secret phrase (min 16 chars)...'), passphrase);
-    await press(tester, find.text('Create a New Space 💕'));
+    await type(tester, fieldWithHint(LockCopy.setupHint), passphrase);
+    await press(tester, find.text(LockCopy.createButton));
     await until(tester, () => space.vault.isUnlocked);
     await untilFound(tester, find.byType(HomeShell));
     await untilFound(tester, find.text('Already did this on the other phone'));
@@ -198,22 +191,22 @@ void main() {
     await tester.pump(const Duration(milliseconds: 500));
     expect(space.vault.isUnlocked, isFalse);
     expect(find.text('Locked'), findsOneWidget);
-    expect(find.text('Enter the passphrase you two share to open your memories and notes.'), findsOneWidget);
-    expect(enabledButton(tester, 'Unlock Our Space 💕'), isFalse);
+    expect(find.text(LockCopy.unlockIntro), findsOneWidget);
+    expect(enabledButton(tester, LockCopy.unlockButton), isFalse);
 
-    final unlockField = fieldWithHint('Enter your secret passphrase (min 16 chars)...');
+    final unlockField = fieldWithHint(LockCopy.unlockHint);
     await type(tester, unlockField, 'short one');
-    await press(tester, find.text('Unlock Our Space 💕'));
-    expect(find.text('Passphrase must be at least 16 characters.'), findsOneWidget);
+    await press(tester, find.text(LockCopy.unlockButton));
+    expect(find.text(LockCopy.unlockTooShort()), findsOneWidget);
 
     await type(tester, unlockField, 'this is not the passphrase at all');
-    await press(tester, find.text('Unlock Our Space 💕'));
-    await untilFound(tester, find.text('Incorrect passphrase! Please double-check and try again.'));
+    await press(tester, find.text(LockCopy.unlockButton));
+    await untilFound(tester, find.text(LockCopy.incorrectPassphrase));
     expect(space.vault.isUnlocked, isFalse);
 
     await type(tester, unlockField, passphrase);
-    expect(find.text('Incorrect passphrase! Please double-check and try again.'), findsNothing);
-    await press(tester, find.text('Unlock Our Space 💕'));
+    expect(find.text(LockCopy.incorrectPassphrase), findsNothing);
+    await press(tester, find.text(LockCopy.unlockButton));
     await until(tester, () => space.vault.isUnlocked);
     await untilFound(tester, find.byType(HomeShell));
     expect(find.byKey(ShellKeys.dock), findsOneWidget);
@@ -234,13 +227,12 @@ void main() {
     await pumpApp(tester, () async => space);
     await untilFound(tester, find.text(LockCopy.quickButton));
 
-    expect(find.text(LockCopy.quickIntro), findsOneWidget);
     expect(find.text(LockCopy.usePassphrase), findsOneWidget);
-    expect(fieldWithHint('Enter your secret passphrase (min 16 chars)...'), findsNothing);
+    expect(fieldWithHint(LockCopy.unlockHint), findsNothing);
 
     fake.failNext = 'cancelled';
     await press(tester, find.text(LockCopy.quickButton));
-    await until(tester, () => enabledButton(tester, LockCopy.quickButton));
+    await until(tester, () => touchEnabled(tester));
     expect(space.vault.isUnlocked, isFalse);
     expect(find.text(QuickUnlockCopy.didNotWork), findsNothing);
 
@@ -254,9 +246,13 @@ void main() {
     await lockFromSettings(tester);
     await untilFound(tester, find.text(LockCopy.usePassphrase));
     await press(tester, find.text(LockCopy.usePassphrase));
-    expect(find.text('Enter the passphrase you two share to open your memories and notes.'), findsOneWidget);
-    expect(fieldWithHint('Enter your secret passphrase (min 16 chars)...'), findsOneWidget);
+    expect(find.text(LockCopy.unlockIntro), findsOneWidget);
+    expect(fieldWithHint(LockCopy.unlockHint), findsOneWidget);
     expect(find.text(LockCopy.quickButton), findsNothing);
+
+    await press(tester, find.text(LockCopy.useTouch));
+    expect(find.text(LockCopy.quickButton), findsOneWidget);
+    expect(fieldWithHint(LockCopy.unlockHint), findsNothing);
   });
 
   testWidgets('when the phone fingerprints change it says so and goes back to the passphrase', (tester) async {
@@ -277,7 +273,8 @@ void main() {
     await untilFound(tester, find.text(QuickUnlockCopy.needsSetupAgain));
     expect(space.vault.isUnlocked, isFalse);
     expect(find.text(LockCopy.quickButton), findsNothing);
-    expect(fieldWithHint('Enter your secret passphrase (min 16 chars)...'), findsOneWidget);
+    expect(find.text(LockCopy.useTouch), findsNothing);
+    expect(fieldWithHint(LockCopy.unlockHint), findsOneWidget);
   });
 
   testWidgets('shows a gentle retry when the phone storage will not open', (tester) async {
@@ -289,12 +286,12 @@ void main() {
       if (attempts == 1) throw StateError('disk said no');
       return space;
     });
-    await untilFound(tester, find.text('Something went wrong opening your space'));
-    expect(find.text('Nothing was lost — try again.'), findsOneWidget);
+    await untilFound(tester, find.text(LockCopy.unreadableTitle));
+    expect(find.text(LockCopy.unreadableBody), findsOneWidget);
     expect(find.textContaining('disk said no'), findsNothing);
 
-    await press(tester, find.text('Try again'));
-    await untilFound(tester, find.text('Setup Your Private Space'));
+    await press(tester, find.text(LockCopy.tryAgain));
+    await untilFound(tester, find.text(LockCopy.setupTitle));
     expect(attempts, 2);
   });
 
@@ -307,32 +304,29 @@ void main() {
 
     final phone = await real(tester, openTestSpace);
     await pumpApp(tester, () async => phone);
-    await untilFound(tester, find.text('Setup Your Private Space'));
+    await untilFound(tester, find.text(LockCopy.setupTitle));
 
-    await press(tester, find.text('Join Partner\'s Space'));
-    expect(find.text('Join Partner\'s Space 💕'), findsOneWidget);
-    expect(find.text('Use your partner’s invite link to join their space.'), findsOneWidget);
+    await press(tester, find.text(LockCopy.segmentJoin));
+    expect(find.text(LockCopy.joinTitle), findsOneWidget);
+    expect(find.text(LockCopy.joinIntro), findsOneWidget);
 
-    await type(tester, fieldWithHint('Enter the secret phrase you both agreed on...'), passphrase);
-    await press(tester, find.text('Pair & Enter Our Space 💕'));
-    expect(
-      find.text('Please paste your partner’s invite link — the one they sent you, or the QR code you scanned.'),
-      findsOneWidget,
-    );
+    await type(tester, fieldWithHint(LockCopy.joinHint), passphrase);
+    await press(tester, find.text(LockCopy.joinButton));
+    expect(find.text(LockCopy.pasteInvite), findsOneWidget);
 
-    await type(tester, fieldWithHint('Paste link (e.g. https://...#connect=...)'), link);
-    expect(find.text('Found your partner\'s invite! Enter the passphrase you both chose.'), findsOneWidget);
+    await type(tester, fieldWithHint(LockCopy.inviteHint), link);
+    expect(find.text(LockCopy.inviteFound), findsOneWidget);
 
-    await press(tester, find.text('Pair & Enter Our Space 💕'));
+    await press(tester, find.text(LockCopy.joinButton));
     await until(tester, () => phone.vault.isUnlocked);
     await untilFound(tester, find.byType(HomeShell));
 
     expect(phone.vault.salt, partner.vault.salt);
     expect(phone.vault.config!.coupleNames, 'Sam & Alex');
-    expect(find.text(VaultMessages.pairedUnverified), findsOneWidget);
+    expect(find.text(LockCopy.joinedUnverified), findsOneWidget);
     await tester.tap(find.descendant(of: find.byType(VaultWarningBanner), matching: labelled(VaultWarningBanner.dismissLabel)));
     await tester.pump();
-    expect(find.text(VaultMessages.pairedUnverified), findsNothing);
+    expect(find.text(LockCopy.joinedUnverified), findsNothing);
   });
 
   testWidgets('erasing an existing space needs the typed phrase and offers a rescue copy', (tester) async {
@@ -347,27 +341,29 @@ void main() {
     };
 
     await pumpApp(tester, () async => space);
-    await untilFound(tester, find.text('Locked'));
-    await press(tester, find.text('Start over with a brand new space (erases this one)'));
+    await untilFound(tester, find.text(LockCopy.unlockIntro));
+    await press(tester, find.text(LockCopy.moreWays));
+    await tester.pump(const Duration(milliseconds: 500));
+    await press(tester, find.text(LockCopy.moreStartOver));
+    await tester.pump(const Duration(milliseconds: 500));
 
     expect(find.text('THIS ERASES EVERYTHING ON THIS PHONE'), findsOneWidget);
-    await type(
-        tester, fieldWithHint('Create a shared secret phrase (min 16 chars)...'), 'a brand new shared passphrase');
-    expect(enabledButton(tester, 'Erase & Start Fresh'), isFalse);
+    await type(tester, fieldWithHint(LockCopy.setupHint), 'a brand new shared passphrase');
+    expect(enabledButton(tester, LockCopy.replaceButton), isFalse);
 
-    await type(tester, fieldWithHint('Passphrase for this file (at least 16)'), 'short');
-    await press(tester, find.text('Save a copy'));
+    await type(tester, fieldWithHint(LockCopy.saveFirstHint), 'short');
+    await press(tester, find.text(LockCopy.saveFirstButton));
     expect(find.text('Pick a passphrase with at least 16 characters.'), findsOneWidget);
 
-    await type(tester, fieldWithHint('Passphrase for this file (at least 16)'), 'a rescue passphrase for the file');
-    await press(tester, find.text('Save a copy'));
-    await untilFound(tester, find.text('Saved. That passphrase opens it. 💕'));
+    await type(tester, fieldWithHint(LockCopy.saveFirstHint), 'a rescue passphrase for the file');
+    await press(tester, find.text(LockCopy.saveFirstButton));
+    await untilFound(tester, find.text('Saved. That passphrase opens it.'));
     expect(saved?.fileName, startsWith('our-space-rescue-'));
 
     await type(tester, fieldWithHint(destroyConfirmationPhrase), 'erase our memories');
-    expect(enabledButton(tester, 'Erase & Start Fresh'), isTrue);
+    expect(enabledButton(tester, LockCopy.replaceButton), isTrue);
     final oldSalt = space.vault.salt;
-    await press(tester, find.text('Erase & Start Fresh'));
+    await press(tester, find.text(LockCopy.replaceButton));
     await until(tester, () => space.vault.isUnlocked);
     expect(space.vault.salt, isNot(oldSalt));
     await untilFound(tester, find.byKey(ShellKeys.dock));
@@ -388,23 +384,18 @@ void main() {
 
     final phone = await real(tester, openTestSpace);
     await pumpApp(tester, () async => phone);
-    await untilFound(tester, find.text('Setup Your Private Space'));
-    await press(tester, find.text('Bring back a copy you saved'));
-    expect(find.text('Bring back a saved copy'), findsOneWidget);
+    await untilFound(tester, find.text(LockCopy.setupTitle));
+    await press(tester, find.text(LockCopy.moreRestore));
+    expect(find.text(LockCopy.restoreTitle), findsOneWidget);
 
-    await press(tester, find.text('Choose the file you saved'));
+    await press(tester, find.text(LockCopy.chooseFile));
     await untilFound(tester, find.text(file.fileName));
-    await type(tester, fieldWithHint('Passphrase for this file'), passphrase);
-    await press(tester, find.text('Open this file'));
-    await untilFound(tester, find.text('Bring everything back'));
-    expect(
-      find.text(
-        'There is nothing here to replace. Anything left over from an older space on this phone is tidied away first — it cannot be opened any more anyway.',
-      ),
-      findsOneWidget,
-    );
+    await type(tester, fieldWithHint(LockCopy.filePassphraseHint), passphrase);
+    await press(tester, find.text(LockCopy.openFile));
+    await untilFound(tester, find.text(LockCopy.restoreButton));
+    expect(find.text(LockCopy.nothingToReplace), findsOneWidget);
 
-    await press(tester, find.text('Bring everything back'));
+    await press(tester, find.text(LockCopy.restoreButton));
     await until(tester, () => phone.vault.isUnlocked);
     await untilFound(tester, find.byType(HomeShell));
     expect(phone.vault.salt, source.vault.salt);
@@ -457,7 +448,7 @@ void main() {
     calm(tester);
     final space = await real(tester, openTestSpace);
     await pumpApp(tester, () async => space);
-    await untilFound(tester, find.text('Setup Your Private Space'));
+    await untilFound(tester, find.text(LockCopy.setupTitle));
     expect(space.identity.appInForeground, isTrue);
     tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
     tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);

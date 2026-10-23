@@ -5,10 +5,27 @@ import 'package:provider/provider.dart';
 
 import '../../../core/engine.dart';
 import '../../files/vault_files.dart';
+import '../../sky/sky.dart';
 import '../../space_scope.dart';
-import '../../widgets/our_widgets.dart';
+import '../../widgets/app_haptics.dart';
+import '../../widgets/confetti_burst.dart';
+import 'lock_copy.dart';
+import 'widgets/lock_danger_gate.dart';
+import 'widgets/lock_fields.dart';
+import 'widgets/lock_parts.dart';
+import 'widgets/lock_sky.dart';
+import 'widgets/lock_touch.dart';
+
+export 'lock_copy.dart';
+export 'widgets/lock_danger_gate.dart';
+export 'widgets/lock_fields.dart';
+export 'widgets/lock_parts.dart';
+export 'widgets/lock_sky.dart';
+export 'widgets/lock_touch.dart';
 
 enum LockMode { unlock, join, setup, restore }
+
+enum LockView { checking, unreadable, touch, passphrase, setup, join, restore }
 
 LockMode? defaultLockMode(VaultCheckState state, {bool inviteHasSalt = false, bool installed = false}) {
   if (state == VaultCheckState.present) return LockMode.unlock;
@@ -17,242 +34,82 @@ LockMode? defaultLockMode(VaultCheckState state, {bool inviteHasSalt = false, bo
   return installed ? LockMode.join : LockMode.setup;
 }
 
-abstract final class LockCopy {
-  static const String title = 'Our Space 💕';
-  static const String tagline = 'A little corner just for the two of us';
-  static const String checking = 'Finding your space…';
-  static const String unreadableTitle = 'Something went wrong opening your space';
-  static const String unreadableBody = 'Nothing was lost — try again.';
-  static const String tryAgain = 'Try again';
-  static const String footer = 'Locked with your passphrase. Only you two can open it.';
-  static String unlockTooShort() => 'Passphrase must be at least $minPassphraseLength characters.';
-  static String setupTooShort() =>
-      'Please choose a memorable secret passphrase of at least $minPassphraseLength characters.';
-  static String typeToConfirm() => 'Type $destroyConfirmationPhrase to confirm.';
-  static const String restoreFallback = 'That did not finish. Please try again.';
-  static const String quickIntro = 'One touch, and you are back in your memories and notes.';
-  static const String quickButton = 'Open with a touch 💕';
-  static const String usePassphrase = 'Use the passphrase instead';
-  static const String notOurFile = 'That does not look like a file Our Space saved.';
-  static const String couldNotOpenFile = 'We could not open that file. Check the passphrase and try again.';
-  static const String missingIdentity =
-      'That file opened, but it is missing the part we need to rebuild your space here. It was '
-      'probably saved by an older version. You can still bring its things in from the Sync '
-      'Hub once you are unlocked.';
-  static String fileTooBig(int bytes) =>
-      'That file is ${(bytes / (1024 * 1024)).round()}MB, over the ${(maxBackupFileBytes / (1024 * 1024)).round()}MB limit.';
+const double _actionArea = LockMetrics.touchBlock - 36 - 14;
 
-  static const Map<String, String> restoreErrors = {
-    'no_identity': 'This file is missing the part we need to rebuild your space here.',
-    'bad_salt': 'This file looks damaged, so we left everything as it is.',
-    'passphrase_too_short': 'The passphrase needs at least $minPassphraseLength characters.',
-    'passphrase_mismatch':
-        'That is not the passphrase this file was saved with. Nothing changed. It is the one you used '
-            'to open Our Space back when you saved it — not always the same one that opened the file.',
-    'unreadable': 'We could not read what is already on this phone, so we stopped instead of risking it. '
-        'Please try again.',
-    'same_vault': 'This file is from this very phone, so there is nothing to swap. Just unlock as usual, then '
-        'use Bring in a copy in the Sync Hub to add its things back.',
-    'needs_confirmation': 'Type the words above to replace what is on this phone.',
-    'write_failed': 'That stopped partway. Nothing more was written.',
-  };
-}
+class LockCheckingView extends StatelessWidget {
+  const LockCheckingView({super.key, required this.metrics});
 
-class LockHeartBeat extends TwLoopingAnimation {
-  const LockHeartBeat({super.key, required super.child, super.enabled}) : super(period: const Duration(seconds: 3));
-
-  static double _keyframes(List<double> values, double t) {
-    final segments = values.length - 1;
-    final position = (t.clamp(0.0, 1.0)) * segments;
-    final index = position.floor().clamp(0, segments - 1);
-    final local = Curves.easeInOut.transform(position - index);
-    return values[index] + (values[index + 1] - values[index]) * local;
-  }
-
-  static double scaleAt(double t) => _keyframes(const [1, 1.08, 1], t);
-
-  static double rotationDegreesAt(double t) => _keyframes(const [0, -3, 3, 0], t);
-
-  @override
-  Widget buildFrame(BuildContext context, double t, Widget child) {
-    return Transform.rotate(
-      angle: rotationDegreesAt(t) * 3.141592653589793 / 180,
-      child: Transform.scale(scale: scaleAt(t), child: child),
-    );
-  }
-}
-
-class LockScreenFrame extends StatefulWidget {
-  const LockScreenFrame({super.key, required this.child});
-
-  final Widget child;
-
-  @override
-  State<LockScreenFrame> createState() => _LockScreenFrameState();
-}
-
-class _LockScreenFrameState extends State<LockScreenFrame> with SingleTickerProviderStateMixin {
-  static const Duration _entranceDuration = Duration(milliseconds: 500);
-  static DateTime? _lastEntrance;
-
-  late final AnimationController _entrance = AnimationController(vsync: this, duration: _entranceDuration);
-  bool _started = false;
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    if (!motionAllowed(context)) {
-      _entrance.value = 1;
-      _started = true;
-      return;
-    }
-    if (_started) return;
-    _started = true;
-    final now = DateTime.now();
-    final last = _lastEntrance;
-    final elapsed = last == null ? _entranceDuration : now.difference(last);
-    if (elapsed < _entranceDuration) {
-      _entrance.value = elapsed.inMicroseconds / _entranceDuration.inMicroseconds;
-    } else {
-      _lastEntrance = now;
-    }
-    _entrance.forward();
-  }
-
-  @override
-  void dispose() {
-    _entrance.dispose();
-    super.dispose();
-  }
+  final LockMetrics metrics;
 
   @override
   Widget build(BuildContext context) {
-    final header = Column(
+    final t = context.sky;
+    return LockOpenView(
+      metrics: metrics,
       children: [
-        LockHeartBeat(
-          child: CssBox(
-            width: 80,
-            height: 80,
-            gradient: AppGradients.lockHeart,
-            border: Border.all(color: AppColors.white, width: 4),
-            borderRadius: AppRadii.all(AppRadii.full),
-            shadows: AppShadows.tinted(AppShadows.lg, AppColors.blush200.withValues(alpha: 0.5)),
-            child: const Center(
-              child: LucideIcon(AppIcons.heart, size: 40, color: AppColors.blush500, fill: AppColors.blush400),
-            ),
+        ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: _actionArea),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const SkySpinner(size: 30, strokeWidth: 2.2),
+              const SizedBox(height: 16),
+              Text(
+                LockCopy.checking,
+                textAlign: TextAlign.center,
+                style: SkyType.sans(13, weight: FontWeight.w500).copyWith(color: t.muted),
+              ),
+            ],
           ),
         ),
-        const SizedBox(height: 16),
-        Text(LockCopy.title, textAlign: TextAlign.center, style: Tw.x3l.extrabold.trackingTight.c(AppColors.slate800)),
-        const SizedBox(height: 4),
-        Text(LockCopy.tagline, textAlign: TextAlign.center, style: Tw.sm.medium.c(AppColors.slate500)),
       ],
     );
-
-    final card = GlassCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          widget.child,
-          const SizedBox(height: 20),
-          CssBox(
-            padding: const EdgeInsets.only(top: 16),
-            border: Border(top: BorderSide(color: AppColors.blush100.withValues(alpha: 0.8))),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const LucideIcon(AppIcons.shieldCheck, size: 16, color: AppColors.emerald500),
-                const SizedBox(width: 8),
-                Flexible(
-                  child: Text(LockCopy.footer, textAlign: TextAlign.center, style: Tw.px11.c(AppColors.slate400)),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-
-    return OurScaffold(
-      body: OurCenteredPage(
-        child: AnimatedBuilder(
-          animation: _entrance,
-          builder: (context, child) {
-            final t = Curves.easeOut.transform(_entrance.value);
-            return Opacity(
-              opacity: t,
-              child: Transform.translate(
-                offset: Offset(0, 20 * (1 - t)),
-                child: Transform.scale(scale: 0.95 + 0.05 * t, child: child),
-              ),
-            );
-          },
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            mainAxisSize: MainAxisSize.min,
-            children: [header, const SizedBox(height: 24), card],
-          ),
-        ),
-      ),
-    );
   }
 }
 
-class LockCheckingBody extends StatelessWidget {
-  const LockCheckingBody({super.key});
+class LockUnreadableView extends StatelessWidget {
+  const LockUnreadableView({super.key, required this.metrics, required this.onRetry});
 
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 40),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const OurSpinner(),
-          const SizedBox(height: 12),
-          Text(LockCopy.checking, textAlign: TextAlign.center, style: Tw.xs.medium.c(AppColors.slate500)),
-        ],
-      ),
-    );
-  }
-}
-
-class LockUnreadableBody extends StatelessWidget {
-  const LockUnreadableBody({super.key, required this.onRetry});
-
+  final LockMetrics metrics;
   final VoidCallback onRetry;
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 24),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const LucideIcon(AppIcons.shieldAlert, size: 32, color: AppColors.amber500),
-          const SizedBox(height: 12),
-          Text(LockCopy.unreadableTitle, textAlign: TextAlign.center, style: Tw.sm.bold.c(AppColors.slate700)),
-          const SizedBox(height: 12),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-            child: Text(
-              LockCopy.unreadableBody,
-              textAlign: TextAlign.center,
-              style: Tw.px11.relaxed.c(AppColors.slate600),
-            ),
+    final t = context.sky;
+    return LockOpenView(
+      metrics: metrics,
+      children: [
+        ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: _actionArea),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const SkyIconTile(icon: SkyIcons.alert, tone: SkyTone.rose, size: 46, iconSize: 22),
+              const SizedBox(height: 14),
+              Text(
+                LockCopy.unreadableTitle,
+                textAlign: TextAlign.center,
+                style: SkyType.serif(21, weight: FontWeight.w500, height: 1.2).copyWith(color: t.title),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                LockCopy.unreadableBody,
+                textAlign: TextAlign.center,
+                style: SkyType.bodySmall.copyWith(color: t.muted),
+              ),
+              const SizedBox(height: 18),
+              SkyButton(
+                label: LockCopy.tryAgain,
+                icon: SkyIcons.refresh,
+                variant: SkyButtonVariant.ghost,
+                expand: false,
+                height: SkySizes.buttonCompact,
+                onPressed: onRetry,
+              ),
+            ],
           ),
-          const SizedBox(height: 12),
-          _SlateButton(
-            label: LockCopy.tryAgain,
-            icon: AppIcons.refreshCw,
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            onPressed: () {
-              AppHaptics.tap();
-              onRetry();
-            },
-          ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }
@@ -265,307 +122,10 @@ class LockScreenBoot extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return LockScreenFrame(
-      child: failed ? LockUnreadableBody(onRetry: onRetry ?? () {}) : const LockCheckingBody(),
-    );
-  }
-}
-
-class _SlateButton extends StatelessWidget {
-  const _SlateButton({
-    required this.label,
-    required this.onPressed,
-    this.icon,
-    this.padding = const EdgeInsets.symmetric(vertical: 8),
-    this.expand = false,
-    this.enabled = true,
-  });
-
-  final String label;
-  final VoidCallback onPressed;
-  final LucideIconData? icon;
-  final EdgeInsets padding;
-  final bool expand;
-  final bool enabled;
-
-  @override
-  Widget build(BuildContext context) {
-    final box = CssBox(
-      padding: padding,
-      color: AppColors.slate800,
-      borderRadius: AppRadii.all(AppRadii.xl),
-      opacity: enabled ? 1 : 0.5,
-      child: Row(
-        mainAxisSize: expand ? MainAxisSize.max : MainAxisSize.min,
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          if (icon != null) ...[
-            LucideIcon(icon!, size: 14, color: AppColors.white),
-            const SizedBox(width: 6),
-          ],
-          Text(label, style: Tw.xs.bold.c(AppColors.white)),
-        ],
-      ),
-    );
-    return Semantics(
-      button: true,
-      enabled: enabled,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: enabled ? onPressed : null,
-        child: expand ? SizedBox(width: double.infinity, child: box) : box,
-      ),
-    );
-  }
-}
-
-class _ErrorBanner extends StatelessWidget {
-  const _ErrorBanner(this.text, {this.centered = true});
-
-  final String text;
-  final bool centered;
-
-  @override
-  Widget build(BuildContext context) {
-    return OurNotice(
-      tone: NoticeTone.error,
-      message: text,
-      centered: centered,
-      showIcon: false,
-      radius: AppRadii.xl,
-      textStyle: centered ? Tw.xs.medium.c(AppColors.rose600) : Tw.px11.medium.relaxed.c(AppColors.rose600),
-    );
-  }
-}
-
-class _SmallNotice extends StatelessWidget {
-  const _SmallNotice({required this.tone, required this.icon, this.text, this.child});
-
-  final NoticeTone tone;
-  final LucideIconData icon;
-  final String? text;
-  final Widget? child;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = NoticePalette.of(tone);
-    return OurNotice(
-      tone: tone,
-      icon: icon,
-      message: text,
-      padding: const EdgeInsets.all(10),
-      radius: AppRadii.xl,
-      textStyle: Tw.px11.c(palette.text),
-      child: child,
-    );
-  }
-}
-
-TextStyle get _strong => const TextStyle(fontWeight: FontWeight.w700);
-
-class LockDangerGate extends StatelessWidget {
-  const LockDangerGate({
-    super.key,
-    required this.headline,
-    required this.confirmController,
-    required this.isConfirmed,
-    required this.backupController,
-    required this.onBackupChanged,
-    required this.onSaveCopy,
-    required this.backupBusy,
-    required this.backupDone,
-    required this.backupError,
-    required this.onConfirmChanged,
-  });
-
-  final String headline;
-  final TextEditingController confirmController;
-  final bool isConfirmed;
-  final TextEditingController backupController;
-  final ValueChanged<String> onBackupChanged;
-  final VoidCallback onSaveCopy;
-  final bool backupBusy;
-  final bool backupDone;
-  final String? backupError;
-  final ValueChanged<String> onConfirmChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    final body = Tw.px11.relaxed.c(AppColors.rose700);
-    final confirmStyle = OurFieldStyle(
-      fill: AppColors.white,
-      border: isConfirmed ? AppColors.rose400 : AppColors.slate200,
-      ring: isConfirmed ? AppColors.rose400 : AppColors.slate400,
-      radius: AppRadii.xl,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      textStyle: Tw.xs.mono.trackingWide.c(AppColors.slate800),
-      hintStyle: Tw.xs.mono.trackingWide.c(AppColors.placeholder),
-    );
-    final backupStyle = OurFieldStyle(
-      fill: AppColors.white,
-      border: AppColors.slate200,
-      ring: AppColors.slate400,
-      radius: AppRadii.xl,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      textStyle: Tw.xs.c(AppColors.slate800),
-      hintStyle: Tw.xs.c(AppColors.slate400),
-    );
-
-    return CssBox(
-      padding: const EdgeInsets.all(14),
-      color: AppColors.rose50,
-      border: Border.all(color: AppColors.rose300, width: 2),
-      borderRadius: AppRadii.all(AppRadii.x2l),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Padding(
-                padding: EdgeInsets.only(top: 2),
-                child: LucideIcon(AppIcons.shieldAlert, size: 20, color: AppColors.rose600),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'This erases everything on this phone'.toUpperCase(),
-                      style: Tw.xs.extrabold.trackingWide.c(AppColors.rose800),
-                    ),
-                    const SizedBox(height: 4),
-                    Text.rich(
-                      TextSpan(
-                        children: [
-                          TextSpan(text: '$headline Every photo, letter, milestone and wish saved here '),
-                          TextSpan(text: 'can never be opened again', style: _strong),
-                          const TextSpan(
-                            text:
-                                ', and all of it is erased from this phone. There is no undo — not by us, not by anyone.',
-                          ),
-                        ],
-                      ),
-                      style: body,
-                    ),
-                    const SizedBox(height: 6),
-                    Text.rich(
-                      TextSpan(
-                        children: [
-                          const TextSpan(text: 'If you have only forgotten the passphrase, '),
-                          TextSpan(text: 'please stop here', style: _strong),
-                          const TextSpan(
-                            text:
-                                '. Nothing on this screen can bring it back, and your partner\'s phone may still have everything.',
-                          ),
-                        ],
-                      ),
-                      style: body,
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          CssBox(
-            padding: const EdgeInsets.all(10),
-            color: AppColors.white.withValues(alpha: 0.7),
-            border: Border.all(color: AppColors.rose200),
-            borderRadius: AppRadii.all(AppRadii.xl),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Row(
-                  children: [
-                    const LucideIcon(AppIcons.download, size: 14, color: AppColors.slate500),
-                    const SizedBox(width: 6),
-                    Text('Save a copy first', style: Tw.px11.bold.c(AppColors.slate700)),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'This saves everything on this phone into one file. To open it later you will need the '
-                  'passphrase you type below, and the one you open Our Space with today.',
-                  style: Tw.px10.relaxed.c(AppColors.slate500),
-                ),
-                const SizedBox(height: 8),
-                OurTextField(
-                  controller: backupController,
-                  style: backupStyle,
-                  obscure: true,
-                  showObscureToggle: false,
-                  hint: 'Passphrase for this file (at least $minPassphraseLength)',
-                  autofillHints: const [AutofillHints.newPassword],
-                  onChanged: onBackupChanged,
-                  semanticLabel: 'Passphrase for this file',
-                ),
-                const SizedBox(height: 8),
-                _SlateButton(
-                  label: backupBusy ? 'Saving…' : 'Save a copy',
-                  expand: true,
-                  enabled: !backupBusy,
-                  onPressed: onSaveCopy,
-                ),
-                if (backupDone) ...[
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      const LucideIcon(AppIcons.checkCircle2, size: 12, color: AppColors.emerald700),
-                      const SizedBox(width: 4),
-                      Flexible(
-                          child: Text(BackupMessages.rescueSaved, style: Tw.px10.semibold.c(AppColors.emerald700))),
-                    ],
-                  ),
-                ],
-                if (backupError != null) ...[
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      const LucideIcon(AppIcons.alertTriangle, size: 12, color: AppColors.rose600),
-                      const SizedBox(width: 4),
-                      Flexible(child: Text(backupError!, style: Tw.px10.semibold.c(AppColors.rose600))),
-                    ],
-                  ),
-                ],
-              ],
-            ),
-          ),
-          const SizedBox(height: 12),
-          Padding(
-            padding: const EdgeInsets.only(bottom: 4),
-            child: Text.rich(
-              TextSpan(
-                children: [
-                  const TextSpan(text: 'Type '),
-                  WidgetSpan(
-                    alignment: PlaceholderAlignment.middle,
-                    child: CssBox(
-                      padding: const EdgeInsets.symmetric(horizontal: 4),
-                      color: AppColors.rose100,
-                      borderRadius: AppRadii.all(AppRadii.base),
-                      child: Text(destroyConfirmationPhrase, style: Tw.px11.bold.mono.c(AppColors.rose800)),
-                    ),
-                  ),
-                  const TextSpan(text: ' to continue'),
-                ],
-              ),
-              style: Tw.px11.bold.c(AppColors.rose800),
-            ),
-          ),
-          OurTextField(
-            controller: confirmController,
-            style: confirmStyle,
-            hint: destroyConfirmationPhrase,
-            textCapitalization: TextCapitalization.characters,
-            autocorrect: false,
-            enableSuggestions: false,
-            onChanged: onConfirmChanged,
-            semanticLabel: 'Type $destroyConfirmationPhrase to continue',
-          ),
-        ],
-      ),
+    return LockSkyFrame(
+      viewKey: failed ? LockView.unreadable : LockView.checking,
+      builder: (context, metrics) =>
+          failed ? LockUnreadableView(metrics: metrics, onRetry: onRetry ?? () {}) : LockCheckingView(metrics: metrics),
     );
   }
 }
@@ -581,6 +141,8 @@ class LockScreen extends StatefulWidget {
 }
 
 class _LockScreenState extends State<LockScreen> {
+  static const double _segmentedExtent = 46 + 4 + SkySpace.lg;
+
   final TextEditingController _passphrase = TextEditingController();
   final TextEditingController _coupleNames = TextEditingController();
   final TextEditingController _inviteInput = TextEditingController();
@@ -606,6 +168,9 @@ class _LockScreenState extends State<LockScreen> {
   Map<String, Object?>? _restoreIdentity;
   bool _restoreBusy = false;
   String? _restoreError;
+
+  LockView? _lastView;
+  bool _reverse = false;
 
   @override
   void initState() {
@@ -657,7 +222,6 @@ class _LockScreenState extends State<LockScreen> {
   }
 
   void _switchMode(LockMode next) {
-    AppHaptics.tap();
     setState(() {
       _modeTouched = true;
       _mode = next;
@@ -667,6 +231,26 @@ class _LockScreenState extends State<LockScreen> {
       _backupError = null;
       if (next != LockMode.restore) _resetRestore();
     });
+  }
+
+  void _showPassphrase(bool show) {
+    setState(() {
+      _showPassphraseForm = show;
+      _error = null;
+    });
+  }
+
+  Future<void> _openMoreWays() async {
+    final way = await showSkySheet<LockWay>(context: context, builder: (_) => const LockMoreSheet());
+    if (!mounted || way == null) return;
+    switch (way) {
+      case LockWay.join:
+        _switchMode(LockMode.join);
+      case LockWay.restore:
+        _switchMode(LockMode.restore);
+      case LockWay.startOver:
+        _switchMode(LockMode.setup);
+    }
   }
 
   Future<void> _saveRescueCopy() async {
@@ -712,7 +296,7 @@ class _LockScreenState extends State<LockScreen> {
     if (!mounted) return;
     setState(() {
       _loading = false;
-      if (!result.ok) _error = result.error;
+      if (!result.ok) _error = LockCopy.warm(result.error ?? '');
     });
     if (result.ok) {
       _passphrase.clear();
@@ -736,7 +320,7 @@ class _LockScreenState extends State<LockScreen> {
     if (!mounted) return;
     setState(() {
       _loading = false;
-      if (!result.ok && result.code != 'cancelled') _error = result.error;
+      if (!result.ok && result.code != 'cancelled') _error = LockCopy.warm(result.error ?? '');
     });
     if (result.ok) _celebrate();
   }
@@ -763,7 +347,7 @@ class _LockScreenState extends State<LockScreen> {
     if (!mounted) return;
     setState(() {
       _loading = false;
-      if (!result.ok) _error = result.error;
+      if (!result.ok) _error = LockCopy.warm(result.error ?? '');
     });
     if (result.ok) {
       _passphrase.clear();
@@ -781,7 +365,7 @@ class _LockScreenState extends State<LockScreen> {
     final linked = _linkInvite;
     final invite = linked != null && linked.salt != null ? linked : parseInvite(_inviteInput.text);
     if (invite == null || invite.salt == null) {
-      setState(() => _error = VaultMessages.pasteInvite);
+      setState(() => _error = LockCopy.pasteInvite);
       return;
     }
     if (joinReplacesVault && !_isConfirmed) {
@@ -801,11 +385,11 @@ class _LockScreenState extends State<LockScreen> {
     if (!mounted) return;
     setState(() {
       _loading = false;
-      if (!result.ok) _error = result.error;
+      if (!result.ok) _error = LockCopy.warm(result.error ?? '');
     });
     if (result.ok) {
       final warning = result.warning;
-      if (warning != null) notices.showVaultWarning(warning);
+      if (warning != null) notices.showVaultWarning(LockCopy.warm(warning));
       _passphrase.clear();
       _confirm.clear();
       _celebrate();
@@ -873,11 +457,7 @@ class _LockScreenState extends State<LockScreen> {
     }
     setState(() => _restoreBusy = true);
     AppHaptics.tap();
-    final result = await _vault.restoreFromBackup(
-      tables,
-      _restoreVaultPassphrase.text,
-      confirmDestroy: _destroyToken,
-    );
+    final result = await _vault.restoreFromBackup(tables, _restoreVaultPassphrase.text, confirmDestroy: _destroyToken);
     if (!mounted) return;
     setState(() => _restoreBusy = false);
     if (result.ok) {
@@ -901,25 +481,19 @@ class _LockScreenState extends State<LockScreen> {
     return _mode;
   }
 
-  Widget _passphraseField({
-    required String hint,
-    required VoidCallback onSubmit,
-    OurFieldStyle? style,
-    bool autofocus = false,
-  }) {
-    return OurTextField(
-      controller: _passphrase,
-      style: style ?? OurFieldStyle.lock,
-      leadingIcon: AppIcons.keyRound,
-      obscure: true,
-      hint: hint,
-      autofocus: autofocus,
-      textInputAction: TextInputAction.go,
-      autofillHints: const [AutofillHints.password],
-      onChanged: (_) => setState(() => _error = null),
-      onSubmitted: (_) => onSubmit(),
-      semanticLabel: hint,
-    );
+  LockView _viewFor(VaultCheckState state, LockMode mode, bool touch) {
+    if (state == VaultCheckState.checking) return LockView.checking;
+    if (state == VaultCheckState.unreadable) return LockView.unreadable;
+    switch (mode) {
+      case LockMode.unlock:
+        return touch ? LockView.touch : LockView.passphrase;
+      case LockMode.setup:
+        return LockView.setup;
+      case LockMode.join:
+        return LockView.join;
+      case LockMode.restore:
+        return LockView.restore;
+    }
   }
 
   Widget _dangerGate(String headline) {
@@ -940,457 +514,348 @@ class _LockScreenState extends State<LockScreen> {
     );
   }
 
-  Widget _modeIntro({required Widget pill, required String text, bool relaxed = false}) {
-    return Column(
+  Widget _errorNote(String text) => SkyEntrance(
+    child: LockNote(text: text, tone: LockNoteTone.error),
+  );
+
+  List<Widget> _inviteNotes({required bool inviteIsForAnotherVault}) {
+    final linked = _linkInvite;
+    return [
+      if (linked != null && !inviteIsForAnotherVault) ...[
+        const LockNote(text: LockCopy.inviteHere, tone: LockNoteTone.love, icon: SkyIcons.link),
+        const SizedBox(height: SkySpace.xl),
+      ],
+      if (inviteIsForAnotherVault) ...[
+        const LockNote(
+          tone: LockNoteTone.warning,
+          spans: [
+            TextSpan(text: LockCopy.inviteElsewhereLead),
+            TextSpan(text: LockCopy.inviteElsewhereStrong, style: lockStrong),
+            TextSpan(text: LockCopy.inviteElsewhereRest),
+          ],
+        ),
+        const SizedBox(height: SkySpace.xl),
+      ],
+    ];
+  }
+
+  Widget _touchView(LockMetrics metrics, {required bool inviteIsForAnotherVault}) {
+    return LockOpenView(
+      metrics: metrics,
       children: [
-        pill,
-        const SizedBox(height: 8),
+        ..._inviteNotes(inviteIsForAnotherVault: inviteIsForAnotherVault),
+        LockTouchButton(
+          label: LockCopy.quickButton,
+          busyLabel: LockCopy.opening,
+          busy: _loading,
+          onTap: _handleQuickUnlock,
+        ),
+        if (_error != null) ...[const SizedBox(height: SkySpace.md), SkyEntrance(child: LockInlineError(_error!))],
+        const SizedBox(height: 14),
+        LockLink(label: LockCopy.usePassphrase, onTap: () => _showPassphrase(true)),
+      ],
+    );
+  }
+
+  Widget _passphraseView(LockMetrics metrics, {required bool inviteIsForAnotherVault, required bool touchOffered}) {
+    final t = context.sky;
+    final ready = _passphrase.text.trim().isNotEmpty;
+    return LockOpenView(
+      metrics: metrics,
+      children: [
+        ..._inviteNotes(inviteIsForAnotherVault: inviteIsForAnotherVault),
         Text(
-          text,
+          LockCopy.unlockIntro,
           textAlign: TextAlign.center,
-          style: (relaxed ? Tw.xs.relaxed : Tw.xs).c(AppColors.slate500),
+          style: SkyType.sans(13.5, height: 1.5).copyWith(color: t.muted),
+        ),
+        const SizedBox(height: SkySpace.lg),
+        LockField(
+          controller: _passphrase,
+          hint: LockCopy.unlockHint,
+          obscure: true,
+          autofocus: true,
+          leadingIcon: SkyIcons.lock,
+          textInputAction: TextInputAction.go,
+          autofillHints: const [AutofillHints.password],
+          onChanged: (_) => setState(() => _error = null),
+          onSubmitted: (_) {
+            if (!_loading) _handleUnlock();
+          },
+        ),
+        if (_error != null) ...[const SizedBox(height: SkySpace.md), _errorNote(_error!)],
+        const SizedBox(height: SkySpace.md),
+        SkyButton(
+          label: LockCopy.unlockButton,
+          busyLabel: LockCopy.opening,
+          busy: _loading,
+          icon: SkyIcons.heart,
+          onPressed: ready ? _handleUnlock : null,
+        ),
+        const SizedBox(height: 14),
+        Wrap(
+          alignment: WrapAlignment.center,
+          spacing: SkySpace.xl,
+          runSpacing: SkySpace.xs,
+          children: [
+            if (touchOffered)
+              LockLink(label: LockCopy.useTouch, icon: SkyIcons.finger, onTap: () => _showPassphrase(false)),
+            LockLink(label: LockCopy.moreWays, icon: SkyIcons.dots, onTap: _openMoreWays),
+          ],
         ),
       ],
     );
   }
 
-  Widget _link(String text, VoidCallback onTap, {Color color = AppColors.slate500, bool medium = false}) {
-    return OurTextLink(text: text, onTap: onTap, color: color, style: medium ? Tw.xs.medium : Tw.xs);
-  }
-
-  Widget _unlockForm(bool inviteIsForAnotherVault) {
-    final linked = _linkInvite;
-    final touch = context.watch<QuickUnlockService>().offered && !_showPassphraseForm;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: spaced([
-        _modeIntro(
-          pill: OurPill.blush(label: 'Locked', icon: AppIcons.lock),
-          text: touch ? LockCopy.quickIntro : 'Enter the passphrase you two share to open your memories and notes.',
-        ),
-        if (linked != null && !inviteIsForAnotherVault)
-          const _SmallNotice(
-            tone: NoticeTone.indigo,
-            icon: AppIcons.link2,
-            text: 'Your partner\'s invite is here. Unlock, and we\'ll offer to connect to their phone.',
-          ),
-        if (inviteIsForAnotherVault)
-          _SmallNotice(
-            tone: NoticeTone.warning,
-            icon: AppIcons.alertTriangle,
-            child: Text.rich(
-              TextSpan(
-                children: [
-                  const TextSpan(text: 'That invite is for a '),
-                  TextSpan(text: 'different space', style: _strong),
-                  const TextSpan(
-                    text:
-                        ', not this one. Unlocking here is safe — the link is ignored. Joining it would replace everything on this phone.',
-                  ),
-                ],
-              ),
-              style: Tw.px11.c(AppColors.amber900),
+  Widget _setupForm({required bool hasVault}) {
+    return LockPanel(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const LockPanelHeader(icon: SkyIcons.sparkle, title: LockCopy.setupTitle, intro: LockCopy.setupIntro),
+          const SizedBox(height: SkySpace.xl),
+          if (!hasVault) ...[
+            LockNote(
+              tone: LockNoteTone.warning,
+              title: LockCopy.freshTitle,
+              text: LockCopy.freshBody,
+              actionLabel: LockCopy.freshAction,
+              onAction: () => _switchMode(LockMode.join),
             ),
+            const SizedBox(height: SkySpace.lg),
+          ],
+          if (hasVault) ...[_dangerGate(LockCopy.startOverDanger), const SizedBox(height: SkySpace.lg)],
+          LockField(
+            controller: _coupleNames,
+            label: LockCopy.namesLabel,
+            hint: LockCopy.namesHint,
+            textCapitalization: TextCapitalization.words,
+            leadingIcon: SkyIcons.us,
           ),
-        if (touch) ...[
-          BouncyButton(
-            onPressed: _handleQuickUnlock,
-            enabled: !_loading,
-            expand: true,
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-            icon: AppIcons.fingerprint,
-            iconSize: 20,
-            gap: 8,
-            label: _loading ? 'Opening…' : LockCopy.quickButton,
+          const SizedBox(height: SkySpace.lg),
+          LockDateField(
+            value: _startDate,
+            label: LockCopy.startLabel,
+            onChanged: (picked) => setState(() => _startDate = startOfLocalDay(picked)),
           ),
-          if (_error != null) _ErrorBanner(_error!),
-          Center(
-            child: _link(LockCopy.usePassphrase, () {
-              AppHaptics.tap();
-              setState(() {
-                _showPassphraseForm = true;
-                _error = null;
-              });
-            }),
+          const SizedBox(height: SkySpace.lg),
+          LockField(
+            controller: _passphrase,
+            label: LockCopy.sharedPassphraseLabel,
+            hint: LockCopy.setupHint,
+            help: LockCopy.setupHelp,
+            obscure: true,
+            leadingIcon: SkyIcons.lock,
+            textInputAction: TextInputAction.go,
+            autofillHints: const [AutofillHints.newPassword],
+            onChanged: (_) => setState(() => _error = null),
+            onSubmitted: (_) {
+              if (!_loading) _handleSetup(hasVault);
+            },
           ),
-        ] else ...[
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const OurFieldLabel('Secret Passphrase'),
-              _passphraseField(
-                hint: 'Enter your secret passphrase (min $minPassphraseLength chars)...',
-                autofocus: true,
-                onSubmit: _loading ? () {} : _handleUnlock,
-              ),
-            ],
+          if (_error != null) ...[const SizedBox(height: 14), _errorNote(_error!)],
+          const SizedBox(height: SkySpace.xl),
+          SkyButton(
+            label: hasVault ? LockCopy.replaceButton : LockCopy.createButton,
+            busyLabel: LockCopy.creating,
+            busy: _loading,
+            icon: hasVault ? SkyIcons.refresh : SkyIcons.sparkle,
+            variant: hasVault ? SkyButtonVariant.danger : SkyButtonVariant.primary,
+            onPressed: _passphrase.text.trim().isNotEmpty && !(hasVault && !_isConfirmed)
+                ? () => _handleSetup(hasVault)
+                : null,
           ),
-          if (_error != null) _ErrorBanner(_error!),
-          BouncyButton(
-            onPressed: _handleUnlock,
-            enabled: !_loading && _passphrase.text.trim().isNotEmpty,
-            expand: true,
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-            label: _loading ? 'Opening…' : 'Unlock Our Space 💕',
-          ),
+          if (hasVault) ...[
+            const SizedBox(height: SkySpace.md),
+            LockLink(label: LockCopy.goBack, onTap: () => _switchMode(LockMode.unlock)),
+          ],
         ],
-        Padding(
-          padding: const EdgeInsets.only(top: 8),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              _link(
-                'Joining partner\'s space with an invite link?',
-                () => _switchMode(LockMode.join),
-                color: AppColors.indigo600,
-                medium: true,
-              ),
-              const SizedBox(height: 6),
-              _link(
-                'Start over with a brand new space (erases this one)',
-                () => _switchMode(LockMode.setup),
-                color: AppColors.slate400,
-              ),
-            ],
-          ),
-        ),
-      ], 16),
+      ),
     );
   }
 
   Widget _joinForm({required bool hasVault, required bool joinReplacesVault, required String? pendingSalt}) {
     final linked = _linkInvite;
     final linkedSalt = linked != null && linked.salt != null;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: spaced([
-        _modeIntro(
-          pill: OurPill.indigo(label: 'Join Partner\'s Space 💕', icon: AppIcons.userCheck),
-          text: linked != null ? 'Your partner invited you! 💕' : 'Use your partner’s invite link to join their space.',
-        ),
-        if (!linkedSalt)
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const OurFieldLabel('Partner\'s Invite Link or Code'),
-              OurTextField(
-                controller: _inviteInput,
-                style: OurFieldStyle.lockCompact.copyWith(
-                  ring: AppColors.indigo400,
-                  textStyle: Tw.xs.c(AppColors.slate800),
-                  hintStyle: Tw.xs.c(AppColors.slate400),
-                ),
-                leadingIcon: AppIcons.link2,
-                iconTop: 12,
-                hint: 'Paste link (e.g. https://...#connect=...)',
-                keyboardType: TextInputType.url,
-                autocorrect: false,
-                enableSuggestions: false,
-                onChanged: (_) => setState(() => _error = null),
-                semanticLabel: 'Partner\'s Invite Link or Code',
-              ),
-              const OurFieldHint(
-                'Ask your partner to tap "Share Pairing Link" in their Sync Hub, then paste it here.',
-              ),
-            ],
+    final ready = _passphrase.text.trim().isNotEmpty && !(joinReplacesVault && !_isConfirmed);
+    return LockPanel(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          LockPanelHeader(
+            icon: SkyIcons.us,
+            tone: SkyTone.lavender,
+            title: LockCopy.joinTitle,
+            intro: linked != null ? LockCopy.joinInvited : LockCopy.joinIntro,
           ),
-        if (pendingSalt != null && !joinReplacesVault && hasVault)
-          const _SmallNotice(
-            tone: NoticeTone.success,
-            icon: AppIcons.shieldCheck,
-            text: 'This invite is for the space you already have here. Pairing again is safe — nothing gets erased.',
-          ),
-        if (pendingSalt != null && !hasVault)
-          const _SmallNotice(
-            tone: NoticeTone.success,
-            icon: AppIcons.shieldCheck,
-            text: 'Found your partner\'s invite! Enter the passphrase you both chose.',
-          ),
-        if (joinReplacesVault) _dangerGate('Joining this invite moves this phone over to your partner’s space.'),
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const OurFieldLabel('Shared Secret Passphrase'),
-            _passphraseField(
-              hint: 'Enter the secret phrase you both agreed on...',
-              style: OurFieldStyle.lock.copyWith(ring: AppColors.indigo400),
-              autofocus: !joinReplacesVault,
-              onSubmit: _loading ? () {} : () => _handleJoin(joinReplacesVault),
+          const SizedBox(height: SkySpace.xl),
+          if (!linkedSalt) ...[
+            LockField(
+              controller: _inviteInput,
+              label: LockCopy.inviteLabel,
+              hint: LockCopy.inviteHint,
+              help: LockCopy.inviteHelp,
+              leadingIcon: SkyIcons.link,
+              keyboardType: TextInputType.url,
+              autocorrect: false,
+              onChanged: (_) => setState(() => _error = null),
             ),
-            const OurFieldHint('It has to match theirs exactly, letter for letter.'),
+            const SizedBox(height: SkySpace.lg),
           ],
-        ),
-        if (_error != null) _ErrorBanner(_error!),
-        BouncyButton(
-          onPressed: () => _handleJoin(joinReplacesVault),
-          enabled: !_loading && _passphrase.text.trim().isNotEmpty && !(joinReplacesVault && !_isConfirmed),
-          expand: true,
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-          shadows: AppShadows.tinted(AppShadows.md, AppColors.indigo300.withValues(alpha: 0.4)),
-          label: _loading ? 'Pairing…' : 'Pair & Enter Our Space 💕',
-        ),
-        if (hasVault)
-          Padding(
-            padding: const EdgeInsets.only(top: 4),
-            child: _link('Cancel and return to unlock', () => _switchMode(LockMode.unlock)),
+          if (pendingSalt != null && !joinReplacesVault && hasVault) ...[
+            const LockNote(text: LockCopy.inviteSameSpace, tone: LockNoteTone.safe),
+            const SizedBox(height: SkySpace.lg),
+          ],
+          if (pendingSalt != null && !hasVault) ...[
+            const SkyEntrance(
+              child: LockNote(text: LockCopy.inviteFound, tone: LockNoteTone.love),
+            ),
+            const SizedBox(height: SkySpace.lg),
+          ],
+          if (joinReplacesVault) ...[_dangerGate(LockCopy.joinDanger), const SizedBox(height: SkySpace.lg)],
+          LockField(
+            controller: _passphrase,
+            label: LockCopy.sharedPassphraseLabel,
+            hint: LockCopy.joinHint,
+            help: LockCopy.joinHelp,
+            obscure: true,
+            autofocus: !joinReplacesVault,
+            leadingIcon: SkyIcons.lock,
+            textInputAction: TextInputAction.go,
+            autofillHints: const [AutofillHints.password],
+            onChanged: (_) => setState(() => _error = null),
+            onSubmitted: (_) {
+              if (!_loading) _handleJoin(joinReplacesVault);
+            },
           ),
-      ], 16),
-    );
-  }
-
-  Widget _setupForm({required bool hasVault}) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: spaced([
-        _modeIntro(
-          pill: OurPill.lavender(label: 'Setup Your Private Space', icon: AppIcons.sparkles),
-          text: 'Choose a passphrase only the two of you know. It is the only thing that opens your space.',
-        ),
-        if (!hasVault)
-          OurNotice(
-            tone: NoticeTone.warning,
-            showIcon: false,
-            radius: AppRadii.xl,
-            textStyle: Tw.px11.relaxed.c(AppColors.amber900),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('This makes a brand-new, empty space.', style: Tw.px11.relaxed.bold.c(AppColors.amber900)),
-                const SizedBox(height: 4),
-                const Text(
-                  'If your partner already set one up, don\'t make a second one. Join theirs with their invite '
-                  'link, and you\'ll both see the same things.',
-                ),
-                const SizedBox(height: 8),
-                OurTextLink(
-                  text: 'Join your partner\'s space instead',
-                  onTap: () => _switchMode(LockMode.join),
-                  color: AppColors.indigo600,
-                  style: Tw.px11.bold,
-                  textAlign: TextAlign.start,
-                ),
-              ],
-            ),
+          if (_error != null) ...[const SizedBox(height: 14), _errorNote(_error!)],
+          const SizedBox(height: SkySpace.xl),
+          SkyButton(
+            label: LockCopy.joinButton,
+            busyLabel: LockCopy.joining,
+            busy: _loading,
+            icon: SkyIcons.heart,
+            variant: joinReplacesVault ? SkyButtonVariant.danger : SkyButtonVariant.primary,
+            onPressed: ready ? () => _handleJoin(joinReplacesVault) : null,
           ),
-        if (hasVault) _dangerGate('Starting a new space gives this phone a brand new lock.'),
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const OurFieldLabel('Your Nicknames / Couple Name'),
-            OurTextField(
-              controller: _coupleNames,
-              style: OurFieldStyle.lockCompact,
-              hint: 'e.g. Romeo & Juliet',
-              textCapitalization: TextCapitalization.words,
-              semanticLabel: 'Your Nicknames / Couple Name',
-            ),
+          if (hasVault) ...[
+            const SizedBox(height: SkySpace.md),
+            LockLink(label: LockCopy.goBack, onTap: () => _switchMode(LockMode.unlock)),
           ],
-        ),
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const OurFieldLabel('When Did Your Story Begin?'),
-            OurDateField(
-              value: _startDate,
-              style: OurFieldStyle.lockCompact,
-              onChanged: (picked) => setState(() => _startDate = startOfLocalDay(picked)),
-              semanticLabel: 'When Did Your Story Begin?',
-            ),
-          ],
-        ),
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const OurFieldLabel('Shared Secret Passphrase'),
-            _passphraseField(
-              hint: 'Create a shared secret phrase (min $minPassphraseLength chars)...',
-              style: OurFieldStyle.lockCompact,
-              onSubmit: _loading ? () {} : () => _handleSetup(hasVault),
-            ),
-            const OurFieldHint(
-              'At least $minPassphraseLength characters — a little sentence only you two would know works best. '
-              'It is never saved anywhere, so if you both forget it, everything here is gone.',
-            ),
-          ],
-        ),
-        if (_error != null) _ErrorBanner(_error!),
-        BouncyButton(
-          onPressed: () => _handleSetup(hasVault),
-          enabled: !_loading && _passphrase.text.trim().isNotEmpty && !(hasVault && !_isConfirmed),
-          expand: true,
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-          label: _loading
-              ? 'Setting things up…'
-              : hasVault
-                  ? 'Erase & Start Fresh'
-                  : 'Create a New Space 💕',
-        ),
-        if (hasVault)
-          Padding(
-            padding: const EdgeInsets.only(top: 4),
-            child: _link('Cancel and return to unlock', () => _switchMode(LockMode.unlock)),
-          ),
-      ], 16),
-    );
-  }
-
-  Widget _italicLabel(String before, String italic) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 4),
-      child: Text.rich(
-        TextSpan(
-          children: [
-            TextSpan(text: before),
-            TextSpan(text: italic, style: const TextStyle(fontStyle: FontStyle.italic)),
-          ],
-        ),
-        style: Tw.xs.semibold.c(AppColors.slate600),
+        ],
       ),
     );
   }
 
   Widget _restoreForm({required bool hasVault, required bool restoreReplacesVault}) {
-    final restoreStyle = OurFieldStyle.lockCompact.copyWith(ring: AppColors.amber400);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: spaced([
-        _modeIntro(
-          pill: OurPill.amber(label: 'Bring back a saved copy', icon: AppIcons.lifeBuoy),
-          text: 'Rebuilds your space on this phone from a file you saved earlier, so everything inside opens again.',
-          relaxed: true,
-        ),
-        Semantics(
-          button: true,
-          child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
+    final opened = _restoreTables != null && _restoreIdentity != null;
+    return LockPanel(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const LockPanelHeader(icon: SkyIcons.box, title: LockCopy.restoreTitle, intro: LockCopy.restoreIntro),
+          const SizedBox(height: SkySpace.xl),
+          LockFileTile(
+            label: _restoreFileName.isEmpty ? LockCopy.chooseFile : _restoreFileName,
+            chosen: _restoreFileName.isNotEmpty,
             onTap: _restoreBusy ? null : _pickRestoreFile,
-            child: CssBox(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-              dashedBorder: const BorderSide(color: AppColors.slate300, width: 2),
-              borderRadius: AppRadii.all(AppRadii.x2l),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const LucideIcon(AppIcons.upload, size: 16, color: AppColors.slate400),
-                  const SizedBox(width: 8),
-                  Flexible(
-                    child: Text(
-                      _restoreFileName.isEmpty ? 'Choose the file you saved' : _restoreFileName,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Tw.xs.semibold.c(AppColors.slate600),
-                    ),
-                  ),
+          ),
+          if (_restoreContainer != null && _restoreTables == null) ...[
+            const SizedBox(height: SkySpace.lg),
+            LockField(
+              controller: _restoreFilePassphrase,
+              label: LockCopy.filePassphraseLabel,
+              labelEmphasis: LockCopy.filePassphraseEmphasis,
+              hint: LockCopy.filePassphraseHint,
+              obscure: true,
+              revealToggle: false,
+              autofocus: true,
+              onChanged: (_) => setState(() => _restoreError = null),
+              onSubmitted: (_) {
+                if (!_restoreBusy && _restoreFilePassphrase.text.trim().isNotEmpty) _openRestoreContainer();
+              },
+            ),
+            const SizedBox(height: SkySpace.md),
+            SkyButton(
+              label: LockCopy.openFile,
+              busyLabel: LockCopy.opening,
+              busy: _restoreBusy,
+              icon: SkyIcons.lock,
+              variant: SkyButtonVariant.gold,
+              onPressed: _restoreFilePassphrase.text.trim().isNotEmpty ? _openRestoreContainer : null,
+            ),
+          ],
+          if (opened) ...[
+            const SizedBox(height: SkySpace.lg),
+            const SkyEntrance(
+              child: LockNote(
+                tone: LockNoteTone.safe,
+                spans: [
+                  TextSpan(text: LockCopy.fileOpenedLead),
+                  TextSpan(text: LockCopy.fileOpenedStrong, style: lockStrong),
+                  TextSpan(text: LockCopy.fileOpenedRest),
                 ],
               ),
             ),
-          ),
-        ),
-        if (_restoreContainer != null && _restoreTables == null)
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              _italicLabel('Passphrase that opens this ', 'file'),
-              const SizedBox(height: 4),
-              OurTextField(
-                controller: _restoreFilePassphrase,
-                style: restoreStyle,
-                obscure: true,
-                showObscureToggle: false,
-                hint: 'Passphrase for this file',
-                autofocus: true,
-                onChanged: (_) => setState(() => _restoreError = null),
-                onSubmitted: (_) {
-                  if (!_restoreBusy && _restoreFilePassphrase.text.trim().isNotEmpty) _openRestoreContainer();
-                },
-                semanticLabel: 'Passphrase for this file',
-              ),
-              const SizedBox(height: 8),
-              BouncyButton(
-                onPressed: _openRestoreContainer,
-                enabled: !_restoreBusy && _restoreFilePassphrase.text.trim().isNotEmpty,
-                expand: true,
-                label: _restoreBusy ? 'Opening…' : 'Open this file',
-              ),
+            if (restoreReplacesVault) ...[const SizedBox(height: SkySpace.md), _dangerGate(LockCopy.restoreDanger)],
+            if (!hasVault) ...[
+              const SizedBox(height: SkySpace.md),
+              const LockNote(text: LockCopy.nothingToReplace, tone: LockNoteTone.info),
             ],
-          ),
-        if (_restoreTables != null && _restoreIdentity != null)
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: spaced([
-              _SmallNotice(
-                tone: NoticeTone.success,
-                icon: AppIcons.shieldCheck,
-                child: Text.rich(
-                  TextSpan(
-                    children: [
-                      const TextSpan(text: 'File opened! Now the passphrase you used '),
-                      TextSpan(text: 'back then', style: _strong),
-                      const TextSpan(text: ' will bring everything inside back.'),
-                    ],
-                  ),
-                  style: Tw.px11.c(AppColors.emerald800),
-                ),
-              ),
-              if (restoreReplacesVault)
-                _dangerGate('Bringing this file back moves this phone over to the space inside it.'),
-              if (!hasVault)
-                OurNotice(
-                  tone: NoticeTone.info,
-                  showIcon: false,
-                  padding: const EdgeInsets.all(10),
-                  radius: AppRadii.xl,
-                  textStyle: Tw.px11.relaxed.c(AppColors.slate600),
-                  message: 'There is nothing here to replace. Anything left over from an older space on this phone is '
-                      'tidied away first — it cannot be opened any more anyway.',
-                ),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  _italicLabel('The passphrase you used ', 'back then'),
-                  OurTextField(
-                    controller: _restoreVaultPassphrase,
-                    style: restoreStyle,
-                    obscure: true,
-                    showObscureToggle: false,
-                    hint: 'The passphrase you used to unlock the app back then',
-                    onChanged: (_) => setState(() => _restoreError = null),
-                    semanticLabel: 'The passphrase you used back then',
-                  ),
-                  const OurFieldHint(
-                    'Usually the same as the file passphrase, so we have filled it in. We check it before '
-                    'anything is written, so a wrong guess costs you nothing.',
-                  ),
-                ],
-              ),
-              if (_restoreError != null) _ErrorBanner(_restoreError!, centered: false),
-              BouncyButton(
-                onPressed: () => _restoreVault(restoreReplacesVault),
-                enabled: !_restoreBusy &&
-                    _restoreVaultPassphrase.text.trim().isNotEmpty &&
-                    !(restoreReplacesVault && !_isConfirmed),
-                expand: true,
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-                shadows: AppShadows.tinted(AppShadows.md, AppColors.amber300.withValues(alpha: 0.4)),
-                label: _restoreBusy ? 'Bringing it back…' : 'Bring everything back',
-              ),
-            ], 12),
-          ),
-        if (_restoreError != null && _restoreTables == null) _ErrorBanner(_restoreError!, centered: false),
-        Padding(
-          padding: const EdgeInsets.only(top: 4),
-          child: _link('Cancel', () => _switchMode(hasVault ? LockMode.unlock : LockMode.setup)),
-        ),
-      ], 16),
+            const SizedBox(height: SkySpace.lg),
+            LockField(
+              controller: _restoreVaultPassphrase,
+              label: LockCopy.thenPassphraseLabel,
+              labelEmphasis: LockCopy.thenPassphraseEmphasis,
+              hint: LockCopy.thenPassphraseHint,
+              help: LockCopy.thenPassphraseHelp,
+              obscure: true,
+              revealToggle: false,
+              onChanged: (_) => setState(() => _restoreError = null),
+            ),
+            if (_restoreError != null) ...[const SizedBox(height: SkySpace.md), _errorNote(_restoreError!)],
+            const SizedBox(height: SkySpace.xl),
+            SkyButton(
+              label: LockCopy.restoreButton,
+              busyLabel: LockCopy.restoring,
+              busy: _restoreBusy,
+              icon: SkyIcons.heart,
+              variant: restoreReplacesVault ? SkyButtonVariant.danger : SkyButtonVariant.primary,
+              onPressed: _restoreVaultPassphrase.text.trim().isNotEmpty && !(restoreReplacesVault && !_isConfirmed)
+                  ? () => _restoreVault(restoreReplacesVault)
+                  : null,
+            ),
+          ],
+          if (_restoreError != null && _restoreTables == null) ...[
+            const SizedBox(height: 14),
+            _errorNote(_restoreError!),
+          ],
+          const SizedBox(height: SkySpace.md),
+          LockLink(label: LockCopy.cancel, onTap: () => _switchMode(hasVault ? LockMode.unlock : LockMode.setup)),
+        ],
+      ),
+    );
+  }
+
+  Widget _formView(LockMetrics metrics, Widget panel, {required bool restoreLink}) {
+    return LockFormView(
+      metrics: metrics,
+      children: [
+        panel,
+        if (restoreLink) ...[
+          const SizedBox(height: SkySpace.lg),
+          LockLink(label: LockCopy.moreRestore, icon: SkyIcons.box, onTap: () => _switchMode(LockMode.restore)),
+        ],
+      ],
     );
   }
 
   @override
   Widget build(BuildContext context) {
     final vault = context.watch<VaultService>();
+    final quick = context.watch<QuickUnlockService>();
     final state = vault.state;
     final hasVault = state == VaultCheckState.present;
-    final canRenderForms = hasVault || state == VaultCheckState.absent;
     final mode = _effectiveMode(state);
     final linked = _linkInvite;
     final pendingSalt = _pendingJoinSalt;
@@ -1398,55 +863,60 @@ class _LockScreenState extends State<LockScreen> {
     final restoreIdentitySalt = _restoreIdentity?['salt'];
     final restoreReplacesVault = hasVault && _restoreIdentity != null && restoreIdentitySalt != vault.salt;
     final inviteIsForAnotherVault = hasVault && linked != null && linked.salt != null && linked.salt != vault.salt;
+    final touchOffered = quick.offered;
+    final view = _viewFor(state, mode, touchOffered && !_showPassphraseForm);
+    final last = _lastView;
+    if (last != null && last != view) _reverse = view.index < last.index;
+    _lastView = view;
+    final segmented = state == VaultCheckState.absent && (mode == LockMode.setup || mode == LockMode.join);
 
-    final children = <Widget>[
-      if (state == VaultCheckState.checking) const LockCheckingBody(),
-      if (state == VaultCheckState.unreadable) LockUnreadableBody(onRetry: vault.check),
-      if (state == VaultCheckState.absent && mode != LockMode.restore) ...[
-        OurSegmented<LockMode>(
-          segments: const [
-            OurSegment(
-              value: LockMode.setup,
-              label: 'Create New Space',
-              icon: AppIcons.sparkles,
-              iconColor: AppColors.blush500,
-            ),
-            OurSegment(
-              value: LockMode.join,
-              label: 'Join Partner\'s Space',
-              icon: AppIcons.users,
-              iconColor: AppColors.indigo500,
-            ),
-          ],
-          selected: mode,
-          onChanged: _switchMode,
-        ),
-        const SizedBox(height: 20),
-      ],
-      if (canRenderForms && mode == LockMode.unlock) _unlockForm(inviteIsForAnotherVault),
-      if (canRenderForms && mode == LockMode.join)
-        _joinForm(hasVault: hasVault, joinReplacesVault: joinReplacesVault, pendingSalt: pendingSalt),
-      if (canRenderForms && mode == LockMode.setup) _setupForm(hasVault: hasVault),
-      if (canRenderForms && mode == LockMode.restore)
-        _restoreForm(hasVault: hasVault, restoreReplacesVault: restoreReplacesVault),
-      if (canRenderForms && mode != LockMode.restore)
-        Padding(
-          padding: const EdgeInsets.only(top: 16),
-          child: Center(
-            child: OurTextLink(
-              text: 'Bring back a copy you saved',
-              icon: AppIcons.lifeBuoy,
-              onTap: () => _switchMode(LockMode.restore),
-              color: AppColors.amber700,
-              style: Tw.xs.medium,
-            ),
-          ),
-        ),
-    ];
-
-    return LockScreenFrame(
-      child: AutofillGroup(
-        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: children),
+    return AutofillGroup(
+      child: LockSkyFrame(
+        viewKey: view,
+        reverse: _reverse,
+        heartVisible:
+            view.index <= LockView.passphrase.index && !(linked != null && view.index >= LockView.touch.index),
+        header: segmented
+            ? LockSegmented<LockMode>(
+                segments: const [
+                  LockSegment(value: LockMode.setup, label: LockCopy.segmentStart, icon: SkyIcons.sparkle),
+                  LockSegment(value: LockMode.join, label: LockCopy.segmentJoin, icon: SkyIcons.us),
+                ],
+                selected: mode,
+                onChanged: _switchMode,
+              )
+            : null,
+        headerExtent: segmented ? _segmentedExtent : 0,
+        builder: (context, metrics) {
+          switch (view) {
+            case LockView.checking:
+              return LockCheckingView(metrics: metrics);
+            case LockView.unreadable:
+              return LockUnreadableView(metrics: metrics, onRetry: vault.check);
+            case LockView.touch:
+              return _touchView(metrics, inviteIsForAnotherVault: inviteIsForAnotherVault);
+            case LockView.passphrase:
+              return _passphraseView(
+                metrics,
+                inviteIsForAnotherVault: inviteIsForAnotherVault,
+                touchOffered: touchOffered,
+              );
+            case LockView.setup:
+              return _formView(metrics, _setupForm(hasVault: hasVault), restoreLink: true);
+            case LockView.join:
+              return _formView(
+                metrics,
+                _joinForm(hasVault: hasVault, joinReplacesVault: joinReplacesVault, pendingSalt: pendingSalt),
+                restoreLink: true,
+              );
+            case LockView.restore:
+              return _formView(
+                metrics,
+                _restoreForm(hasVault: hasVault, restoreReplacesVault: restoreReplacesVault),
+                restoreLink: false,
+              );
+          }
+        },
       ),
     );
   }
