@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
@@ -195,6 +196,7 @@ class ScratchCard extends StatefulWidget {
   static const int strokesPerProgressCheck = 24;
   static const Duration fade = SkyMotion.slow;
   static const Duration shimmerPeriod = Duration(milliseconds: 2800);
+  static const Duration shimmerRest = Duration(milliseconds: 4500);
 
   final bool revealed;
   final VoidCallback onRevealed;
@@ -208,6 +210,9 @@ class ScratchCardState extends State<ScratchCard> with TickerProviderStateMixin 
   final List<Offset> _strokes = [];
   final ValueNotifier<int> _repaint = ValueNotifier<int>(0);
   AnimationController? _shimmer;
+  Timer? _rest;
+  ScrollPosition? _position;
+  bool _visible = true;
   int? _pointer;
   int _strokeCount = 0;
   Size _size = Size.zero;
@@ -219,6 +224,12 @@ class ScratchCardState extends State<ScratchCard> with TickerProviderStateMixin 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    final position = Scrollable.maybeOf(context)?.position;
+    if (!identical(position, _position)) {
+      _position?.removeListener(_onScroll);
+      _position = position?..addListener(_onScroll);
+      WidgetsBinding.instance.addPostFrameCallback((_) => _onScroll());
+    }
     _syncShimmer();
   }
 
@@ -228,18 +239,55 @@ class ScratchCardState extends State<ScratchCard> with TickerProviderStateMixin 
     _syncShimmer();
   }
 
+  bool get _onScreen {
+    final box = context.findRenderObject();
+    final viewport = Scrollable.maybeOf(context)?.context.findRenderObject();
+    if (box is! RenderBox || !box.attached || !box.hasSize) return true;
+    if (viewport is! RenderBox || !viewport.attached || !viewport.hasSize) return true;
+    final top = box.localToGlobal(Offset.zero, ancestor: viewport).dy;
+    return top < viewport.size.height && top + box.size.height > 0;
+  }
+
+  void _onScroll() {
+    if (!mounted) return;
+    final visible = _onScreen;
+    if (visible == _visible) return;
+    _visible = visible;
+    _syncShimmer();
+  }
+
   void _syncShimmer() {
-    final shine = !widget.revealed && skyMotionAllowed(context);
-    if (shine && _shimmer == null) {
-      _shimmer = AnimationController(vsync: this, duration: ScratchCard.shimmerPeriod)..repeat();
-    } else if (!shine && _shimmer != null) {
-      _shimmer!.dispose();
+    if (widget.revealed || !skyMotionAllowed(context)) {
+      _rest?.cancel();
+      _rest = null;
+      _shimmer?.dispose();
       _shimmer = null;
+      return;
     }
+    final shimmer = _shimmer ??= AnimationController(vsync: this, duration: ScratchCard.shimmerPeriod)
+      ..addStatusListener(_onShimmer);
+    if (!_visible) {
+      _rest?.cancel();
+      _rest = null;
+      if (shimmer.isAnimating) shimmer.stop();
+      return;
+    }
+    if (!shimmer.isAnimating && _rest == null) shimmer.forward(from: 0);
+  }
+
+  void _onShimmer(AnimationStatus status) {
+    if (status != AnimationStatus.completed) return;
+    _rest?.cancel();
+    _rest = Timer(ScratchCard.shimmerRest, () {
+      _rest = null;
+      if (mounted) _syncShimmer();
+    });
   }
 
   @override
   void dispose() {
+    _rest?.cancel();
+    _position?.removeListener(_onScroll);
     _shimmer?.dispose();
     _repaint.dispose();
     super.dispose();
