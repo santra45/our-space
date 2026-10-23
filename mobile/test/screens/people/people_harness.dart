@@ -8,6 +8,7 @@ import 'package:our_space_mobile/main.dart';
 import 'package:our_space_mobile/presentation/app_shell.dart';
 import 'package:our_space_mobile/presentation/deep_links.dart';
 import 'package:our_space_mobile/presentation/home_shell.dart';
+import 'package:our_space_mobile/presentation/sky/sky.dart';
 import 'package:our_space_mobile/presentation/widgets/our_widgets.dart';
 
 import '../../support/fake_mailbox_worker.dart';
@@ -55,9 +56,14 @@ Future<void> settleIdentity(WidgetTester tester, OurSpace space) => real(tester,
     });
 
 Finder fieldWithHint(String hint) => find.descendant(
-      of: find.byWidgetPredicate((widget) => widget is OurTextField && widget.hint == hint),
+      of: find.byWidgetPredicate(
+        (widget) => (widget is OurTextField && widget.hint == hint) || (widget is SkyTextField && widget.hint == hint),
+      ),
       matching: find.byType(TextField),
     );
+
+Finder semanticsLabelled(String label) =>
+    find.byWidgetPredicate((widget) => widget is Semantics && widget.properties.label == label);
 
 Future<void> reveal(WidgetTester tester, Finder finder) async {
   unawaited(Scrollable.ensureVisible(tester.element(finder), alignment: 0.5));
@@ -76,8 +82,8 @@ Future<void> press(WidgetTester tester, Finder finder) async {
   await tester.pump();
 }
 
-BouncyButton buttonLabelled(WidgetTester tester, String label) =>
-    tester.widget<BouncyButton>(find.ancestor(of: find.text(label), matching: find.byType(BouncyButton)));
+SkyButton buttonLabelled(WidgetTester tester, String label) =>
+    tester.widget<SkyButton>(find.ancestor(of: find.text(label), matching: find.byType(SkyButton)));
 
 void calm(WidgetTester tester) {
   usePhoneSize(tester);

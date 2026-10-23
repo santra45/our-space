@@ -1,10 +1,16 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:our_space_mobile/core/engine.dart';
 import 'package:our_space_mobile/presentation/home_shell.dart';
 import 'package:our_space_mobile/presentation/screens/people/people_setup.dart';
-import 'package:our_space_mobile/presentation/widgets/our_widgets.dart';
+import 'package:our_space_mobile/presentation/screens/people/who_is_who.dart';
+import 'package:our_space_mobile/presentation/screens/people/widgets/couple_orbs.dart';
+import 'package:our_space_mobile/presentation/screens/people/widgets/person_choice.dart';
+import 'package:our_space_mobile/presentation/sky/sky.dart';
+import 'package:our_space_mobile/presentation/widgets/app_haptics.dart';
 
 import '../../support/fake_mailbox_worker.dart';
 import '../../widgets/harness.dart' show recordHaptics, recordedHaptics;
@@ -15,11 +21,14 @@ class ScriptedIdentity extends IdentityController {
       : super(store: space.store, vault: space.vault, people: space.peopleService, repair: space.repair);
 
   IdentityStatus scripted;
+  Completer<bool>? pending;
+  bool working = false;
 
   void become(IdentityStatus next) {
     scripted = next;
     notifyListeners();
   }
+
   final List<Person> cast;
   final List<String> calls = [];
 
@@ -28,6 +37,9 @@ class ScriptedIdentity extends IdentityController {
 
   @override
   List<Person> get everyone => cast;
+
+  @override
+  bool get busy => working;
 
   @override
   Future<bool> createCouple({
@@ -43,14 +55,21 @@ class ScriptedIdentity extends IdentityController {
   @override
   Future<bool> claimPerson(String personId) async {
     calls.add('claim $personId');
-    return false;
+    final wait = pending;
+    if (wait == null) return false;
+    working = true;
+    notifyListeners();
+    final ok = await wait.future;
+    working = false;
+    notifyListeners();
+    return ok;
   }
 }
 
-Person person(String id, String name) => Person(
+Person person(String id, String name, {String pronoun = 'they'}) => Person(
       personId: id,
       name: name,
-      pronoun: 'they',
+      pronoun: pronoun,
       deviceIds: const [],
       lastActiveAt: null,
       createdAt: 1,
@@ -68,7 +87,10 @@ Future<void> pumpAlone(WidgetTester tester, OurSpace space, IdentityController i
     ),
   ));
   await tester.pump();
+  await tester.pump(const Duration(milliseconds: 600));
 }
+
+Finder sheetSlide() => find.descendant(of: find.byType(PeopleSetupFrame), matching: find.byType(SlideTransition));
 
 void main() {
   setUp(recordHaptics);
@@ -137,6 +159,73 @@ void main() {
 
     test('pronoun labels match the web', () {
       expect(pronouns.map((p) => pronounLabels[p]), ['she / her', 'he / him', 'they / them']);
+      expect(pronounLabelFor('xe'), 'they / them');
+      expect(pronounLabelFor(null), 'they / them');
+    });
+
+    test('the together-since line reads like the rest of the sky', () {
+      final now = DateTime(2026, 10, 23);
+      expect(togetherSinceLabel('2026-09-25', now: now), '25 September');
+      expect(togetherSinceLabel('2021-06-14', now: now), '14 June 2021');
+      expect(togetherSinceLabel(null, now: now), isNull);
+      expect(togetherSinceLabel('', now: now), isNull);
+      expect(togetherSinceLabel('not a date', now: now), isNull);
+      expect(PeopleSetupCopy.together('25 September'), 'Together since 25 September');
+    });
+
+    test('the copy stays warm: no emoji and no technical words', () {
+      final me = person('p-1', 'Sam', pronoun: 'she');
+      final blank = person('p-2', '');
+      final copy = <String>[
+        PeopleSetupCopy.claimEyebrow,
+        PeopleSetupCopy.claimTitle,
+        PeopleSetupCopy.claimBody,
+        PeopleSetupCopy.claimFallbackName,
+        PeopleSetupCopy.claimFooter,
+        PeopleSetupCopy.nameEyebrow,
+        PeopleSetupCopy.nameTitle,
+        PeopleSetupCopy.nameBody,
+        PeopleSetupCopy.nameWarning,
+        PeopleSetupCopy.youLabel,
+        PeopleSetupCopy.youHint,
+        PeopleSetupCopy.themLabel,
+        PeopleSetupCopy.themHint,
+        PeopleSetupCopy.save,
+        PeopleSetupCopy.saving,
+        PeopleSetupCopy.dismiss,
+        PeopleSetupCopy.failed,
+        PeopleSetupCopy.together('25 September'),
+        WhoIsWhoCopy.title,
+        WhoIsWhoCopy.sheetLabel,
+        WhoIsWhoCopy.sheetBody,
+        WhoIsWhoCopy.thisPhone,
+        WhoIsWhoCopy.noNameYet,
+        WhoIsWhoCopy.imThisOne,
+        WhoIsWhoCopy.yourName,
+        WhoIsWhoCopy.theirName,
+        WhoIsWhoCopy.save,
+        WhoIsWhoCopy.cancel,
+        WhoIsWhoCopy.swappedLink,
+        WhoIsWhoCopy.swapTitle,
+        WhoIsWhoCopy.swapAction,
+        WhoIsWhoCopy.swapped,
+        WhoIsWhoCopy.swapFailed,
+        WhoIsWhoCopy.tooMany,
+        WhoIsWhoCopy.sealed,
+        WhoIsWhoCopy.editLabel(me),
+        WhoIsWhoCopy.claimTitle(me),
+        WhoIsWhoCopy.claimBody(blank),
+        WhoIsWhoCopy.claimConfirm(me),
+        WhoIsWhoCopy.swapBody(me, blank, 'Sun, Oct 4, 5:10 PM'),
+      ];
+      final technical = RegExp(
+        r'\b(sync\w*|devices?|pair\w*|servers?|upload\w*|download\w*|data|peers?|relay\w*|mailbox\w*|encrypt\w*|keys?)\b',
+        caseSensitive: false,
+      );
+      for (final line in copy) {
+        expect(skyCalmText(line), line, reason: line);
+        expect(technical.hasMatch(line), isFalse, reason: line);
+      }
     });
   });
 
@@ -156,20 +245,26 @@ void main() {
       ),
       findsOneWidget,
     );
-    expect(find.text('YOU'), findsOneWidget);
-    expect(find.text('THEM'), findsOneWidget);
+    final since = togetherSinceLabel(space.vault.config?.startDate);
+    expect(since, isNotNull);
+    expect(find.text(PeopleSetupCopy.together(since!)), findsOneWidget);
+    expect(find.text('You'), findsOneWidget);
+    expect(find.text('Them'), findsOneWidget);
     expect(find.text('she / her'), findsNWidgets(2));
     expect(find.text('he / him'), findsNWidgets(2));
     expect(find.text('they / them'), findsNWidgets(2));
     expect(find.text('Already did this on the other phone'), findsOneWidget);
-    expect(buttonLabelled(tester, 'That’s us 💕').isEnabled, isFalse);
+    expect(buttonLabelled(tester, 'That’s us').enabled, isFalse);
+    expect(sheetSlide(), findsNothing);
 
     await type(tester, fieldWithHint('Your name'), 'Sam');
-    expect(buttonLabelled(tester, 'That’s us 💕').isEnabled, isFalse);
+    expect(buttonLabelled(tester, 'That’s us').enabled, isFalse);
+    expect(find.descendant(of: find.byType(CoupleOrbs), matching: find.text('S')), findsOneWidget);
     await type(tester, fieldWithHint('Their name'), '   ');
-    expect(buttonLabelled(tester, 'That’s us 💕').isEnabled, isFalse);
+    expect(buttonLabelled(tester, 'That’s us').enabled, isFalse);
     await type(tester, fieldWithHint('Their name'), 'Alex');
-    expect(buttonLabelled(tester, 'That’s us 💕').isEnabled, isTrue);
+    expect(buttonLabelled(tester, 'That’s us').enabled, isTrue);
+    expect(find.descendant(of: find.byType(CoupleOrbs), matching: find.text('A')), findsOneWidget);
 
     await press(tester, find.text('she / her').first);
     await press(tester, find.text('he / him').last);
@@ -180,7 +275,7 @@ void main() {
         .toList();
     expect(selected, ['she / her', 'he / him']);
 
-    await press(tester, find.text('That’s us 💕'));
+    await press(tester, find.text('That’s us'));
     await until(tester, () => recordedHaptics.contains(HapticKind.celebration) && !space.identity.busy);
     await tester.pump();
 
@@ -269,15 +364,17 @@ void main() {
       find.text('Tap your own name. It is only so this phone knows whose answers are whose.'),
       findsOneWidget,
     );
-    expect(
-      find.text('Picked the wrong one? You can switch any time from the Pair & Sync Hub.'),
-      findsOneWidget,
-    );
+    expect(find.text('Picked the wrong one? You can switch any time from Settings.'), findsOneWidget);
     expect(find.text(PeopleSetupCopy.nameTitle), findsNothing);
     final names = phone.identity.everyone.map((p) => p.name).toList();
     expect(names.toSet(), {'Alex', 'Sam'});
-    expect(buttonLabelled(tester, names[0]).variant, BouncyVariant.primary);
-    expect(buttonLabelled(tester, names[1]).variant, BouncyVariant.lavender);
+    PersonChoice choice(String name) =>
+        tester.widget<PersonChoice>(find.ancestor(of: find.text(name), matching: find.byType(PersonChoice)));
+    expect(choice(names[0]).style, SkyAvatarStyle.me);
+    expect(choice(names[1]).style, SkyAvatarStyle.partner);
+    expect(choice('Sam').detail, 'she / her');
+    expect(choice('Alex').detail, 'he / him');
+    expect(semanticsLabelled('Sam'), findsOneWidget);
 
     recordedHaptics.clear();
     await press(tester, find.text('Sam'));
@@ -297,6 +394,7 @@ void main() {
     await pumpAlone(tester, space, identity);
 
     expect(find.text(PeopleSetupCopy.nameTitle), findsOneWidget);
+    expect(find.textContaining('Together since'), findsNothing);
     await tester.enterText(fieldWithHint('Your name'), 'Sam');
     await tester.enterText(fieldWithHint('Their name'), 'Alex');
     await tester.testTextInput.receiveAction(TextInputAction.go);
@@ -304,6 +402,7 @@ void main() {
 
     expect(identity.calls, ['create Sam/they Alex/they']);
     expect(find.text('That did not save. Try again in a moment.'), findsOneWidget);
+    await tester.pump(const Duration(milliseconds: 600));
   });
 
   testWidgets('a claim that does not land says so, and a nameless person is "This one"', (tester) async {
@@ -317,6 +416,7 @@ void main() {
     await pumpAlone(tester, space, identity);
 
     expect(find.text('This one'), findsOneWidget);
+    expect(tester.widget<PersonChoice>(find.byKey(const ValueKey('p-2'))).initial, '');
     await tester.tap(find.text('This one'));
     await tester.pump();
     expect(identity.calls, ['claim p-2']);
@@ -324,6 +424,101 @@ void main() {
 
     identity.become(IdentityStatus.ready);
     await tester.pump();
+    expect(find.text(PeopleSetupCopy.claimTitle), findsOneWidget);
+    expect(
+      tester.widget<IgnorePointer>(
+        find.descendant(of: find.byType(PeopleSetupFrame), matching: find.byType(IgnorePointer)).first,
+      ).ignoring,
+      isTrue,
+    );
+    await tester.pump(const Duration(milliseconds: 300));
     expect(find.text(PeopleSetupCopy.claimTitle), findsNothing);
+    expect(find.byType(PeopleSetupFrame), findsOneWidget);
+    expect(find.byType(SkySheet), findsNothing);
+  });
+
+  testWidgets('the claim being saved spins while the others wait their turn', (tester) async {
+    final space = await real(tester, openPeopleSpace);
+    final identity = ScriptedIdentity(
+      space,
+      scripted: IdentityStatus.unclaimed,
+      cast: [person('p-1', 'Alex', pronoun: 'he'), person('p-2', 'Sam', pronoun: 'she')],
+    )..pending = Completer<bool>();
+    addTearDown(identity.dispose);
+    await pumpAlone(tester, space, identity);
+    expect(sheetSlide(), findsWidgets);
+
+    await tester.tap(find.text('Alex'));
+    await tester.pump();
+    PersonChoice choice(String id) => tester.widget<PersonChoice>(find.byKey(ValueKey(id)));
+    expect(choice('p-1').busy, isTrue);
+    expect(choice('p-1').enabled, isFalse);
+    expect(choice('p-2').busy, isFalse);
+    expect(choice('p-2').enabled, isFalse);
+    expect(find.descendant(of: find.byKey(const ValueKey('p-1')), matching: find.byType(SkySpinner)), findsOneWidget);
+
+    await tester.tap(find.text('Sam'), warnIfMissed: false);
+    await tester.pump();
+    expect(identity.calls, ['claim p-1']);
+
+    identity.pending!.complete(true);
+    await tester.pump();
+    await tester.pump();
+    expect(choice('p-1').busy, isFalse);
+    expect(find.byType(SkySpinner), findsNothing);
+    expect(find.text(PeopleSetupCopy.failed), findsNothing);
+    await tester.pump(const Duration(milliseconds: 600));
+  });
+
+  testWidgets('with motion on, the sheet springs up from the bottom over a scrim', (tester) async {
+    final space = await real(tester, openPeopleSpace);
+    final identity = ScriptedIdentity(space, scripted: IdentityStatus.empty);
+    addTearDown(identity.dispose);
+    await tester.pumpWidget(MaterialApp(
+      home: MultiProvider(
+        providers: [
+          ChangeNotifierProvider<IdentityController>.value(value: identity),
+          ChangeNotifierProvider<SyncService>.value(value: space.sync),
+        ],
+        child: const Scaffold(body: Stack(fit: StackFit.expand, children: [PeopleSetup()])),
+      ),
+    ));
+    await tester.pump();
+    final start = tester.getTopLeft(find.byType(SkySheet)).dy;
+    await tester.pump(const Duration(milliseconds: 150));
+    final middle = tester.getTopLeft(find.byType(SkySheet)).dy;
+    await tester.pump(const Duration(milliseconds: 600));
+    final end = tester.getTopLeft(find.byType(SkySheet)).dy;
+    expect(start, greaterThan(middle));
+    expect(middle, greaterThan(end));
+    expect(tester.getBottomLeft(find.byType(SkySheet)).dy, tester.view.physicalSize.height / tester.view.devicePixelRatio);
+  });
+
+  testWidgets('the who-is-who sheet opens from anywhere with the names inside', (tester) async {
+    final space = await real(tester, openPeopleSpace);
+    await real(tester, () => space.vault.create(passphrase: passphrase, iterations: fastIterations));
+    await real(tester, () => space.identity.createCouple(myName: 'Qalbi', partnerName: 'Farhu'));
+    await settleIdentity(tester, space);
+    await tester.pumpWidget(MaterialApp(
+      builder: (context, navigator) =>
+          ChangeNotifierProvider<IdentityController>.value(value: space.identity, child: navigator!),
+      home: Builder(
+        builder: (context) => Scaffold(
+          body: Center(
+            child: TextButton(onPressed: () => showWhoIsWhoSheet(context), child: const Text('open')),
+          ),
+        ),
+      ),
+    ));
+    await tester.tap(find.text('open'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 600));
+    expect(find.byType(SkySheet), findsOneWidget);
+    expect(find.text(WhoIsWhoCopy.title), findsOneWidget);
+    expect(find.text('THE TWO OF US'), findsOneWidget);
+    expect(find.text('WHO IS WHO'), findsNothing);
+    expect(find.text('Qalbi'), findsOneWidget);
+    expect(find.text('Farhu'), findsOneWidget);
+    expect(find.byType(SkyCard), findsNothing);
   });
 }
