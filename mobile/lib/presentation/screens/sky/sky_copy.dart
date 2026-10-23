@@ -38,4 +38,20 @@ abstract final class SkyHomeCopy {
   }
 
   static String statSemantics(String value, String label) => '$value $label';
+
+  static String skySemantics({
+    required int stars,
+    required bool night,
+    required bool lit,
+    required bool waiting,
+    required int letters,
+  }) {
+    final parts = [
+      stars == 1 ? 'One star in our sky' : '${stars == 0 ? 'No' : stars} stars in our sky',
+      if (lit) '${tonightStar(night)} is lit',
+      if (waiting) '${tonightStar(night)} is waiting',
+      if (letters > 0) letterFell,
+    ];
+    return '${parts.join('. ')}.';
+  }
 }

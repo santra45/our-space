@@ -43,6 +43,9 @@ double skySeconds(WidgetTester tester) => tester
     .time
     .seconds;
 
+Finder skyDescribed(String label) =>
+    find.byWidgetPredicate((widget) => widget is Semantics && widget.properties.label == label);
+
 String statLabel(WidgetTester tester, Key key) =>
     tester.widget<SkyPressable>(find.byKey(key)).semanticLabel ?? '';
 
@@ -210,6 +213,10 @@ void main() {
       expect(SkyHomeCopy.letters(0), 'No letters');
       expect(SkyHomeCopy.letters(1), '1 letter');
       expect(SkyHomeCopy.letters(3), '3 letters');
+      expect(
+        SkyHomeCopy.skySemantics(stars: 1, night: false, lit: true, waiting: false, letters: 2),
+        "One star in our sky. Today's star is lit. A letter fell from the sky.",
+      );
       final soon = SkyMilestone(kind: SkyMilestoneKind.month, count: 1, date: DateTime(2026), daysLeft: 2);
       expect(SkyHomeCopy.milestoneValue(soon, night: true), '2 nights');
       expect(SkyHomeCopy.milestoneValue(soon, night: false), '2 days');
@@ -280,6 +287,7 @@ void main() {
     expect(statLabel(tester, SkyPageKeys.lettersStat), 'No letters waiting to open');
     expect(statsFill(tester), SkyStatsRow.nightFill);
     expect(cardGradient(tester), isNull);
+    expect(skyDescribed("3 stars in our sky. Tonight's star is waiting."), findsOneWidget);
 
     final heart = homeHeart(tester);
     expect(heart.gap, SkyHeartPlan.order[3]);
@@ -358,6 +366,7 @@ void main() {
     await waitForCard(tester);
     await untilFound(tester, find.byKey(SkyPageKeys.letterTip));
     expect(find.text(SkyHomeCopy.letterFell), findsOneWidget);
+    expect(skyDescribed("No stars in our sky. Tonight's star is waiting. A letter fell from the sky."), findsOneWidget);
     expect(homeScene(tester).shootingStar, isNotNull);
     expect(statLabel(tester, SkyPageKeys.lettersStat), '1 letter waiting to open');
 
@@ -458,6 +467,7 @@ void main() {
     expect(heart.unlit, hasLength(26));
     expect(find.byKey(SkyPageKeys.tonightTip), findsNothing);
     expect(find.byKey(SkyPageKeys.tonightAside), findsNothing);
+    expect(skyDescribed("3 stars in our sky. Tonight's star is lit."), findsOneWidget);
     await settle(tester, space);
   });
 

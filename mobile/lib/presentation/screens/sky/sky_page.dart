@@ -245,7 +245,14 @@ class _OurSkyPageState extends State<OurSkyPage> with WidgetsBindingObserver {
         ),
     ];
 
-    final sky = TweenAnimationBuilder<double>(
+    final skyLabel = SkyHomeCopy.skySemantics(
+      stars: stars,
+      night: night,
+      lit: _daily.visible && litToday,
+      waiting: showTonight,
+      letters: waiting,
+    );
+    final backdrop = TweenAnimationBuilder<double>(
       tween: Tween<double>(end: loaded ? 1 : 0),
       duration: skyMotionAllowed(context) ? SkyMotion.slow : Duration.zero,
       curve: SkyMotion.gentle,
@@ -258,6 +265,7 @@ class _OurSkyPageState extends State<OurSkyPage> with WidgetsBindingObserver {
         anchors: anchors,
       ),
     );
+    final sky = Semantics(container: true, image: true, label: skyLabel, child: backdrop);
 
     final stats = SkyStatsRow(
       stats: [
