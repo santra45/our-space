@@ -16,6 +16,7 @@ class SkyCard extends StatelessWidget {
     this.onTap,
     this.semanticLabel,
     this.borderColor,
+    this.gradient,
   });
 
   final Widget child;
@@ -24,6 +25,7 @@ class SkyCard extends StatelessWidget {
   final VoidCallback? onTap;
   final String? semanticLabel;
   final Color? borderColor;
+  final Gradient? gradient;
 
   @override
   Widget build(BuildContext context) {
@@ -31,7 +33,7 @@ class SkyCard extends StatelessWidget {
     final card = Container(
       padding: padding,
       decoration: BoxDecoration(
-        gradient: t.cardGradient,
+        gradient: gradient ?? t.cardGradient,
         borderRadius: SkyRadii.all(radius),
         border: Border.all(color: borderColor ?? t.cardBorder),
         boxShadow: t.cardShadow,

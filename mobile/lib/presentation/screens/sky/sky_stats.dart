@@ -26,6 +26,8 @@ class SkyStat {
 class SkyStatsRow extends StatelessWidget {
   const SkyStatsRow({super.key, required this.stats});
 
+  static const Color nightFill = Color(0x991A1845);
+
   final List<SkyStat> stats;
 
   @override
@@ -46,7 +48,7 @@ class SkyStatsRow extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 9, horizontal: 4),
       decoration: BoxDecoration(
-        color: Color.alphaBlend(t.surface2.withValues(alpha: 0.6), t.surface),
+        color: t.isDay ? t.surface2 : SkyStatsRow.nightFill,
         borderRadius: SkyRadii.all(SkyRadii.tile),
         border: Border.all(color: t.chipBorder),
       ),

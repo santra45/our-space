@@ -14,6 +14,7 @@ import 'package:our_space_mobile/presentation/screens/sky/sky_days.dart';
 import 'package:our_space_mobile/presentation/screens/sky/sky_heart_plan.dart';
 import 'package:our_space_mobile/presentation/screens/sky/sky_page.dart';
 import 'package:our_space_mobile/presentation/screens/sky/sky_sheet_layout.dart';
+import 'package:our_space_mobile/presentation/screens/sky/sky_stats.dart';
 import 'package:our_space_mobile/presentation/screens/us/us_page.dart';
 import 'package:our_space_mobile/presentation/sky/sky.dart';
 
@@ -24,6 +25,15 @@ HeartConstellation homeHeart(WidgetTester tester) =>
     tester.widget<SkyBackdrop>(find.byKey(SkyPageKeys.canvas)).scene.heart!;
 
 SkyScene homeScene(WidgetTester tester) => tester.widget<SkyBackdrop>(find.byKey(SkyPageKeys.canvas)).scene;
+
+Color? statsFill(WidgetTester tester) {
+  final box = tester.widget<Container>(
+    find.descendant(of: find.byType(SkyStatsRow), matching: find.byType(Container)).first,
+  );
+  return (box.decoration as BoxDecoration?)?.color;
+}
+
+Gradient? cardGradient(WidgetTester tester) => tester.widget<SkyCard>(find.byKey(DailyKeys.card)).gradient;
 
 String statLabel(WidgetTester tester, Key key) =>
     tester.widget<SkyPressable>(find.byKey(key)).semanticLabel ?? '';
@@ -260,6 +270,8 @@ void main() {
       '${SkyHomeCopy.milestoneValue(milestone, night: true)} ${SkyHomeCopy.milestoneLabel(milestone)}',
     );
     expect(statLabel(tester, SkyPageKeys.lettersStat), 'No letters waiting to open');
+    expect(statsFill(tester), SkyStatsRow.nightFill);
+    expect(cardGradient(tester), isNull);
 
     final heart = homeHeart(tester);
     expect(heart.gap, SkyHeartPlan.order[3]);
@@ -294,6 +306,8 @@ void main() {
     expect(find.text("TODAY'S QUESTION"), findsOneWidget);
     expect(find.text("Light today's star"), findsOneWidget);
     expect(find.text("Today's star"), findsOneWidget);
+    expect(statsFill(tester), SkyTokens.day.surface2);
+    expect(cardGradient(tester), DailyQuestionCard.daySheetGradient);
     await settle(tester, space);
   });
 

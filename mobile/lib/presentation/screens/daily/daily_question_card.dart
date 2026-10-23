@@ -44,6 +44,14 @@ class DailyQuestionCard extends StatelessWidget {
   final VoidCallback onReveal;
   final int? dayNumber;
 
+  static const LinearGradient daySheetGradient = LinearGradient(
+    begin: Alignment.topCenter,
+    end: Alignment.bottomCenter,
+    colors: [Color(0xFFFBFAFF), Color(0xFFF5F4FE)],
+  );
+
+  static Gradient? gradientFor(SkyTokens t) => t.isDay ? daySheetGradient : null;
+
   @override
   Widget build(BuildContext context) {
     final identity = context.watch<IdentityController>();
@@ -68,6 +76,7 @@ class DailyQuestionCard extends StatelessWidget {
         final state = dailyCardState(model);
         return SkyCard(
           key: DailyKeys.card,
+          gradient: DailyQuestionCard.gradientFor(context.sky),
           padding: const EdgeInsets.fromLTRB(14, 13, 14, 14),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -235,6 +244,7 @@ class _FindingCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final t = context.sky;
     return SkyCard(
+      gradient: DailyQuestionCard.gradientFor(t),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
