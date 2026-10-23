@@ -138,9 +138,8 @@ class _LockSkyFrameState extends State<LockSkyFrame> {
         final metrics = LockMetrics(size: constraints.biggest, topInset: padding.top, bottomInset: padding.bottom);
         final tokens = context.sky;
         final motion = skyMotionAllowed(context);
-        final body = SingleChildScrollView(
+        final scroll = SingleChildScrollView(
           keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-          padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
           child: Center(
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: SkySizes.maxContentWidth),
@@ -179,6 +178,10 @@ class _LockSkyFrameState extends State<LockSkyFrame> {
               ),
             ),
           ),
+        );
+        final body = Padding(
+          padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
+          child: scroll,
         );
         return SkyTheme(
           child: AnnotatedRegion(

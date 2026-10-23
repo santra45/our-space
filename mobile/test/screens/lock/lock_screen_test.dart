@@ -103,6 +103,26 @@ void main() {
     await closeLock(tester, space);
   });
 
+  testWidgets('the passphrase field rises above the keyboard', (tester) async {
+    calmLock(tester);
+    addTearDown(tester.view.resetViewInsets);
+    const keyboard = 320.0;
+    final space = await lockedSpace(tester, quick: FakeQuickUnlock());
+    await pumpLock(tester, space);
+    await lockUntilFound(tester, find.text(LockCopy.quickButton));
+
+    await lockPress(tester, find.text(LockCopy.usePassphrase));
+    expect(lockField(LockCopy.unlockHint), findsOneWidget);
+
+    tester.view.viewInsets = const FakeViewPadding(bottom: keyboard * 3);
+    for (var i = 0; i < 6; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    final screen = tester.view.physicalSize.height / tester.view.devicePixelRatio;
+    expect(tester.getRect(lockField(LockCopy.unlockHint)).bottom, lessThanOrEqualTo(screen - keyboard));
+    await closeLock(tester, space);
+  });
+
   testWidgets('more ways in leads to joining, a saved copy or starting over, and back again', (tester) async {
     calmLock(tester);
     final space = await lockedSpace(tester);
