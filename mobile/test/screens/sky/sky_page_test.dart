@@ -125,11 +125,20 @@ void main() {
   });
 
   group('days together and the next milestone', () {
-    test('the day number counts from the first day', () {
+    test('the day number counts the days since the first day, the same way Us does', () {
       final start = DateTime(2026, 9, 25);
-      expect(SkyDays.dayNumber(start, DateTime(2026, 10, 22, 21, 30)), 28);
-      expect(SkyDays.dayNumber(start, DateTime(2026, 9, 25, 23)), 1);
-      expect(SkyDays.dayNumber(start, DateTime(2026, 9, 1)), 1);
+      expect(SkyDays.dayNumber(start, DateTime(2026, 10, 23, 21, 30)), 28);
+      expect(SkyDays.dayNumber(start, DateTime(2026, 10, 22, 21, 30)), 27);
+      expect(SkyDays.dayNumber(start, DateTime(2026, 9, 25, 23)), 0);
+      expect(SkyDays.dayNumber(start, DateTime(2026, 9, 1)), 0);
+      expect(SkyDays.next(start, DateTime(2026, 10, 23, 21, 30)).daysLeft, 2);
+      for (final now in [DateTime(2026, 9, 25, 8), DateTime(2026, 10, 23, 0, 5), DateTime(2026, 10, 23, 23, 50)]) {
+        expect(
+          SkyDays.dayNumber(start, now),
+          calculateLoveDuration('2026-09-25', now: now.millisecondsSinceEpoch).totalDays,
+          reason: '$now',
+        );
+      }
       expect(SkyDays.startOf('2026-09-25'), start);
       expect(SkyDays.startOf(''), isNull);
       expect(SkyDays.startOf(null), isNull);

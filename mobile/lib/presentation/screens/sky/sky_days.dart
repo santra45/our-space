@@ -73,7 +73,7 @@ abstract final class SkyDays {
   static int between(DateTime from, DateTime to) =>
       DateTime.utc(to.year, to.month, to.day).difference(DateTime.utc(from.year, from.month, from.day)).inDays;
 
-  static int dayNumber(DateTime start, DateTime now) => math.max(0, between(start, now)) + 1;
+  static int dayNumber(DateTime start, DateTime now) => math.max(0, between(start, now));
 
   static int _daysIn(int year, int month) => DateTime(year, month + 1, 0).day;
 
