@@ -35,6 +35,14 @@ Color? statsFill(WidgetTester tester) {
 
 Gradient? cardGradient(WidgetTester tester) => tester.widget<SkyCard>(find.byKey(DailyKeys.card)).gradient;
 
+double skySeconds(WidgetTester tester) => tester
+    .widgetList<CustomPaint>(find.descendant(of: find.byKey(SkyPageKeys.canvas), matching: find.byType(CustomPaint)))
+    .map((paint) => paint.painter)
+    .whereType<SkyLivePainter>()
+    .single
+    .time
+    .seconds;
+
 String statLabel(WidgetTester tester, Key key) =>
     tester.widget<SkyPressable>(find.byKey(key)).semanticLabel ?? '';
 
@@ -449,7 +457,10 @@ void main() {
     for (var i = 0; i < 20; i++) {
       await tester.pump(const Duration(milliseconds: 60));
     }
-    expect(tester.hasRunningAnimations, isTrue);
+    final twinkled = skySeconds(tester);
+    expect(twinkled, greaterThan(0));
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(skySeconds(tester), greaterThan(twinkled));
 
     await reveal(tester, find.byKey(DailyKeys.action));
     await tester.tap(find.byKey(DailyKeys.action));

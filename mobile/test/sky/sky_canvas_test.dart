@@ -241,7 +241,7 @@ void main() {
       expect(painter.time.streak, 1);
     });
 
-    testWidgets('twinkles, streaks the shooting star and bursts the new star with one ticker', (tester) async {
+    testWidgets('twinkles at a resting pace, streaks the shooting star and bursts the new star', (tester) async {
       const still = SkyScene(heart: HeartConstellation(complete: false));
       await tester.pumpWidget(skyHost(const SkyCanvas(scene: still), animations: true));
       await tester.pump(const Duration(milliseconds: 100));
@@ -250,8 +250,15 @@ void main() {
           .map((c) => c.painter)
           .whereType<SkyLivePainter>()
           .single;
-      expect(tester.hasRunningAnimations, isTrue);
       expect(live().time.seconds, greaterThan(0));
+      await tester.pump(const Duration(milliseconds: 100));
+      final rested = live().time.seconds;
+      expect(rested, greaterThan(0.09));
+      expect(tester.hasRunningAnimations, isFalse);
+      await tester.pump(const Duration(milliseconds: 16));
+      expect(live().time.seconds, rested);
+      await tester.pump(const Duration(milliseconds: 16));
+      expect(live().time.seconds, greaterThan(rested));
 
       await tester.pumpWidget(
         skyHost(
@@ -265,9 +272,12 @@ void main() {
       await tester.pump(const Duration(milliseconds: 200));
       expect(live().time.burst, inExclusiveRange(0, 1));
       expect(live().time.streak, inExclusiveRange(0, 1));
+      expect(tester.hasRunningAnimations, isTrue);
       await tester.pump(SkyMotion.burst);
       expect(live().time.burst, 1);
       expect(live().time.streak, 1);
+      await tester.pump(const Duration(milliseconds: 16));
+      expect(tester.hasRunningAnimations, isFalse);
     });
 
     testWidgets('paints day and night skies, the burst and the shooting star without errors', (tester) async {

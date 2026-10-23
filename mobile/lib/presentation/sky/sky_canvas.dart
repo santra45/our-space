@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/widgets.dart';
 
@@ -73,23 +75,27 @@ class SkyCanvas extends StatefulWidget {
 }
 
 class _SkyCanvasState extends State<SkyCanvas> with SingleTickerProviderStateMixin {
-  static const Duration _frame = Duration(milliseconds: 33);
+  static const Duration _rest = Duration(milliseconds: 28);
+  static const Duration _queued = Duration(microseconds: -1);
 
   late final Ticker _ticker = createTicker(_tick);
   final SkyTime _time = SkyTime();
   bool _motion = false;
+  Timer? _wake;
+  Duration? _origin;
   Duration _now = Duration.zero;
-  Duration _lastPaint = Duration.zero;
   Duration? _burstFrom;
   Duration? _streakFrom;
 
   bool get _bursting => widget.scene.heart?.burst == true && widget.scene.heart?.complete == true;
 
+  bool get _playing => _burstFrom != null || _streakFrom != null;
+
   @override
   void initState() {
     super.initState();
-    if (_bursting) _burstFrom = Duration.zero;
-    if (widget.scene.shootingStar != null) _streakFrom = Duration.zero;
+    if (_bursting) _burstFrom = _queued;
+    if (widget.scene.shootingStar != null) _streakFrom = _queued;
   }
 
   @override
@@ -102,9 +108,9 @@ class _SkyCanvasState extends State<SkyCanvas> with SingleTickerProviderStateMix
   void didUpdateWidget(covariant SkyCanvas oldWidget) {
     super.didUpdateWidget(oldWidget);
     final wasBursting = oldWidget.scene.heart?.burst == true && oldWidget.scene.heart?.complete == true;
-    if (_bursting && !wasBursting) _burstFrom = _now;
+    if (_bursting && !wasBursting) _burstFrom = _queued;
     if (widget.scene.shootingStar != null && oldWidget.scene.shootingStar != widget.scene.shootingStar) {
-      _streakFrom = _now;
+      _streakFrom = _queued;
     }
     _syncMotion();
   }
@@ -115,17 +121,27 @@ class _SkyCanvasState extends State<SkyCanvas> with SingleTickerProviderStateMix
   }
 
   void _syncMotion() {
-    final motion = widget.animate && skyMotionAllowed(context) && _hasLife;
-    if (motion == _motion && (motion == _ticker.isActive)) return;
-    _motion = motion;
-    if (motion) {
-      if (!_ticker.isActive) _ticker.start();
-    } else {
+    _motion = widget.animate && skyMotionAllowed(context) && _hasLife;
+    if (!_motion) {
+      _wake?.cancel();
+      _wake = null;
       if (_ticker.isActive) _ticker.stop();
+      _origin = null;
       _burstFrom = null;
       _streakFrom = null;
       _time.set(seconds: 0, burst: 1, streak: 1);
+      return;
     }
+    if (_ticker.isActive || (_wake != null && !_playing)) return;
+    _wake?.cancel();
+    _wake = null;
+    _ticker.start();
+  }
+
+  void _resume() {
+    _wake = null;
+    if (!mounted || !_motion || _ticker.isActive) return;
+    _ticker.start();
   }
 
   double _progress(Duration? from, Duration length) {
@@ -134,21 +150,26 @@ class _SkyCanvasState extends State<SkyCanvas> with SingleTickerProviderStateMix
     return t.clamp(0.0, 1.0);
   }
 
-  void _tick(Duration elapsed) {
-    _now = elapsed;
+  void _tick(Duration _) {
+    final stamp = SchedulerBinding.instance.currentFrameTimeStamp;
+    final origin = _origin ??= stamp;
+    _now = stamp - origin;
+    if (_burstFrom == _queued) _burstFrom = _now;
+    if (_streakFrom == _queued) _streakFrom = _now;
     final burst = _progress(_burstFrom, SkyMotion.burst);
     final streak = _progress(_streakFrom, SkyMotion.streak);
     if (burst >= 1) _burstFrom = null;
     if (streak >= 1) _streakFrom = null;
-    final busy = burst < 1 || streak < 1;
-    if (!busy && elapsed - _lastPaint < _frame) return;
-    _lastPaint = elapsed;
-    final seconds = elapsed.inMicroseconds / 1e6;
+    final seconds = _now.inMicroseconds / 1e6;
     _time.set(seconds: seconds == 0 ? 0.0001 : seconds, burst: burst, streak: streak);
+    if (_playing) return;
+    _ticker.stop();
+    _wake = Timer(_rest, _resume);
   }
 
   @override
   void dispose() {
+    _wake?.cancel();
     _ticker.dispose();
     _time.dispose();
     super.dispose();
