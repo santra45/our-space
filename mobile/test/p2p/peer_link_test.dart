@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:our_space_mobile/core/engine.dart';
 import 'package:our_space_mobile/core/engine/p2p/peer_hub.dart' show pairedPartnerKey;
+import 'package:our_space_mobile/presentation/screens/sync/notice_copy.dart';
 import 'package:our_space_mobile/presentation/screens/sync/peer_link.dart';
 
 import '../support/harness.dart';
@@ -75,8 +76,9 @@ void main() {
 
     link.connect('no!');
     expect(link.state.error!.code, 'bad_peer_id');
-    expect(link.state.error!.text,
+    expect(b.peer.syncError!.text,
         '“no!” is not a usable pairing code. Ask your partner to re-share their code or invite link.');
+    expect(link.state.error!.text, NoticeCopy.badCode(b.peer.identity.partnerName));
     link.clearError();
     expect(link.state.error, isNull);
 
