@@ -15,7 +15,12 @@ import 'memory_photos.dart';
 import 'widgets/polaroid.dart';
 
 Future<bool> showAddMemorySheet(BuildContext context) async {
-  final added = await showSkySheet<bool>(context: context, builder: (_) => const AddMemorySheet());
+  final added = await showSkySheet<bool>(
+    context: context,
+    isDismissible: false,
+    enableDrag: false,
+    builder: (_) => const AddMemorySheet(),
+  );
   return added ?? false;
 }
 

@@ -65,6 +65,13 @@ void main() {
     expect(find.text(MemoriesCopy.fullDay(DateTime.now())), findsOneWidget);
     expect(skyButtonEnabled(tester, 'Pin it to our wall'), isFalse);
 
+    await tester.tapAt(const Offset(20, 20));
+    await settleRoutes(tester);
+    expect(find.byType(AddMemorySheet), findsOneWidget);
+    await tester.fling(find.text('A new memory'), const Offset(0, 500), 1500);
+    await settleRoutes(tester);
+    expect(find.byType(AddMemorySheet), findsOneWidget);
+
     await tester.tap(inSheet(semanticsLabelled('Close')));
     await settleRoutes(tester);
     expect(find.byType(AddMemorySheet), findsNothing);
