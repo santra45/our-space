@@ -22,8 +22,8 @@ void main() {
     final space = await coupleSpace(tester);
     await pumpLove(tester, space);
     await openSettingsFromAvatar(tester);
-    expect(find.text('Sam & Alex'), findsOneWidget);
-    expect(find.text(SettingsCopy.since('Jun 14, 2021')), findsOneWidget);
+    expect(find.text('Sam & Alex'), findsWidgets);
+    expect(find.text(SettingsCopy.since('14 June 2021')), findsOneWidget);
     expect(find.text('S'), findsWidgets);
     expect(find.text('A'), findsOneWidget);
 
@@ -60,7 +60,7 @@ void main() {
     final space = await coupleSpace(tester);
     await pumpLove(tester, space);
     await openSettingsFromAvatar(tester);
-    expect(find.text(SettingsCopy.phones), findsOneWidget);
+    expect(find.text(SettingsCopy.addPhone), findsOneWidget);
 
     await press(tester, find.byKey(ShellKeys.lockNow));
     await settleRoute(tester);

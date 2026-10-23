@@ -4,13 +4,15 @@ import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
 import '../../../core/engine.dart';
-import '../../widgets/our_widgets.dart';
+import '../../sky/sky.dart';
+import '../../widgets/app_haptics.dart';
+import '../settings/widgets/sheet_parts.dart';
 
 abstract final class QrScannerCopy {
-  static const String title = 'Scan Partner\'s QR';
-  static const String subtitle = 'Point your camera at their screen to pair';
-  static const String cameraError = 'Camera permission denied or camera not available.';
-  static const String footer = 'Scanning stays on this device. Nothing is uploaded.';
+  static const String title = 'Scan their code';
+  static const String subtitle = 'Point your camera at the code on their screen';
+  static const String cameraError = 'We could not use the camera. Check that Our Space may use it, then try again.';
+  static const String footer = 'What the camera sees stays on this phone.';
 }
 
 @immutable
@@ -36,22 +38,17 @@ String? acceptScannedInvite(String? raw) {
 }
 
 Future<String?> showQrScanner(BuildContext context) {
-  return showOurModal<String>(
-    context: context,
-    backdrop: OurBackdropTone.black80,
-    entrance: OurModalEntrance.popSoft,
-    builder: (_) => const QrScannerModal(),
-  );
+  return showSkySheet<String>(context: context, builder: (_) => const QrScannerSheet());
 }
 
-class QrScannerModal extends StatefulWidget {
-  const QrScannerModal({super.key});
+class QrScannerSheet extends StatefulWidget {
+  const QrScannerSheet({super.key});
 
   @override
-  State<QrScannerModal> createState() => _QrScannerModalState();
+  State<QrScannerSheet> createState() => _QrScannerSheetState();
 }
 
-class _QrScannerModalState extends State<QrScannerModal> {
+class _QrScannerSheetState extends State<QrScannerSheet> {
   bool _cameraError = false;
   bool _done = false;
 
@@ -78,97 +75,129 @@ class _QrScannerModalState extends State<QrScannerModal> {
 
   @override
   Widget build(BuildContext context) {
-    final radius = AppRadii.all(AppRadii.x3l);
-    return ConstrainedBox(
-      constraints: const BoxConstraints(maxWidth: AppLayout.maxWidthSm),
-      child: Material(
-        type: MaterialType.transparency,
-        child: CssBox(
-          color: AppColors.slate900,
-          borderRadius: radius,
-          clipContent: true,
-          child: Stack(
-            children: [
-              Padding(
-                padding: const EdgeInsets.all(20),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Text(QrScannerCopy.title, textAlign: TextAlign.center, style: Tw.base.bold.c(AppColors.white)),
-                    Text(QrScannerCopy.subtitle, textAlign: TextAlign.center, style: Tw.xs.c(AppColors.slate400)),
-                    const SizedBox(height: 16),
-                    if (_cameraError)
-                      CssBox(
-                        padding: const EdgeInsets.all(16),
-                        color: AppColors.rose500.withValues(alpha: 0.2),
-                        border: Border.all(color: AppColors.rose500.withValues(alpha: 0.4)),
-                        borderRadius: AppRadii.all(AppRadii.x2l),
-                        child: Text(
-                          QrScannerCopy.cameraError,
-                          textAlign: TextAlign.center,
-                          style: Tw.xs.c(AppColors.rose300),
-                        ),
-                      )
-                    else
-                      AspectRatio(
-                        aspectRatio: 1,
-                        child: CssBox(
-                          color: AppColors.black,
-                          border: Border.all(color: AppColors.blush400, width: 2),
-                          borderRadius: AppRadii.all(AppRadii.x2l),
-                          child: ClipRRect(
-                            borderRadius: AppRadii.all(AppRadii.x2l - 2),
-                            child: Stack(
-                              fit: StackFit.expand,
-                              children: [
-                                QrCamera.builder(context, _handlers),
-                                Positioned.fill(
-                                  left: 32,
-                                  top: 32,
-                                  right: 32,
-                                  bottom: 32,
-                                  child: IgnorePointer(
-                                    child: TwPulse(
-                                      child: CssBox(
-                                        dashedBorder: BorderSide(
-                                          color: AppColors.white.withValues(alpha: 0.6),
-                                          width: 2,
-                                        ),
-                                        borderRadius: AppRadii.all(AppRadii.x2l),
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ],
+    final t = context.sky;
+    final window = _cameraError
+        ? const SkyNotice(
+            key: ValueKey<String>('scanner-error'),
+            text: QrScannerCopy.cameraError,
+            tone: SkyNoticeTone.error,
+            icon: SkyIcons.camera,
+          )
+        : Center(
+            key: const ValueKey<String>('scanner-camera'),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 340),
+              child: AspectRatio(
+                aspectRatio: 1,
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF05040F),
+                    borderRadius: SkyRadii.all(SkyRadii.feature),
+                    border: Border.all(color: t.rose, width: 2),
+                    boxShadow: [BoxShadow(color: t.rose.withValues(alpha: t.isNight ? 0.35 : 0.22), blurRadius: 24)],
+                  ),
+                  child: ClipRRect(
+                    borderRadius: SkyRadii.all(SkyRadii.feature - 2),
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        QrCamera.builder(context, _handlers),
+                        Positioned.fill(
+                          left: 32,
+                          top: 32,
+                          right: 32,
+                          bottom: 32,
+                          child: IgnorePointer(
+                            child: RepaintBoundary(
+                              child: SkyPulse(
+                                minScale: 0.97,
+                                maxScale: 1,
+                                child: CustomPaint(painter: ScanFramePainter(color: t.gold)),
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                    const SizedBox(height: 12),
-                    Text(
-                      QrScannerCopy.footer,
-                      textAlign: TextAlign.center,
-                      style: Tw.px10.relaxed.c(AppColors.slate500),
+                      ],
                     ),
-                  ],
+                  ),
                 ),
               ),
-              Positioned(
-                top: 16,
-                right: 16,
-                child: OurCloseButton(
-                  onPressed: _close,
-                  background: AppColors.white.withValues(alpha: 0.2),
-                  foreground: AppColors.white,
-                ),
-              ),
-            ],
-          ),
+            ),
+          );
+    return SheetScroll(
+      children: [
+        SheetHeader(
+          title: QrScannerCopy.title,
+          subtitle: QrScannerCopy.subtitle,
+          icon: SkyIcons.scan,
+          tone: SkyTone.rose,
+          onClose: _close,
         ),
-      ),
+        window,
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            SkyIcon(SkyIcons.lock, size: 12, color: t.faint),
+            const SizedBox(width: 6),
+            Flexible(
+              child: Text(
+                QrScannerCopy.footer,
+                textAlign: TextAlign.center,
+                style: SkyType.caption.copyWith(color: t.faint),
+              ),
+            ),
+          ],
+        ),
+      ],
     );
   }
+}
+
+class ScanFramePainter extends CustomPainter {
+  const ScanFramePainter({required this.color});
+
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 3
+      ..strokeCap = StrokeCap.round;
+    final arm = size.shortestSide * 0.18;
+    const r = 14.0;
+    final w = size.width;
+    final h = size.height;
+    final corners = [
+      Path()
+        ..moveTo(0, arm)
+        ..lineTo(0, r)
+        ..arcToPoint(const Offset(r, 0), radius: const Radius.circular(r))
+        ..lineTo(arm, 0),
+      Path()
+        ..moveTo(w - arm, 0)
+        ..lineTo(w - r, 0)
+        ..arcToPoint(Offset(w, r), radius: const Radius.circular(r))
+        ..lineTo(w, arm),
+      Path()
+        ..moveTo(w, h - arm)
+        ..lineTo(w, h - r)
+        ..arcToPoint(Offset(w - r, h), radius: const Radius.circular(r))
+        ..lineTo(w - arm, h),
+      Path()
+        ..moveTo(arm, h)
+        ..lineTo(r, h)
+        ..arcToPoint(Offset(0, h - r), radius: const Radius.circular(r))
+        ..lineTo(0, h - arm),
+    ];
+    for (final corner in corners) {
+      canvas.drawPath(corner, paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(ScanFramePainter oldDelegate) => oldDelegate.color != color;
 }
 
 class DeviceQrCamera extends StatefulWidget {
@@ -233,8 +262,8 @@ class _DeviceQrCameraState extends State<DeviceQrCamera> with WidgetsBindingObse
       controller: _controller,
       fit: BoxFit.cover,
       onDetect: _onDetect,
-      errorBuilder: (context, error, child) => const ColoredBox(color: AppColors.black),
-      placeholderBuilder: (context, child) => const ColoredBox(color: AppColors.black),
+      errorBuilder: (context, error, child) => const ColoredBox(color: Color(0xFF000000)),
+      placeholderBuilder: (context, child) => const ColoredBox(color: Color(0xFF000000)),
     );
   }
 }

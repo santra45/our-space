@@ -9,8 +9,10 @@ import 'package:http/http.dart' as http;
 import 'package:our_space_mobile/core/engine.dart';
 import 'package:our_space_mobile/presentation/app_shell.dart';
 import 'package:our_space_mobile/presentation/files/vault_files.dart';
+import 'package:our_space_mobile/presentation/screens/settings/settings_page.dart';
+import 'package:our_space_mobile/presentation/screens/settings/widgets/settings_field.dart';
+import 'package:our_space_mobile/presentation/screens/sync/add_phone_page.dart';
 import 'package:our_space_mobile/presentation/screens/sync/peer_link.dart';
-import 'package:our_space_mobile/presentation/screens/sync/sync_hub.dart';
 import 'package:our_space_mobile/presentation/space_scope.dart';
 import 'package:our_space_mobile/presentation/widgets/our_widgets.dart';
 import 'package:provider/provider.dart';
@@ -20,9 +22,13 @@ import '../../widgets/harness.dart' show usePhoneSize;
 
 const String passphrase = 'correct horse battery staple 2026';
 const int fastIterations = 1000;
-const String openHubLabel = 'Open hub';
 
-Future<OurSpace> openHubSpace({MailboxConfig? mailbox, http.Client? client, QuickUnlockPlatform? quickUnlock}) async {
+Future<OurSpace> openHubSpace({
+  MailboxConfig? mailbox,
+  http.Client? client,
+  QuickUnlockPlatform? quickUnlock,
+  PushPlatform? push,
+}) async {
   final dir = Directory.systemTemp.createTempSync('our_space_hub_');
   final space = await OurSpace.open(
     databaseFactory: testDatabaseFactory(),
@@ -32,6 +38,7 @@ Future<OurSpace> openHubSpace({MailboxConfig? mailbox, http.Client? client, Quic
     httpClient: client,
     autoSync: false,
     quickUnlockPlatform: quickUnlock,
+    pushPlatform: push,
   );
   await space.store.settings.setItem(DeviceIdentity.peerIdKey, space.device.peerId);
   return space;
@@ -44,8 +51,12 @@ Future<OurSpace> openUnlockedSpace(
   MailboxConfig? mailbox,
   http.Client? client,
   QuickUnlockPlatform? quickUnlock,
+  PushPlatform? push,
 }) async {
-  final space = await real(tester, () => openHubSpace(mailbox: mailbox, client: client, quickUnlock: quickUnlock));
+  final space = await real(
+    tester,
+    () => openHubSpace(mailbox: mailbox, client: client, quickUnlock: quickUnlock, push: push),
+  );
   await real(
     tester,
     () => space.vault.create(
@@ -95,9 +106,14 @@ Future<void> settle(WidgetTester tester, {int rounds = 10}) async {
 }
 
 Finder fieldWithHint(String hint) => find.descendant(
-      of: find.byWidgetPredicate((widget) => widget is OurTextField && widget.hint == hint),
+      of: find.byWidgetPredicate(
+        (widget) => (widget is OurTextField && widget.hint == hint) || (widget is SettingsField && widget.hint == hint),
+      ),
       matching: find.byType(TextField),
     );
+
+Finder semanticsLabelled(String label) =>
+    find.byWidgetPredicate((widget) => widget is Semantics && widget.properties.label == label);
 
 Future<void> reveal(WidgetTester tester, Finder finder) async {
   unawaited(Scrollable.ensureVisible(tester.element(finder), alignment: 0.5));
@@ -153,6 +169,42 @@ class FakePeerLink extends PeerLink {
   void declineInvite() => calls.add('declineInvite');
 }
 
+class FakePushPlatform implements PushPlatform {
+  FakePushPlatform({this.allowed = false, this.grant = false});
+
+  bool allowed;
+  bool grant;
+  final List<String> calls = [];
+
+  @override
+  Future<bool> isAllowed() async {
+    calls.add('isAllowed');
+    return allowed;
+  }
+
+  @override
+  Future<bool> requestPermission() async {
+    calls.add('requestPermission');
+    if (grant) allowed = true;
+    return grant;
+  }
+
+  @override
+  Future<String?> address() async => null;
+
+  @override
+  Stream<String> get addressChanges => const Stream<String>.empty();
+
+  @override
+  Stream<void> get rings => const Stream<void>.empty();
+}
+
+const MailboxConfig testMailbox = MailboxConfig(
+  url: 'https://mailbox.test',
+  token: 'test-token',
+  origin: 'https://sameskytonight.vercel.app',
+);
+
 Widget blankTab(BuildContext context, SkyTab tab) => const SizedBox.shrink();
 
 Widget avatarTab(BuildContext context, SkyTab tab) =>
@@ -164,14 +216,7 @@ class Launcher extends StatelessWidget {
   final Widget? child;
 
   @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      body: child ??
-          Center(
-            child: TextButton(onPressed: () => showSyncHub(context), child: const Text(openHubLabel)),
-          ),
-    );
-  }
+  Widget build(BuildContext context) => Scaffold(body: child ?? const SettingsPage());
 }
 
 Widget spaceApp(OurSpace space, {PeerLink? peer, Widget? home}) {
@@ -187,14 +232,27 @@ Widget spaceApp(OurSpace space, {PeerLink? peer, Widget? home}) {
   );
 }
 
-Future<void> openHub(WidgetTester tester, OurSpace space, {PeerLink? peer}) async {
+Future<void> openSettingsPage(WidgetTester tester, OurSpace space, {PeerLink? peer}) async {
   await tester.pumpWidget(spaceApp(space, peer: peer));
   await tester.pump();
   await settleIdentity(tester, space);
-  await tester.tap(find.text(openHubLabel));
+  await tester.pump(const Duration(milliseconds: 500));
+  expect(find.byType(SettingsPage), findsOneWidget);
+}
+
+Future<void> openAddPhonePage(WidgetTester tester, OurSpace space, {PeerLink? peer}) async {
+  await tester.pumpWidget(spaceApp(space, peer: peer, home: const AddPhonePage()));
+  await tester.pump();
+  await settleIdentity(tester, space);
+  await tester.pump(const Duration(milliseconds: 500));
+  expect(find.text(AddPhoneCopy.title), findsOneWidget);
+}
+
+Future<void> tapRow(WidgetTester tester, Key key) async {
+  await reveal(tester, find.byKey(key));
+  await tester.tap(find.byKey(key));
   await tester.pump();
   await tester.pump(const Duration(milliseconds: 500));
-  expect(find.text(SyncHubCopy.title), findsOneWidget);
 }
 
 PickedVaultFile pickedFrom(BackupFile file) {

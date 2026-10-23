@@ -430,14 +430,14 @@ void main() {
     expect(find.text('Us two'), findsOneWidget);
     await press(tester, find.byKey(SettingsPage.phonesKey));
     await tester.pump(const Duration(milliseconds: 500));
-    expect(find.text('Pair & Sync Hub'), findsOneWidget);
+    expect(find.text('Open Our Space on the other phone, then scan this code or send them your link.'), findsOneWidget);
 
     space.mailbox.onWarning!('clock_skew', 'Your phone clock looks a little off.');
     space.vault.lock();
     await tester.pump();
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
-    expect(find.text('Pair & Sync Hub'), findsNothing);
+    expect(find.text('Open Our Space on the other phone, then scan this code or send them your link.'), findsNothing);
     expect(find.byType(SettingsPage), findsNothing);
     expect(find.text('Locked'), findsOneWidget);
     final notices = tester.element(find.byType(LockScreen)).read<AppNotices>();

@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:our_space_mobile/core/engine.dart';
 import 'package:our_space_mobile/presentation/screens/people/who_is_who.dart';
-import 'package:our_space_mobile/presentation/screens/sync/sync_hub.dart';
 import 'package:our_space_mobile/presentation/sky/sky.dart';
 import 'package:our_space_mobile/presentation/widgets/app_haptics.dart';
 import 'package:provider/provider.dart';
@@ -14,9 +13,6 @@ Finder fieldWithHint(String hint) => find.descendant(
       of: find.byWidgetPredicate((widget) => widget is SkyTextField && widget.hint == hint),
       matching: find.byType(TextField),
     );
-
-Finder semanticsLabelled(String label) =>
-    find.byWidgetPredicate((widget) => widget is Semantics && widget.properties.label == label);
 
 Future<void> pumpWhoIsWho(WidgetTester tester, OurSpace space) async {
   await tester.pumpWidget(
@@ -303,16 +299,5 @@ void main() {
     expect(find.text(WhoIsWhoCopy.sealed), findsNothing);
     expect(find.text(WhoIsWhoCopy.swappedLink), findsNothing);
     expect(semanticsLabelled('Edit this person'), findsOneWidget);
-  });
-
-  testWidgets('sits inside the hub between the mailbox and the QR', (tester) async {
-    calm(tester);
-    final space = await openUnlockedSpace(tester);
-    await real(tester, () => space.identity.createCouple(myName: 'Sam', partnerName: 'Alex'));
-    await openHub(tester, space);
-    await untilFound(tester, find.text('WHO IS WHO'));
-    final whoTop = tester.getTopLeft(find.text('WHO IS WHO')).dy;
-    expect(whoTop, greaterThan(tester.getTopLeft(find.text(SyncHubCopy.lastConnected)).dy));
-    expect(whoTop, lessThan(tester.getTopLeft(find.text(SyncHubCopy.qrTitle.toUpperCase())).dy));
   });
 }
