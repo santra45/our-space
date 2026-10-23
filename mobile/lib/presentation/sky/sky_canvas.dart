@@ -6,13 +6,13 @@ import 'sky_painter.dart';
 import 'sky_scene.dart';
 import 'sky_tokens.dart';
 
-enum SkyPointKind { qalbi, farhu, gap, heart, moon, design }
+enum SkyPointKind { me, partner, gap, heart, moon, design }
 
 @immutable
 class SkyPoint {
-  const SkyPoint.qalbi() : kind = SkyPointKind.qalbi, index = 0, design = Offset.zero;
+  const SkyPoint.me() : kind = SkyPointKind.me, index = 0, design = Offset.zero;
 
-  const SkyPoint.farhu() : kind = SkyPointKind.farhu, index = 0, design = Offset.zero;
+  const SkyPoint.partner() : kind = SkyPointKind.partner, index = 0, design = Offset.zero;
 
   const SkyPoint.gap() : kind = SkyPointKind.gap, index = 0, design = Offset.zero;
 
@@ -29,10 +29,10 @@ class SkyPoint {
   Offset? resolve(SkyScene scene) {
     final heart = scene.heart;
     switch (kind) {
-      case SkyPointKind.qalbi:
-        return heart?.pointAt(heart.qalbi);
-      case SkyPointKind.farhu:
-        return heart?.pointAt(heart.farhu);
+      case SkyPointKind.me:
+        return heart?.pointAt(heart.me);
+      case SkyPointKind.partner:
+        return heart?.pointAt(heart.partner);
       case SkyPointKind.gap:
         final gap = heart?.gap;
         return gap == null ? null : heart!.pointAt(gap);

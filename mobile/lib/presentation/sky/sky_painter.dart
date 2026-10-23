@@ -461,7 +461,7 @@ class SkyLivePainter extends CustomPainter {
           ..strokeWidth = 0.8;
         canvas.drawLine(p - const Offset(11, 0), p + const Offset(11, 0), cross);
         canvas.drawLine(p - const Offset(0, 11), p + const Offset(0, 11), cross);
-        if (i == heart.farhu && heart.presence) _paintPresence(canvas, p);
+        if (i == heart.partner && heart.presence) _paintPresence(canvas, p);
       } else {
         final r = heart.smallRadius(i);
         final w = _wave(i * 1.7, 2.6 + (i % 5) * 0.35);

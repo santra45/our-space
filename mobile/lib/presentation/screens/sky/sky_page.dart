@@ -175,21 +175,21 @@ class _OurSkyPageState extends State<OurSkyPage> with WidgetsBindingObserver {
                 ));
 
     final anchors = <SkyAnchor>[
-      if (loaded && presence.isHere && partner != null && !heart.isLit(heart.farhu))
+      if (loaded && presence.isHere && partner != null && !heart.isLit(heart.partner))
         const SkyAnchor(
-          at: SkyPoint.farhu(),
+          at: SkyPoint.partner(),
           alignment: Alignment.center,
           child: SkyPresenceRing(key: SkyPageKeys.presenceRing),
         ),
       if (loaded && me != null)
         SkyAnchor(
-          at: const SkyPoint.qalbi(),
+          at: const SkyPoint.me(),
           offset: const Offset(0, 18),
           child: SkyEntrance(child: SkyNameLabel(me, key: SkyPageKeys.myName)),
         ),
       if (loaded && partner != null)
         SkyAnchor(
-          at: const SkyPoint.farhu(),
+          at: const SkyPoint.partner(),
           offset: const Offset(-12, 30),
           child: SkyEntrance(
             index: 1,

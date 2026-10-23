@@ -150,11 +150,11 @@ abstract final class SkyHeartPlan {
     required bool partner,
     required bool partnerChip,
   }) {
-    final q = heart.pointAt(heart.qalbi);
-    final f = heart.pointAt(heart.farhu);
+    final mine = heart.pointAt(heart.me);
+    final theirs = heart.pointAt(heart.partner);
     return [
-      if (me) Rect.fromLTWH(q.dx - 32, q.dy + 16, 64, 22),
-      if (partner) Rect.fromLTWH(f.dx - 52, f.dy + 28, 80, partnerChip ? 40 : 22),
+      if (me) Rect.fromLTWH(mine.dx - 32, mine.dy + 16, 64, 22),
+      if (partner) Rect.fromLTWH(theirs.dx - 52, theirs.dy + 28, 80, partnerChip ? 40 : 22),
     ];
   }
 

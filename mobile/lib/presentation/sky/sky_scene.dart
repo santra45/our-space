@@ -71,8 +71,8 @@ class HeartConstellation {
     this.center = const Offset(195, 284),
     this.scale = 6.4,
     this.gap = 10,
-    this.qalbi = 24,
-    this.farhu = 5,
+    this.me = 24,
+    this.partner = 5,
     this.complete = false,
     this.burst = false,
     this.presence = true,
@@ -86,8 +86,8 @@ class HeartConstellation {
   final Offset center;
   final double scale;
   final int? gap;
-  final int qalbi;
-  final int farhu;
+  final int me;
+  final int partner;
   final bool complete;
   final bool burst;
   final bool presence;
@@ -111,7 +111,7 @@ class HeartConstellation {
 
   bool isLit(int index) => !unlit.contains(index) && !(hasOpenGap && index == gap);
 
-  bool isBig(int index) => index == qalbi || index == farhu;
+  bool isBig(int index) => index == me || index == partner;
 
   double smallRadius(int index) => 1.7 + ((index * 37) % 10) / 7;
 
@@ -120,8 +120,8 @@ class HeartConstellation {
     double? scale,
     int? gap,
     bool clearGap = false,
-    int? qalbi,
-    int? farhu,
+    int? me,
+    int? partner,
     bool? complete,
     bool? burst,
     bool? presence,
@@ -133,8 +133,8 @@ class HeartConstellation {
       center: center ?? this.center,
       scale: scale ?? this.scale,
       gap: clearGap ? null : (gap ?? this.gap),
-      qalbi: qalbi ?? this.qalbi,
-      farhu: farhu ?? this.farhu,
+      me: me ?? this.me,
+      partner: partner ?? this.partner,
       complete: complete ?? this.complete,
       burst: burst ?? this.burst,
       presence: presence ?? this.presence,
@@ -150,8 +150,8 @@ class HeartConstellation {
       other.center == center &&
       other.scale == scale &&
       other.gap == gap &&
-      other.qalbi == qalbi &&
-      other.farhu == farhu &&
+      other.me == me &&
+      other.partner == partner &&
       other.complete == complete &&
       other.burst == burst &&
       other.presence == presence &&
@@ -164,8 +164,8 @@ class HeartConstellation {
     center,
     scale,
     gap,
-    qalbi,
-    farhu,
+    me,
+    partner,
     complete,
     burst,
     presence,

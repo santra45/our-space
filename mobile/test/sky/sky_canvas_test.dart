@@ -199,7 +199,7 @@ void main() {
             scene: scene,
             anchors: [
               SkyAnchor(
-                at: SkyPoint.qalbi(),
+                at: SkyPoint.me(),
                 offset: Offset(0, 18),
                 child: SizedBox(width: 40, height: 10, key: Key('q')),
               ),
