@@ -80,7 +80,7 @@ void main() {
     expect(recordedHaptics, [HapticKind.tick, HapticKind.celebration]);
     expect(noteSays(LoveSheetCopy.hint), findsNothing);
 
-    await untilToast(tester, (message) => message == 'Saved 💕 Alex will see it the moment you two connect.');
+    await untilToast(tester, (message) => message == 'Saved. Alex will see it the moment you two connect.');
     await untilFound(tester, noteSays(LoveSheetCopy.saved('Alex')));
     expect(find.text('SENT WITH LOVE'), findsOneWidget);
     final sent = await bursts(tester, space);
