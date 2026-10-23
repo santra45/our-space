@@ -35,6 +35,8 @@ LockMode? defaultLockMode(VaultCheckState state, {bool inviteHasSalt = false, bo
 }
 
 const double _actionArea = LockMetrics.touchBlock - 36 - 14;
+const double _linkGap = 6;
+const double _linkFooterSpace = 28;
 
 class LockCheckingView extends StatelessWidget {
   const LockCheckingView({super.key, required this.metrics});
@@ -542,6 +544,7 @@ class _LockScreenState extends State<LockScreen> {
   Widget _touchView(LockMetrics metrics, {required bool inviteIsForAnotherVault}) {
     return LockOpenView(
       metrics: metrics,
+      footerSpace: _linkFooterSpace,
       children: [
         ..._inviteNotes(inviteIsForAnotherVault: inviteIsForAnotherVault),
         LockTouchButton(
@@ -551,7 +554,7 @@ class _LockScreenState extends State<LockScreen> {
           onTap: _handleQuickUnlock,
         ),
         if (_error != null) ...[const SizedBox(height: SkySpace.md), SkyEntrance(child: LockInlineError(_error!))],
-        const SizedBox(height: 14),
+        const SizedBox(height: _linkGap),
         LockLink(label: LockCopy.usePassphrase, onTap: () => _showPassphrase(true)),
       ],
     );
@@ -562,6 +565,7 @@ class _LockScreenState extends State<LockScreen> {
     final ready = _passphrase.text.trim().isNotEmpty;
     return LockOpenView(
       metrics: metrics,
+      footerSpace: _linkFooterSpace,
       children: [
         ..._inviteNotes(inviteIsForAnotherVault: inviteIsForAnotherVault),
         Text(
@@ -592,11 +596,10 @@ class _LockScreenState extends State<LockScreen> {
           icon: SkyIcons.heart,
           onPressed: ready ? _handleUnlock : null,
         ),
-        const SizedBox(height: 14),
+        const SizedBox(height: _linkGap),
         Wrap(
           alignment: WrapAlignment.center,
           spacing: SkySpace.xl,
-          runSpacing: SkySpace.xs,
           children: [
             if (touchOffered)
               LockLink(label: LockCopy.useTouch, icon: SkyIcons.finger, onTap: () => _showPassphrase(false)),
@@ -666,7 +669,7 @@ class _LockScreenState extends State<LockScreen> {
                 : null,
           ),
           if (hasVault) ...[
-            const SizedBox(height: SkySpace.md),
+            const SizedBox(height: SkySpace.xs),
             LockLink(label: LockCopy.goBack, onTap: () => _switchMode(LockMode.unlock)),
           ],
         ],
@@ -739,7 +742,7 @@ class _LockScreenState extends State<LockScreen> {
             onPressed: ready ? () => _handleJoin(joinReplacesVault) : null,
           ),
           if (hasVault) ...[
-            const SizedBox(height: SkySpace.md),
+            const SizedBox(height: SkySpace.xs),
             LockLink(label: LockCopy.goBack, onTap: () => _switchMode(LockMode.unlock)),
           ],
         ],
@@ -830,7 +833,7 @@ class _LockScreenState extends State<LockScreen> {
             const SizedBox(height: 14),
             _errorNote(_restoreError!),
           ],
-          const SizedBox(height: SkySpace.md),
+          const SizedBox(height: SkySpace.xs),
           LockLink(label: LockCopy.cancel, onTap: () => _switchMode(hasVault ? LockMode.unlock : LockMode.setup)),
         ],
       ),
@@ -843,7 +846,7 @@ class _LockScreenState extends State<LockScreen> {
       children: [
         panel,
         if (restoreLink) ...[
-          const SizedBox(height: SkySpace.lg),
+          const SizedBox(height: SkySpace.sm),
           LockLink(label: LockCopy.moreRestore, icon: SkyIcons.box, onTap: () => _switchMode(LockMode.restore)),
         ],
       ],

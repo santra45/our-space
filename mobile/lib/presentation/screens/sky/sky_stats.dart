@@ -38,7 +38,7 @@ class SkyStatsRow extends StatelessWidget {
       if (i > 0) {
         children.add(
           Padding(
-            padding: const EdgeInsets.symmetric(vertical: 6),
+            padding: const EdgeInsets.symmetric(vertical: 15),
             child: SizedBox(width: 1, child: ColoredBox(color: t.muted.withValues(alpha: 0.22))),
           ),
         );
@@ -46,7 +46,7 @@ class SkyStatsRow extends StatelessWidget {
       children.add(Expanded(child: _StatCell(stat: stats[i])));
     }
     return Container(
-      padding: const EdgeInsets.symmetric(vertical: 9, horizontal: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 4),
       decoration: BoxDecoration(
         color: t.isDay ? t.surface2 : SkyStatsRow.nightFill,
         borderRadius: SkyRadii.all(SkyRadii.tile),
@@ -91,7 +91,7 @@ class _StatCell extends StatelessWidget {
       semanticLabel: '${stat.value} ${stat.label}',
       excludeSemantics: true,
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 9),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           mainAxisAlignment: MainAxisAlignment.center,

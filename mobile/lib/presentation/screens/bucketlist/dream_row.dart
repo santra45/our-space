@@ -29,8 +29,7 @@ class DreamRow extends StatelessWidget {
       selected: done,
       semanticLabel: done ? BucketCopy.done(item.text) : item.text,
       excludeSemantics: true,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 1),
+      child: SkyTapTarget(
         child: Row(
           children: [
             DreamCheck(done: done),
@@ -59,8 +58,8 @@ class DreamRow extends StatelessWidget {
           onTap: onOpen,
           semanticLabel: BucketCopy.change,
           excludeSemantics: true,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(8, 6, 0, 6),
+          child: SkyTapTarget.square(
+            alignment: Alignment.centerRight,
             child: SkyIcon(SkyIcons.dots, size: 18, color: t.faint),
           ),
         ),

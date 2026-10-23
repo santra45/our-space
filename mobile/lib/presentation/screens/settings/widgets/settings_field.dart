@@ -93,9 +93,11 @@ class SettingsField extends StatelessWidget {
                 onTap: toggle,
                 semanticLabel: obscured ? SettingsFieldCopy.show : SettingsFieldCopy.hide,
                 excludeSemantics: true,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  child: SkyIcon(obscured ? SkyIcons.eye : SkyIcons.eyeOff, size: 18, color: t.muted),
+                child: SkyTapTarget.square(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    child: SkyIcon(obscured ? SkyIcons.eye : SkyIcons.eyeOff, size: 18, color: t.muted),
+                  ),
                 ),
               ),
         suffixIconConstraints: const BoxConstraints(minWidth: 0, minHeight: 0),

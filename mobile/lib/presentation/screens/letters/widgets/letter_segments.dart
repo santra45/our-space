@@ -32,7 +32,6 @@ class LetterSegments extends StatelessWidget {
   Widget build(BuildContext context) {
     return Wrap(
       spacing: SkySpace.sm,
-      runSpacing: SkySpace.sm,
       children: [
         for (final segment in LetterSegment.values)
           SkyChip(

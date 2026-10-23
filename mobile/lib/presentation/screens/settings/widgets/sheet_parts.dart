@@ -95,8 +95,7 @@ class TextAction extends StatelessWidget {
       child: AnimatedOpacity(
         opacity: active ? 1 : 0.45,
         duration: SkyMotion.fast,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 4),
+        child: SkyTapTarget(
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [

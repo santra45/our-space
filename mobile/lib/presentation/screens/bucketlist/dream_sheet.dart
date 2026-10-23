@@ -110,10 +110,9 @@ class _DreamSheetState extends State<DreamSheet> {
                 BucketCopy.categoryLabel,
                 style: SkyType.sans(11, weight: FontWeight.w600).copyWith(color: t.muted),
               ),
-              const SizedBox(height: SkySpace.sm),
+              const SizedBox(height: 1),
               Wrap(
                 spacing: SkySpace.sm,
-                runSpacing: SkySpace.sm,
                 children: [
                   for (final choice in _choices)
                     SkyChip(

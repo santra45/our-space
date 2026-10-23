@@ -277,10 +277,11 @@ class LockFooter extends StatelessWidget {
 }
 
 class LockOpenView extends StatelessWidget {
-  const LockOpenView({super.key, required this.metrics, required this.children});
+  const LockOpenView({super.key, required this.metrics, required this.children, this.footerSpace = 36});
 
   final LockMetrics metrics;
   final List<Widget> children;
+  final double footerSpace;
 
   @override
   Widget build(BuildContext context) {
@@ -292,7 +293,7 @@ class LockOpenView extends StatelessWidget {
         children: [
           const SizedBox(height: SkySpace.lg),
           ...children,
-          const SizedBox(height: 36),
+          SizedBox(height: footerSpace),
           const LockFooter(),
           SizedBox(height: metrics.footerGap),
         ],

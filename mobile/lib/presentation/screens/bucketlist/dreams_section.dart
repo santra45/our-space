@@ -206,7 +206,7 @@ class _DreamsSectionState extends State<DreamsSection> {
                         child: SkyEntrance(
                           index: i,
                           child: Padding(
-                            padding: const EdgeInsets.only(bottom: SkySpace.md),
+                            padding: const EdgeInsets.only(bottom: SkySpace.xxs),
                             child: DreamRow(
                               key: UsKeys.dream(items[i].id),
                               item: items[i],

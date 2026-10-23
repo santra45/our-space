@@ -204,7 +204,7 @@ class ScratchPanel extends StatelessWidget {
           ),
           const SizedBox(height: SkySpace.md),
           foil,
-          if (categories != null) ...[const SizedBox(height: 14), categories!],
+          if (categories != null) ...[const SizedBox(height: 6), categories!],
         ],
       ),
     );
@@ -259,18 +259,20 @@ class DateIdeaChip extends StatelessWidget {
       semanticLabel: label,
       selected: selected,
       excludeSemantics: true,
-      child: AnimatedContainer(
-        duration: skyMotionAllowed(context) ? SkyMotion.quick : Duration.zero,
-        curve: SkyMotion.standard,
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-        decoration: BoxDecoration(
-          color: selected ? gold : SkyTokens.white.withValues(alpha: 0.1),
-          borderRadius: SkyRadii.all(SkyRadii.pill),
-          border: Border.all(color: selected ? gold : SkyTokens.white.withValues(alpha: 0.14)),
-        ),
-        child: Text(
-          label,
-          style: SkyType.chip.copyWith(color: selected ? ink : SkyTokens.white.withValues(alpha: 0.86)),
+      child: SkyTapTarget(
+        child: AnimatedContainer(
+          duration: skyMotionAllowed(context) ? SkyMotion.quick : Duration.zero,
+          curve: SkyMotion.standard,
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          decoration: BoxDecoration(
+            color: selected ? gold : SkyTokens.white.withValues(alpha: 0.1),
+            borderRadius: SkyRadii.all(SkyRadii.pill),
+            border: Border.all(color: selected ? gold : SkyTokens.white.withValues(alpha: 0.14)),
+          ),
+          child: Text(
+            label,
+            style: SkyType.chip.copyWith(color: selected ? ink : SkyTokens.white.withValues(alpha: 0.86)),
+          ),
         ),
       ),
     );

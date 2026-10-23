@@ -424,20 +424,21 @@ class _LettersPageState extends State<LettersPage> {
       blocks.add(enter(ValueKey<String>('capsule-${letter.id}'), _capsule(letter, LettersCopy.capsuleFrom(partner))));
     }
     if (shelf.opened.isNotEmpty) {
-      blocks.add(const SizedBox(height: 20));
+      final seeAll = shelf.opened.length > LettersPage.openedPreview;
+      blocks.add(SizedBox(height: seeAll ? 10 : 20));
       blocks.add(
         enter(
           const ValueKey<String>('opened-together'),
           Row(
             children: [
               const Expanded(child: SkyLabel(LettersCopy.openedTogether)),
-              if (shelf.opened.length > LettersPage.openedPreview)
+              if (seeAll)
                 SkyPressable(
                   onTap: () => _select(LetterSegment.opened),
                   semanticLabel: LettersCopy.seeAll,
                   excludeSemantics: true,
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: SkySpace.xs),
+                  child: SkyTapTarget(
+                    minWidth: SkySizes.minTap,
                     child: Text(
                       LettersCopy.seeAll,
                       style: SkyType.sans(12, weight: FontWeight.w600).copyWith(color: t.rose),

@@ -25,21 +25,23 @@ class LockLink extends StatelessWidget {
         enabled: onTap != null,
         semanticLabel: label,
         excludeSemantics: true,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
-          child: Container(
-            padding: const EdgeInsets.only(bottom: 2),
-            decoration: BoxDecoration(
-              border: Border(bottom: BorderSide(color: t.hairline)),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (icon != null) ...[SkyIcon(icon!, size: 14, color: color), const SizedBox(width: 6)],
-                Flexible(
-                  child: Text(label, textAlign: TextAlign.center, style: style),
-                ),
-              ],
+        child: SkyTapTarget(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 2),
+            child: Container(
+              padding: const EdgeInsets.only(bottom: 2),
+              decoration: BoxDecoration(
+                border: Border(bottom: BorderSide(color: t.hairline)),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (icon != null) ...[SkyIcon(icon!, size: 14, color: color), const SizedBox(width: 6)],
+                  Flexible(
+                    child: Text(label, textAlign: TextAlign.center, style: style),
+                  ),
+                ],
+              ),
             ),
           ),
         ),

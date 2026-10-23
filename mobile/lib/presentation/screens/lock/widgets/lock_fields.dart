@@ -152,9 +152,11 @@ class _LockFieldState extends State<LockField> {
                 onTap: () => setState(() => _hidden = !_hidden),
                 semanticLabel: _hidden ? LockField.show : LockField.hide,
                 excludeSemantics: true,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                  child: SkyIcon(_hidden ? SkyIcons.eye : SkyIcons.eyeOff, size: 18, color: t.muted),
+                child: SkyTapTarget.square(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 14),
+                    child: SkyIcon(_hidden ? SkyIcons.eye : SkyIcons.eyeOff, size: 18, color: t.muted),
+                  ),
                 ),
               )
             : null,
