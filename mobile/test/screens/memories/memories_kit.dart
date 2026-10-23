@@ -7,6 +7,7 @@ import 'package:our_space_mobile/core/engine.dart';
 import 'package:our_space_mobile/presentation/screens/memories/add_memory_sheet.dart';
 import 'package:our_space_mobile/presentation/screens/memories/memories_page.dart';
 import 'package:our_space_mobile/presentation/screens/memories/memory_viewer.dart';
+import 'package:our_space_mobile/presentation/screens/memories/widgets/polaroid.dart';
 import 'package:our_space_mobile/presentation/screens/memories/widgets/polaroid_tile.dart';
 import 'package:our_space_mobile/presentation/sky/sky.dart';
 
@@ -30,14 +31,13 @@ bool skyButtonEnabled(WidgetTester tester, String label) =>
     tester.widget<SkyButton>(find.widgetWithText(SkyButton, label)).enabled;
 
 double tileTilt(WidgetTester tester, String caption) {
-  final transforms = tester.widgetList<Transform>(
-    find.descendant(of: tileFor(caption), matching: find.byType(Transform)),
+  final tilt = tester.widget<Transform>(
+    find.descendant(
+      of: tileFor(caption),
+      matching: find.byWidgetPredicate((widget) => widget is Transform && widget.child is PolaroidPaper),
+    ),
   );
-  for (final transform in transforms) {
-    final angle = math.atan2(transform.transform.entry(1, 0), transform.transform.entry(0, 0));
-    if (angle.abs() > 1e-6) return angle;
-  }
-  return 0;
+  return math.atan2(tilt.transform.entry(1, 0), tilt.transform.entry(0, 0));
 }
 
 Future<MemoryRecord> addMemory(
