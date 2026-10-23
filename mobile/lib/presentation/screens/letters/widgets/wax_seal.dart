@@ -172,10 +172,12 @@ class _BreathingSealState extends State<BreathingSeal> with SingleTickerProvider
   @override
   Widget build(BuildContext context) {
     if (!skyMotionAllowed(context)) return widget.child;
-    return AnimatedBuilder(
-      animation: _curve,
-      builder: (context, child) => Transform.scale(scale: 1 + 0.05 * _curve.value, child: child),
-      child: widget.child,
+    return RepaintBoundary(
+      child: AnimatedBuilder(
+        animation: _curve,
+        builder: (context, child) => Transform.scale(scale: 1 + 0.05 * _curve.value, child: child),
+        child: RepaintBoundary(child: widget.child),
+      ),
     );
   }
 }

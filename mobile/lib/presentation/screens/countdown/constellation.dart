@@ -381,9 +381,11 @@ class _StarDotState extends State<StarDot> with TickerProviderStateMixin {
           ),
         );
         if (breath == null) return dot(1);
-        return AnimatedBuilder(
-          animation: breath,
-          builder: (context, _) => dot(Curves.easeInOut.transform(breath.value)),
+        return RepaintBoundary(
+          child: AnimatedBuilder(
+            animation: breath,
+            builder: (context, _) => dot(Curves.easeInOut.transform(breath.value)),
+          ),
         );
     }
   }
