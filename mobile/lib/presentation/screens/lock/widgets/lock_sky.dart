@@ -9,7 +9,7 @@ import '../lock_copy.dart';
 
 @immutable
 class LockMetrics {
-  const LockMetrics({required this.size, this.topInset = 0, this.bottomInset = 0});
+  const LockMetrics({required this.size, this.topInset = 0, this.bottomInset = 0, this.keyboard = 0});
 
   static const double designWidth = 390;
   static const double designHeight = 844;
@@ -24,6 +24,9 @@ class LockMetrics {
   final Size size;
   final double topInset;
   final double bottomInset;
+  final double keyboard;
+
+  static const double keyboardHeartGlow = 0.35;
 
   double get k => size.width <= 0 ? 1 : size.width / designWidth;
 
@@ -33,9 +36,9 @@ class LockMetrics {
 
   double get brandHeight => brandTop + brandBlock;
 
-  double get bodyMinHeight => math.max(0, size.height - brandHeight);
+  double get bodyMinHeight => math.max(0, size.height - keyboard - brandHeight);
 
-  double get footerGap => math.max(64, bottomInset + 30);
+  double get footerGap => keyboard > 0 ? SkySpace.lg : math.max(64, bottomInset + 30);
 
   double get openBlock => touchBlock + footerGap;
 
@@ -76,10 +79,14 @@ class LockMetrics {
 
   @override
   bool operator ==(Object other) =>
-      other is LockMetrics && other.size == size && other.topInset == topInset && other.bottomInset == bottomInset;
+      other is LockMetrics &&
+      other.size == size &&
+      other.topInset == topInset &&
+      other.bottomInset == bottomInset &&
+      other.keyboard == keyboard;
 
   @override
-  int get hashCode => Object.hash(size, topInset, bottomInset);
+  int get hashCode => Object.hash(size, topInset, bottomInset, keyboard);
 }
 
 typedef LockViewBuilder = Widget Function(BuildContext context, LockMetrics metrics);
@@ -135,7 +142,14 @@ class _LockSkyFrameState extends State<LockSkyFrame> {
     return LayoutBuilder(
       builder: (context, constraints) {
         final padding = MediaQuery.viewPaddingOf(context);
+        final keyboard = MediaQuery.viewInsetsOf(context).bottom;
         final metrics = LockMetrics(size: constraints.biggest, topInset: padding.top, bottomInset: padding.bottom);
+        final layout = LockMetrics(
+          size: constraints.biggest,
+          topInset: padding.top,
+          bottomInset: padding.bottom,
+          keyboard: keyboard,
+        );
         final tokens = context.sky;
         final motion = skyMotionAllowed(context);
         final scroll = SingleChildScrollView(
@@ -166,9 +180,9 @@ class _LockSkyFrameState extends State<LockSkyFrame> {
                         key: ValueKey<Object>(widget.viewKey),
                         child: ConstrainedBox(
                           constraints: BoxConstraints(
-                            minHeight: math.max(0.0, metrics.bodyMinHeight - widget.headerExtent),
+                            minHeight: math.max(0.0, layout.bodyMinHeight - widget.headerExtent),
                           ),
-                          child: widget.builder(context, metrics),
+                          child: widget.builder(context, layout),
                         ),
                       ),
                     ),
@@ -180,7 +194,7 @@ class _LockSkyFrameState extends State<LockSkyFrame> {
           ),
         );
         final body = Padding(
-          padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
+          padding: EdgeInsets.only(bottom: keyboard),
           child: scroll,
         );
         return SkyTheme(
@@ -193,7 +207,9 @@ class _LockSkyFrameState extends State<LockSkyFrame> {
                 children: [
                   Positioned.fill(
                     child: TweenAnimationBuilder<double>(
-                      tween: Tween<double>(end: widget.heartVisible ? 1 : 0),
+                      tween: Tween<double>(
+                        end: widget.heartVisible ? (keyboard > 0 ? LockMetrics.keyboardHeartGlow : 1) : 0,
+                      ),
                       duration: motion ? SkyMotion.slow : Duration.zero,
                       curve: SkyMotion.standard,
                       builder: (context, glow, _) => SkyBackdrop(scene: metrics.sceneWithHeart(glow)),

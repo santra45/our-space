@@ -113,6 +113,7 @@ void main() {
 
     await lockPress(tester, find.text(LockCopy.usePassphrase));
     expect(lockField(LockCopy.unlockHint), findsOneWidget);
+    final titleBefore = tester.getRect(find.text(LockCopy.title));
 
     tester.view.viewInsets = const FakeViewPadding(bottom: keyboard * 3);
     for (var i = 0; i < 6; i++) {
@@ -120,7 +121,18 @@ void main() {
     }
     final screen = tester.view.physicalSize.height / tester.view.devicePixelRatio;
     expect(tester.getRect(lockField(LockCopy.unlockHint)).bottom, lessThanOrEqualTo(screen - keyboard));
+    expect(tester.getRect(find.text(LockCopy.title)), titleBefore);
     await closeLock(tester, space);
+  });
+
+  test('the keyboard takes its room from the empty sky, not from the form', () {
+    const open = LockMetrics(size: Size(390, 844), topInset: 24, bottomInset: 16);
+    const typing = LockMetrics(size: Size(390, 844), topInset: 24, bottomInset: 16, keyboard: 320);
+    expect(typing.brandHeight, open.brandHeight);
+    expect(typing.bodyMinHeight, open.bodyMinHeight - 320);
+    expect(typing.footerGap, SkySpace.lg);
+    expect(open.footerGap, 64);
+    expect(typing, isNot(open));
   });
 
   testWidgets('more ways in leads to joining, a saved copy or starting over, and back again', (tester) async {
