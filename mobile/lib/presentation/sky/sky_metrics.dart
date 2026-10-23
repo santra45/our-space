@@ -33,6 +33,7 @@ abstract final class SkyRadii {
 }
 
 abstract final class SkySizes {
+  static const double minTap = 44;
   static const double iconButton = 42;
   static const double avatar = 42;
   static const double button = 48;

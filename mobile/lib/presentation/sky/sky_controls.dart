@@ -257,15 +257,17 @@ class SkyIconButton extends StatelessWidget {
       enabled: onPressed != null,
       semanticLabel: semanticLabel,
       excludeSemantics: true,
-      child: AnimatedOpacity(
-        opacity: onPressed == null ? 0.5 : 1,
-        duration: SkyMotion.fast,
-        child: Container(
-          width: size,
-          height: size,
-          decoration: decoration,
-          alignment: Alignment.center,
-          child: SkyIcon(icon, size: iconSize ?? size * 20 / 42, color: iconColor ?? fg),
+      child: SkyTapTarget.square(
+        child: AnimatedOpacity(
+          opacity: onPressed == null ? 0.5 : 1,
+          duration: SkyMotion.fast,
+          child: Container(
+            width: size,
+            height: size,
+            decoration: decoration,
+            alignment: Alignment.center,
+            child: SkyIcon(icon, size: iconSize ?? size * 20 / 42, color: iconColor ?? fg),
+          ),
         ),
       ),
     );
@@ -338,7 +340,7 @@ class SkyChip extends StatelessWidget {
       semanticLabel: label,
       selected: tone == SkyChipTone.on,
       excludeSemantics: true,
-      child: chip,
+      child: SkyTapTarget(child: chip),
     );
   }
 }
@@ -508,7 +510,12 @@ class SkyAvatar extends StatelessWidget {
     if (onTap == null) {
       return Semantics(label: semanticLabel ?? initial, excludeSemantics: true, child: face);
     }
-    return SkyPressable(onTap: onTap, semanticLabel: semanticLabel ?? initial, excludeSemantics: true, child: face);
+    return SkyPressable(
+      onTap: onTap,
+      semanticLabel: semanticLabel ?? initial,
+      excludeSemantics: true,
+      child: SkyTapTarget.square(child: face),
+    );
   }
 }
 

@@ -194,7 +194,48 @@ void main() {
       );
       await tester.tap(labelled('Write a letter'));
       expect(taps, 1);
-      expect(tester.getSize(find.byType(SkyIconButton)), const Size(42, 42));
+      expect(tester.getSize(find.byType(SkyIconButton)), const Size(44, 44));
+      final drawn = find.descendant(of: find.byType(SkyIconButton), matching: find.byType(Container)).last;
+      expect(tester.getSize(drawn), const Size(42, 42));
+    });
+
+    testWidgets('small controls keep a 44 point tap area around what they draw', (tester) async {
+      final tapped = <String>[];
+      await tester.pumpWidget(
+        skyApp(
+          SizedBox(
+            width: 320,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SkyIconButton(icon: SkyIcons.dots, semanticLabel: 'More', size: 32, onPressed: () => tapped.add('More')),
+                SkyChip(label: 'Waiting', onTap: () => tapped.add('Waiting')),
+                SkyChip(label: 'she / her', dense: true, onTap: () => tapped.add('she / her')),
+                SkyAvatar(initial: 'S', size: 34, semanticLabel: 'Settings', onTap: () => tapped.add('Settings')),
+                SkySectionHeader(title: 'Dreams', action: 'Add', onAction: () => tapped.add('Add')),
+                SkyTip(text: 'A letter fell', onTap: () => tapped.add('A letter fell')),
+                SkyNotice(
+                  text: 'We could not reach Alex just now.',
+                  actionLabel: 'Try again',
+                  onAction: () => tapped.add('Try again'),
+                  onDismiss: () => tapped.add('Dismiss'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+      const labels = ['More', 'Waiting', 'she / her', 'Settings', 'Add', 'A letter fell', 'Try again', 'Dismiss'];
+      for (final label in labels) {
+        final area = tester.getRect(labelled(label));
+        expect(area.height, greaterThanOrEqualTo(44), reason: label);
+        await tester.tapAt(area.topLeft + const Offset(1, 1));
+        await tester.pump(const Duration(milliseconds: 300));
+        expect(tapped.last, label, reason: label);
+      }
+      expect(tapped, labels);
+      expect(tester.getSize(find.text('Waiting')).height, lessThan(30));
     });
 
     testWidgets('chips show their tone and report taps', (tester) async {

@@ -167,7 +167,7 @@ class _NamesSheetState extends State<NamesSheet> {
               if (canSave) _commit(identity);
             },
           ),
-          const SizedBox(height: SkySpace.md),
+          const SizedBox(height: 2),
           Row(
             children: [
               for (var i = 0; i < pronouns.length; i++) ...[
@@ -183,7 +183,7 @@ class _NamesSheetState extends State<NamesSheet> {
               ],
             ],
           ),
-          const SizedBox(height: SkySpace.md),
+          const SizedBox(height: 2),
           Row(
             children: [
               Expanded(
@@ -216,7 +216,7 @@ class _NamesSheetState extends State<NamesSheet> {
     final name = person.name.isEmpty ? NamesCopy.noNameYet : person.name;
     return Padding(
       key: ValueKey<String>('row-${person.personId}'),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
       child: Row(
         children: [
           SkyAvatar(

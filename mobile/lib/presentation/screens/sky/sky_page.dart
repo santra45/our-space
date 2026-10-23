@@ -221,6 +221,7 @@ class _OurSkyPageState extends State<OurSkyPage> with WidgetsBindingObserver {
               subtitle: tipSubtitle,
               icon: SkyIcons.sparkle,
               arrow: placement.arrow,
+              tapAlignment: placement.alignment,
               onTap: _answer,
             ),
           ),

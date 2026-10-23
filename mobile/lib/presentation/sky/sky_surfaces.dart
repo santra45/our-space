@@ -149,8 +149,8 @@ class SkySectionHeader extends StatelessWidget {
             onTap: onAction,
             semanticLabel: action,
             excludeSemantics: true,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 6),
+            child: SkyTapTarget(
+              minWidth: SkySizes.minTap,
               child: Text(
                 action!,
                 style: SkyType.sans(12, weight: FontWeight.w600).copyWith(color: t.rose),
@@ -280,7 +280,10 @@ class _SkyPulseState extends State<SkyPulse> with SingleTickerProviderStateMixin
 }
 
 class SkyTip extends StatelessWidget {
-  const SkyTip({super.key, required this.text, this.icon, this.onTap}) : title = null, subtitle = null, arrow = false;
+  const SkyTip({super.key, required this.text, this.icon, this.onTap, this.tapAlignment = Alignment.topLeft})
+    : title = null,
+      subtitle = null,
+      arrow = false;
 
   const SkyTip.two({
     super.key,
@@ -289,6 +292,7 @@ class SkyTip extends StatelessWidget {
     this.icon,
     this.arrow = true,
     this.onTap,
+    this.tapAlignment = Alignment.topLeft,
   }) : text = '';
 
   final String text;
@@ -297,6 +301,7 @@ class SkyTip extends StatelessWidget {
   final SkyIcons? icon;
   final bool arrow;
   final VoidCallback? onTap;
+  final Alignment tapAlignment;
 
   @override
   Widget build(BuildContext context) {
@@ -378,7 +383,12 @@ class SkyTip extends StatelessWidget {
     }
     final label = title == null ? text : '$title, $subtitle';
     if (onTap == null) return Semantics(label: label, excludeSemantics: true, child: body);
-    return SkyPressable(onTap: onTap, semanticLabel: label, excludeSemantics: true, child: body);
+    return SkyPressable(
+      onTap: onTap,
+      semanticLabel: label,
+      excludeSemantics: true,
+      child: SkyTapTarget(alignment: tapAlignment, child: body),
+    );
   }
 }
 
@@ -405,6 +415,8 @@ class SkyNotice extends StatelessWidget {
   final VoidCallback? onDismiss;
   final String dismissLabel;
   final bool elevated;
+
+  static const double dismissRoom = 28;
 
   @override
   Widget build(BuildContext context) {
@@ -435,61 +447,72 @@ class SkyNotice extends StatelessWidget {
         border = t.roseBorder;
         glyph = SkyIcons.heart;
     }
+    final hasAction = actionLabel != null;
+    final card = Container(
+      padding: EdgeInsets.fromLTRB(14, 12, 12, hasAction ? 0 : 12),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: SkyRadii.all(SkyRadii.tile),
+        border: Border.all(color: border),
+        boxShadow: elevated ? t.softShadow : const [],
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(top: 1),
+            child: SkyIcon(icon ?? glyph, size: 18, color: accent),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(text, style: SkyType.bodySmall.copyWith(color: t.text)),
+                if (hasAction)
+                  SkyPressable(
+                    onTap: onAction,
+                    semanticLabel: actionLabel,
+                    excludeSemantics: true,
+                    child: SkyTapTarget(
+                      alignment: Alignment.topLeft,
+                      child: Padding(
+                        padding: const EdgeInsets.only(top: 6, right: 12),
+                        child: Text(
+                          actionLabel!,
+                          style: SkyType.sans(12, weight: FontWeight.w700).copyWith(color: accent),
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          if (onDismiss != null) const SizedBox(width: dismissRoom, height: 20),
+        ],
+      ),
+    );
     return Semantics(
       liveRegion: true,
       container: true,
-      child: Container(
-        padding: const EdgeInsets.fromLTRB(14, 12, 12, 12),
-        decoration: BoxDecoration(
-          color: bg,
-          borderRadius: SkyRadii.all(SkyRadii.tile),
-          border: Border.all(color: border),
-          boxShadow: elevated ? t.softShadow : const [],
-        ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Padding(
-              padding: const EdgeInsets.only(top: 1),
-              child: SkyIcon(icon ?? glyph, size: 18, color: accent),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(text, style: SkyType.bodySmall.copyWith(color: t.text)),
-                  if (actionLabel != null) ...[
-                    const SizedBox(height: 6),
-                    SkyPressable(
-                      onTap: onAction,
-                      semanticLabel: actionLabel,
-                      excludeSemantics: true,
-                      child: Text(
-                        actionLabel!,
-                        style: SkyType.sans(12, weight: FontWeight.w700).copyWith(color: accent),
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-            if (onDismiss != null) ...[
-              const SizedBox(width: 8),
-              SkyPressable(
-                onTap: onDismiss,
-                semanticLabel: dismissLabel,
-                excludeSemantics: true,
-                child: Padding(
-                  padding: const EdgeInsets.all(2),
-                  child: SkyIcon(SkyIcons.close, size: 16, color: t.muted),
+      child: onDismiss == null
+          ? card
+          : Stack(
+              children: [
+                card,
+                Positioned(
+                  top: 0,
+                  right: 0,
+                  child: SkyPressable(
+                    onTap: onDismiss,
+                    semanticLabel: dismissLabel,
+                    excludeSemantics: true,
+                    child: SkyTapTarget.square(child: SkyIcon(SkyIcons.close, size: 16, color: t.muted)),
+                  ),
                 ),
-              ),
-            ],
-          ],
-        ),
-      ),
+              ],
+            ),
     );
   }
 }

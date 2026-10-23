@@ -1,8 +1,12 @@
+import 'dart:math' as math;
+
 import 'package:animations/animations.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/physics.dart';
+import 'package:flutter/rendering.dart';
 
 import '../widgets/app_haptics.dart';
+import 'sky_metrics.dart';
 import 'sky_tokens.dart';
 
 abstract final class SkyMotion {
@@ -159,6 +163,98 @@ class _SkyPressableState extends State<SkyPressable> with SingleTickerProviderSt
         ),
       ),
     );
+  }
+}
+
+class SkyTapTarget extends SingleChildRenderObjectWidget {
+  const SkyTapTarget({
+    super.key,
+    required Widget super.child,
+    this.minWidth = 0,
+    this.minHeight = SkySizes.minTap,
+    this.alignment = Alignment.center,
+  });
+
+  const SkyTapTarget.square({super.key, required Widget super.child, this.alignment = Alignment.center})
+    : minWidth = SkySizes.minTap,
+      minHeight = SkySizes.minTap;
+
+  final double minWidth;
+  final double minHeight;
+  final Alignment alignment;
+
+  @override
+  RenderSkyTapTarget createRenderObject(BuildContext context) =>
+      RenderSkyTapTarget(minWidth, minHeight, alignment);
+
+  @override
+  void updateRenderObject(BuildContext context, RenderSkyTapTarget renderObject) {
+    renderObject
+      ..minWidth = minWidth
+      ..minHeight = minHeight
+      ..alignment = alignment;
+  }
+}
+
+class RenderSkyTapTarget extends RenderShiftedBox {
+  RenderSkyTapTarget(this._minWidth, this._minHeight, this._alignment) : super(null);
+
+  double _minWidth;
+  double _minHeight;
+  Alignment _alignment;
+
+  set minWidth(double value) {
+    if (value == _minWidth) return;
+    _minWidth = value;
+    markNeedsLayout();
+  }
+
+  set minHeight(double value) {
+    if (value == _minHeight) return;
+    _minHeight = value;
+    markNeedsLayout();
+  }
+
+  set alignment(Alignment value) {
+    if (value == _alignment) return;
+    _alignment = value;
+    markNeedsLayout();
+  }
+
+  BoxConstraints _inner(BoxConstraints constraints) => constraints.copyWith(minHeight: 0);
+
+  Size _sizeFor(BoxConstraints constraints, Size child) =>
+      constraints.constrain(Size(math.max(child.width, _minWidth), math.max(child.height, _minHeight)));
+
+  @override
+  double computeMinIntrinsicWidth(double height) => math.max(child?.getMinIntrinsicWidth(height) ?? 0, _minWidth);
+
+  @override
+  double computeMaxIntrinsicWidth(double height) => math.max(child?.getMaxIntrinsicWidth(height) ?? 0, _minWidth);
+
+  @override
+  double computeMinIntrinsicHeight(double width) => math.max(child?.getMinIntrinsicHeight(width) ?? 0, _minHeight);
+
+  @override
+  double computeMaxIntrinsicHeight(double width) => math.max(child?.getMaxIntrinsicHeight(width) ?? 0, _minHeight);
+
+  @override
+  Size computeDryLayout(covariant BoxConstraints constraints) {
+    final child = this.child;
+    final inner = child == null ? Size.zero : child.getDryLayout(_inner(constraints));
+    return _sizeFor(constraints, inner);
+  }
+
+  @override
+  void performLayout() {
+    final child = this.child;
+    if (child == null) {
+      size = _sizeFor(constraints, Size.zero);
+      return;
+    }
+    child.layout(_inner(constraints), parentUsesSize: true);
+    size = _sizeFor(constraints, child.size);
+    (child.parentData! as BoxParentData).offset = _alignment.alongOffset(size - child.size as Offset);
   }
 }
 
