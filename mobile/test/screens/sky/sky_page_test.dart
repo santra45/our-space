@@ -406,6 +406,7 @@ void main() {
     }
     expect(tester.hasRunningAnimations, isTrue);
 
+    await reveal(tester, find.byKey(DailyKeys.action));
     await tester.tap(find.byKey(DailyKeys.action));
     for (var i = 0; i < 12; i++) {
       await tester.pump(const Duration(milliseconds: 50));
