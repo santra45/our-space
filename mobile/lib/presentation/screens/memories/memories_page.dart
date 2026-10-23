@@ -176,9 +176,10 @@ class _MemoriesPageState extends State<MemoriesPage> {
     final first = _entered.add(memory.id);
     final order = _order[memory.id] ?? 0;
     return SkyEntrance(
+      key: ValueKey<String>('enter-${memory.id}'),
       index: first && order < 8 ? order + 2 : 0,
       duration: first ? SkyMotion.medium : Duration.zero,
-      offset: first ? const Offset(0, 18) : Offset.zero,
+      offset: const Offset(0, 18),
       child: PolaroidTile(
         key: ValueKey<String>(memory.id),
         memory: memory,

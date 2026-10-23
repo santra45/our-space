@@ -25,6 +25,26 @@ Widget skyApp(Widget child, {SkyTokens tokens = SkyTokens.night, bool animations
 Finder labelled(String label) =>
     find.byWidgetPredicate((widget) => widget is Semantics && widget.properties.label == label);
 
+class _Counted extends StatefulWidget {
+  const _Counted({required this.onCreate});
+
+  final VoidCallback onCreate;
+
+  @override
+  State<_Counted> createState() => _CountedState();
+}
+
+class _CountedState extends State<_Counted> {
+  @override
+  void initState() {
+    super.initState();
+    widget.onCreate();
+  }
+
+  @override
+  Widget build(BuildContext context) => const SizedBox(width: 40, height: 40);
+}
+
 class _Launcher extends StatelessWidget {
   const _Launcher(this.onPressed);
 
@@ -94,6 +114,17 @@ void main() {
       await tester.tap(find.text('off'));
       expect(taps, 1);
       expect(recordedHaptics, [HapticKind.tick]);
+    });
+
+    testWidgets('an entrance keeps its child when it is rebuilt mid slide without an offset', (tester) async {
+      var created = 0;
+      Widget host(Offset offset) =>
+          skyApp(SkyEntrance(offset: offset, child: _Counted(onCreate: () => created++)), animations: true);
+      await tester.pumpWidget(host(const Offset(0, 18)));
+      await tester.pump(const Duration(milliseconds: 60));
+      await tester.pumpWidget(host(Offset.zero));
+      await tester.pumpAndSettle();
+      expect(created, 1);
     });
 
     testWidgets('entrances fade in and settle at full opacity', (tester) async {

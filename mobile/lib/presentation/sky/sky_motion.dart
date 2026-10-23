@@ -218,7 +218,7 @@ class _SkyEntranceState extends State<SkyEntrance> with SingleTickerProviderStat
   @override
   Widget build(BuildContext context) {
     final faded = FadeTransition(opacity: _fade, child: widget.child);
-    if (!_motion || widget.offset == Offset.zero) return faded;
+    if (!_motion) return faded;
     return AnimatedBuilder(
       animation: _move,
       builder: (context, child) => Transform.translate(offset: widget.offset * (1 - _move.value), child: child),
