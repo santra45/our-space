@@ -182,7 +182,7 @@ class _SkyMapConstellationPageState extends State<SkyMapConstellationPage> {
                 button: true,
                 label: StarNightCopy.title(night),
                 onTap: () => unawaited(_openNight(night)),
-                child: const SizedBox.square(dimension: SkyConstellation.hitRadius),
+                child: const SizedBox.square(dimension: SkyConstellation.hitRadius * 2),
               ),
             ),
           if (me != null && figure.isLit(figure.me))

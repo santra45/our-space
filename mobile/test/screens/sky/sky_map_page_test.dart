@@ -276,6 +276,28 @@ void main() {
       await settle(tester, space);
     });
 
+    testWidgets('every star in each large view is big enough to find by touch with a screen reader', (tester) async {
+      calm(tester);
+      final handle = tester.ensureSemantics();
+      final space = await coupleSpace(tester);
+      const size = SkyConstellation.count;
+      await bothAnswered(tester, space, ConstellationShape.values.length * size);
+      for (var index = 0; index < ConstellationShape.values.length; index++) {
+        final shape = ConstellationShape.at(index);
+        await pumpNight(tester, space, shell: MapHost(detail: index));
+        await untilFound(tester, find.byKey(SkyMapKeys.night((index + 1) * size)));
+        expect(detailScene(tester).constellation!.shape, shape);
+        for (var star = 0; star < size; star++) {
+          final night = find.byKey(SkyMapKeys.night(index * size + star + 1));
+          expect(tester.getSemantics(night).rect.size, const Size.square(SkyConstellation.hitRadius * 2));
+          expect(tester.getCenter(night), offsetMoreOrLessEquals(starOnScreen(tester, shape.order[star]), epsilon: 0.01));
+        }
+        await expectLater(tester, meetsGuideline(androidTapTargetGuideline));
+      }
+      handle.dispose();
+      await settle(tester, space);
+    });
+
     testWidgets('a constellation waiting for its first star has nothing to tap yet', (tester) async {
       calm(tester);
       final space = await coupleSpace(tester);
