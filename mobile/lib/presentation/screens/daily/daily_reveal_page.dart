@@ -9,6 +9,8 @@ import '../../sky/sky.dart';
 import '../love/love_sheet.dart';
 import '../sky/sky_days.dart';
 import '../sky/sky_constellation_plan.dart';
+import '../sky/sky_map_page.dart';
+import '../sky/sky_map_plan.dart';
 import '../sky/sky_sheet_layout.dart';
 import 'daily_answer_card.dart';
 import 'daily_copy.dart';
@@ -97,8 +99,16 @@ class DailyRevealPage extends StatefulWidget {
 class _DailyRevealPageState extends State<DailyRevealPage> {
   bool _leaving = false;
   bool _sheetOpen = false;
+  bool _mapOpen = false;
 
   DailyQuestionModel get model => widget.model;
+
+  Future<void> _skyMap() async {
+    if (_mapOpen) return;
+    _mapOpen = true;
+    await openSkyMap(context, model: model);
+    _mapOpen = false;
+  }
 
   void _leaveSoon() {
     if (_leaving) return;
@@ -146,9 +156,8 @@ class _DailyRevealPageState extends State<DailyRevealPage> {
         final partner = identity.partnerName;
         final theirs = model.day?.partnerAnswer;
         final media = MediaQuery.of(context);
-        final badgeText = SkyConstellationPlan.completes(stars)
-            ? SkyConstellationPlan.completeLine(stars)
-            : DailyCopy.starIsLit(night);
+        final complete = SkyConstellationPlan.completes(stars);
+        final badgeText = complete ? SkyConstellationPlan.completeLine(stars) : DailyCopy.starIsLit(night);
 
         final badge = Semantics(
           liveRegion: true,
@@ -231,8 +240,19 @@ class _DailyRevealPageState extends State<DailyRevealPage> {
                       time: DailyCopy.answeredAt(mine.answeredAt),
                     ),
                   ),
+                  if (complete)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 14),
+                      child: SkyButton(
+                        key: SkyMapKeys.fromReveal,
+                        label: SkyMapCopy.seeInMap,
+                        icon: SkyIcons.star,
+                        variant: SkyButtonVariant.gold,
+                        onPressed: () => unawaited(_skyMap()),
+                      ),
+                    ),
                   Padding(
-                    padding: const EdgeInsets.only(top: 14),
+                    padding: EdgeInsets.only(top: complete ? 10 : 14),
                     child: Row(
                       children: [
                         Expanded(
