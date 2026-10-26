@@ -30,6 +30,14 @@ abstract final class StarNightCopy {
 
   static String constellation(StarNight night) =>
       '${ConstellationChapter.titleOf(night.constellation)} · ${night.shape.title}';
+
+  static String range(ConstellationChapter chapter) {
+    final from = chapter.from;
+    final to = chapter.to;
+    if (from == null || to == null) return '';
+    final day = DateFormat('d MMMM', 'en_US');
+    return from == to ? day.format(from) : '${day.format(from)} – ${day.format(to)}';
+  }
 }
 
 abstract final class StarNightTip {

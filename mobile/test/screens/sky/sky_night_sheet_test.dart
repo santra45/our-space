@@ -37,6 +37,15 @@ void main() {
       expect(StarNightCopy.relive, 'Tap a star to relive that night');
     });
 
+    test('a constellation reads its nights as a span of days', () {
+      final days = [for (var i = 0; i < 40; i++) DateTime.utc(2026, 9, 20 + i).toIso8601String().substring(0, 10)];
+      final series = ConstellationSeries.fromDays(days, today: '2027-01-01');
+      expect(StarNightCopy.range(series.chapter(0)), '20 September – 18 October');
+      expect(StarNightCopy.range(series.chapter(1)), '19 October – 29 October');
+      expect(StarNightCopy.range(ConstellationSeries.fromDays([days.first], today: days.first).current), '20 September');
+      expect(StarNightCopy.range(series.chapter(2)), '');
+    });
+
     test('the tip to relive a night is remembered once seen', () async {
       final settings = LocalSettings.memory();
       expect(StarNightTip.seen(settings), isFalse);
