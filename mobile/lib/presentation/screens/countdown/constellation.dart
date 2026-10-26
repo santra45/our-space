@@ -9,6 +9,8 @@ import '../../space_scope.dart';
 import '../../widgets/app_haptics.dart';
 import '../../widgets/confetti_burst.dart';
 import '../daily/daily_question_model.dart';
+import '../sky/sky_map_page.dart';
+import '../sky/sky_map_plan.dart';
 import '../us/us_copy.dart';
 import '../us/us_keys.dart';
 import '../us/widgets/us_sheet_frame.dart';
@@ -32,6 +34,7 @@ class _OurConstellationState extends State<OurConstellation> {
   late final DailyQuestionModel _daily = DailyQuestionModel(context.space);
   String _error = '';
   bool _writing = false;
+  bool _mapOpen = false;
 
   @override
   void initState() {
@@ -107,6 +110,13 @@ class _OurConstellationState extends State<OurConstellation> {
     if (action == MomentAction.removed && moment != null && mounted) await _delete(moment);
   }
 
+  Future<void> _openMap() async {
+    if (_mapOpen) return;
+    _mapOpen = true;
+    await openSkyMap(context, model: _daily);
+    _mapOpen = false;
+  }
+
   @override
   Widget build(BuildContext context) {
     _daily.bindTo(vault: context.watch<VaultService>(), identity: context.watch<IdentityController>());
@@ -158,6 +168,10 @@ class _OurConstellationState extends State<OurConstellation> {
               title: MilestoneCopy.constellation,
               action: MilestoneCopy.addMoment,
               onAction: () => unawaited(_open()),
+              trailing: Padding(
+                padding: const EdgeInsets.only(right: SkySpace.md),
+                child: SkyMapLink(key: SkyMapKeys.fromUs, onTap: () => unawaited(_openMap())),
+              ),
             ),
             const SizedBox(height: 10),
             if (notice != null)
