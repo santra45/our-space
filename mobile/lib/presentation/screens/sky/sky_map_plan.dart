@@ -32,7 +32,7 @@ abstract final class SkyMapKeys {
 abstract final class SkyMapCopy {
   static const String title = 'Our sky map';
   static const String action = 'Sky map';
-  static const String seeInMap = 'See it in your sky map';
+  static const String seeInMap = 'See it in our sky map';
   static const String finished = 'Every finished constellation';
   static const String keepNote = 'Light all 29 stars and it stays here for good';
   static const String everyDayNote = 'Every question and both your answers';

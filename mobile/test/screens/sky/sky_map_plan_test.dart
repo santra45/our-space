@@ -195,6 +195,7 @@ void main() {
       final series = seriesOf(41);
       final heart = series.chapter(0);
       final moon = series.current;
+      expect(SkyMapCopy.seeInMap, 'See it in our sky map');
       expect(SkyMapCopy.kicker(0), 'Before the first star');
       expect(SkyMapCopy.kicker(1), 'One star so far');
       expect(SkyMapCopy.kicker(41), '41 stars so far');
