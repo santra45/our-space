@@ -126,11 +126,20 @@ abstract final class SkyMapPlan {
     var fitted = figure.fitted(frame, margin: margin);
     if (fitted.scale > limit) fitted = at(limit);
     if (!names) return fitted;
+    SkyConstellation centred(SkyConstellation shown) {
+      final group = nameGroup(shown);
+      return shown.copyWith(center: shown.center + Offset(frame.center.dx - group.center.dx, 0));
+    }
+
+    fitted = centred(fitted);
     for (var i = 0; i < 40 && nameSpill(fitted, frame) > 0; i++) {
-      fitted = at(fitted.scale * 0.96);
+      fitted = centred(at(fitted.scale * 0.96));
     }
     return fitted;
   }
+
+  static Rect nameGroup(SkyConstellation figure) =>
+      nameAreas(figure).fold<Rect>(figure.bounds, (group, area) => group.expandToInclude(area));
 
   static List<Rect> nameAreas(SkyConstellation figure) =>
       SkyConstellationPlan.labelAreas(figure, me: true, partner: true, partnerChip: false);

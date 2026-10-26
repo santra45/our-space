@@ -155,6 +155,7 @@ void main() {
             expect(area.right, lessThanOrEqualTo(frame.right - SkyMapPlan.edge + 1e-6), reason: '${shape.name} $size');
           }
           expect(fitted.scale, greaterThanOrEqualTo(const SkyConstellation().scale * 0.8), reason: '${shape.name} $size');
+          expect(SkyMapPlan.nameGroup(fitted).center.dx, closeTo(frame.center.dx, 1e-6), reason: '${shape.name} $size');
         }
       }
       final phone = SkyMapPlan.frameFor(const Size(390, 844), const EdgeInsets.only(top: 24, bottom: 16));
@@ -162,6 +163,18 @@ void main() {
       expect(SkyMapPlan.nameSpill(moon, phone), greaterThan(0));
       final heart = SkyMapPlan.fit(const SkyConstellation(), phone);
       expect(SkyMapPlan.fit(const SkyConstellation(), phone, names: true).scale, heart.scale);
+    });
+
+    test('the moon keeps nearly its full size when both names sit beside it', () {
+      for (final size in const [Size(390, 844), Size(360, 740), Size(412, 915)]) {
+        final frame = SkyMapPlan.frameFor(size, const EdgeInsets.only(top: 24, bottom: 16));
+        const moon = SkyConstellation(shape: ConstellationShape.moon);
+        final plain = SkyMapPlan.fit(moon, frame);
+        final named = SkyMapPlan.fit(moon, frame, names: true);
+        expect(named.scale, greaterThanOrEqualTo(plain.scale * 0.84), reason: '$size');
+        expect(named.bounds.center.dx, lessThan(frame.center.dx), reason: '$size');
+        expect(SkyMapPlan.nameSpill(named, frame), 0, reason: '$size');
+      }
     });
 
     test('on a tall or wide screen it stays a gentle size and centred', () {
