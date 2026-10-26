@@ -18,6 +18,7 @@ import 'sky_constellation_plan.dart';
 import 'sky_constellations.dart';
 import 'sky_letters_watch.dart';
 import 'sky_marks.dart';
+import 'sky_night_sheet.dart';
 import 'sky_sheet_layout.dart';
 import 'sky_stats.dart';
 
@@ -25,12 +26,16 @@ abstract final class SkyPageKeys {
   static const Key canvas = ValueKey<String>('sky-home-canvas');
   static const Key letterTip = ValueKey<String>('sky-letter-tip');
   static const Key tonightTip = ValueKey<String>('sky-tonight-tip');
+  static const Key reliveTip = ValueKey<String>('sky-relive-tip');
+  static const Key starTouch = ValueKey<String>('sky-star-touch');
   static const Key presenceRing = ValueKey<String>('sky-presence-ring');
   static const Key myName = ValueKey<String>('sky-my-name');
   static const Key partnerName = ValueKey<String>('sky-partner-name');
   static const Key starsStat = ValueKey<String>('sky-stat-stars');
   static const Key milestoneStat = ValueKey<String>('sky-stat-milestone');
   static const Key lettersStat = ValueKey<String>('sky-stat-letters');
+
+  static Key night(int number) => ValueKey<String>('sky-night-$number');
 }
 
 class OurSkyPage extends StatefulWidget {
@@ -51,6 +56,8 @@ class _OurSkyPageState extends State<OurSkyPage> with WidgetsBindingObserver {
   late final Listenable _changes = Listenable.merge([_daily, _letters]);
   bool _sheetOpen = false;
   bool _revealOpen = false;
+  bool _nightOpen = false;
+  bool? _relive;
 
   @override
   void initState() {
@@ -94,6 +101,38 @@ class _OurSkyPageState extends State<OurSkyPage> with WidgetsBindingObserver {
       settings: const RouteSettings(name: DailyRevealPage.routeName),
     );
     _revealOpen = false;
+  }
+
+  Future<void> _openNight(StarNight night) async {
+    if (_nightOpen || !mounted) return;
+    _nightOpen = true;
+    if (_relive == true) setState(() => _relive = false);
+    final identity = context.read<IdentityController>();
+    final result = await showStarNightSheet(
+      context,
+      night: night,
+      partnerName: identity.partnerName,
+      myName: identity.me != null ? identity.myName : null,
+    );
+    _nightOpen = false;
+    if (!mounted || result != StarNightResult.everyDay) return;
+    await _openSheet(archive: true);
+  }
+
+  void _touchSky(Offset design, SkyConstellation constellation, ConstellationChapter chapter, double scale) {
+    final slot = constellation.starAt(design, radius: SkyConstellation.hitRadius / scale);
+    final night = slot == null ? null : chapter.nightAt(slot);
+    if (night != null) unawaited(_openNight(night));
+  }
+
+  bool _reliveTip({required bool eligible}) {
+    if (!eligible) return false;
+    if (_relive != null) return _relive!;
+    final settings = context.space.store.settings;
+    final fresh = !StarNightTip.seen(settings);
+    _relive = fresh;
+    if (fresh) unawaited(StarNightTip.remember(settings).catchError((Object _) {}));
+    return fresh;
   }
 
   void _answer() {
@@ -171,8 +210,33 @@ class _OurSkyPageState extends State<OurSkyPage> with WidgetsBindingObserver {
     final placement = tonightAt == null
         ? null
         : SkyConstellationPlan.tipFor(tonightAt, constellation: constellation, avoid: avoid, size: tipSize);
+    final chapter = series.current;
+    final latest = chapter.latest;
+    final relive = latest != null && _reliveTip(eligible: loaded && !showTonight);
+    final reliveAt = latest != null && relive ? constellation.pointAt(latest.slot) : null;
+    final relivePlacement = reliveAt == null
+        ? null
+        : SkyConstellationPlan.tipFor(
+            reliveAt,
+            constellation: constellation,
+            avoid: avoid,
+            size: SkyTip.measure(StarNightCopy.relive, textScaler: scaler) / k,
+          );
 
     final anchors = <SkyAnchor>[
+      if (loaded)
+        for (final lit in chapter.nights)
+          SkyAnchor(
+            at: SkyPoint.star(lit.slot),
+            alignment: Alignment.center,
+            child: Semantics(
+              key: SkyPageKeys.night(lit.number),
+              button: true,
+              label: StarNightCopy.title(lit),
+              onTap: () => unawaited(_openNight(lit)),
+              child: const SizedBox.square(dimension: SkyConstellation.hitRadius),
+            ),
+          ),
       if (loaded && presence.isHere && partner != null && !constellation.isLit(constellation.partner))
         const SkyAnchor(
           at: SkyPoint.partner(),
@@ -220,6 +284,22 @@ class _OurSkyPageState extends State<OurSkyPage> with WidgetsBindingObserver {
             ),
           ),
         ),
+      if (latest != null && reliveAt != null && relivePlacement != null)
+        SkyAnchor(
+          at: SkyPoint.design(reliveAt),
+          offset: relivePlacement.offset,
+          alignment: relivePlacement.alignment,
+          child: SkyEntrance(
+            index: 2,
+            child: SkyTip(
+              key: SkyPageKeys.reliveTip,
+              text: StarNightCopy.relive,
+              icon: SkyIcons.star,
+              tapAlignment: relivePlacement.alignment,
+              onTap: () => unawaited(_openNight(latest)),
+            ),
+          ),
+        ),
       if (waiting > 0)
         SkyAnchor(
           at: const SkyPoint.design(OurSkyPage.letterTipAt),
@@ -257,7 +337,19 @@ class _OurSkyPageState extends State<OurSkyPage> with WidgetsBindingObserver {
         anchors: anchors,
       ),
     );
-    final sky = Semantics(container: true, image: true, label: skyLabel, child: backdrop);
+    final sky = LayoutBuilder(
+      builder: (context, box) {
+        final scale = box.maxWidth.isFinite && box.maxWidth > 0 ? box.maxWidth / SkyPageFrame.designWidth : k;
+        return GestureDetector(
+          key: SkyPageKeys.starTouch,
+          behavior: HitTestBehavior.translucent,
+          onTapUp: loaded && chapter.started
+              ? (details) => _touchSky(details.localPosition / scale, constellation, chapter, scale)
+              : null,
+          child: Semantics(container: true, image: true, label: skyLabel, child: backdrop),
+        );
+      },
+    );
 
     final stats = SkyStatsRow(
       stats: [

@@ -174,8 +174,8 @@ class _SheetHeading extends StatelessWidget {
   }
 }
 
-class _SheetLink extends StatelessWidget {
-  const _SheetLink({super.key, required this.label, required this.onTap, this.icon});
+class DailySheetLink extends StatelessWidget {
+  const DailySheetLink({super.key, required this.label, required this.onTap, this.icon});
 
   final String label;
   final VoidCallback onTap;
@@ -359,7 +359,7 @@ class _TodayView extends StatelessWidget {
             ),
           ],
         ],
-        _SheetLink(
+        DailySheetLink(
           key: DailyKeys.everyDay,
           label: DailyCopy.everyDay,
           icon: SkyIcons.calendar,
@@ -390,7 +390,7 @@ class _CatchUpView extends StatelessWidget {
           model: model,
           onSubmit: onSubmit,
           hint: DailyCopy.catchUpHint(identity.partnerName),
-          footer: _SheetLink(label: DailyCopy.backToArchive, icon: SkyIcons.back, onTap: model.leaveCatchUp),
+          footer: DailySheetLink(label: DailyCopy.backToArchive, icon: SkyIcons.back, onTap: model.leaveCatchUp),
         ),
       ],
     );
@@ -438,7 +438,7 @@ class _ArchiveView extends StatelessWidget {
               ),
             ),
           ],
-        _SheetLink(label: DailyCopy.backToToday, icon: SkyIcons.back, onTap: model.closeArchive),
+        DailySheetLink(label: DailyCopy.backToToday, icon: SkyIcons.back, onTap: model.closeArchive),
       ],
     );
   }

@@ -10,7 +10,9 @@ import 'package:our_space_mobile/presentation/screens/letters/letter_shelf.dart'
 import 'package:our_space_mobile/presentation/screens/letters/letters_page.dart';
 import 'package:our_space_mobile/presentation/screens/settings/settings_page.dart';
 import 'package:our_space_mobile/presentation/screens/sky/sky_copy.dart';
+import 'package:our_space_mobile/presentation/screens/sky/sky_constellations.dart';
 import 'package:our_space_mobile/presentation/screens/sky/sky_days.dart';
+import 'package:our_space_mobile/presentation/screens/sky/sky_night_sheet.dart';
 import 'package:our_space_mobile/presentation/screens/sky/sky_constellation_plan.dart';
 import 'package:our_space_mobile/presentation/screens/sky/sky_page.dart';
 import 'package:our_space_mobile/presentation/screens/sky/sky_sheet_layout.dart';
@@ -615,5 +617,114 @@ void main() {
     await tester.tap(semanticsLabelled('Back'));
     await settleRoute(tester);
     await settle(tester, space);
+  });
+
+  group('every lit star is a night you can relive', () {
+    Offset starOnScreen(WidgetTester tester, int slot) {
+      final canvas = tester.getRect(find.byKey(SkyPageKeys.canvas));
+      final k = canvas.width / 390;
+      return canvas.topLeft + homeHeart(tester).pointAt(slot) * k;
+    }
+
+    testWidgets('tapping a lit star opens that night with both answers, then every day so far', (tester) async {
+      calm(tester);
+      final space = await coupleSpace(tester);
+      await bothAnswered(tester, space, 3);
+      await pumpNight(tester, space);
+      await waitForCard(tester);
+      await until(tester, () => statLabel(tester, SkyPageKeys.starsStat) == '3 stars joined');
+
+      final first = DateTime.now().subtract(const Duration(days: 3)).toUtc();
+      final title = StarNightCopy.title(
+        StarNight(number: 1, day: first.toIso8601String().substring(0, 10)),
+      );
+      final label = tester.widget<Semantics>(find.byKey(SkyPageKeys.night(1)));
+      expect(label.properties.label, title);
+      expect(label.properties.button, isTrue);
+      expect(find.byKey(SkyPageKeys.night(3)), findsOneWidget);
+      expect(find.byKey(SkyPageKeys.night(4)), findsNothing);
+
+      await tester.tapAt(starOnScreen(tester, heartOrder[0]) + const Offset(14, 10));
+      await settleRoute(tester);
+      expect(find.byKey(StarNightKeys.sheet), findsOneWidget);
+      expect(find.text(title.toUpperCase()), findsOneWidget);
+      expect(find.text('Mine 3'), findsOneWidget);
+      expect(find.text('Theirs 3'), findsOneWidget);
+
+      await tester.tap(find.byKey(StarNightKeys.everyDay));
+      await settleRoute(tester);
+      await untilFound(tester, find.text('EVERY DAY SO FAR'));
+      expect(find.byKey(StarNightKeys.sheet), findsNothing);
+      await press(tester, iconButton(DailyCopy.close));
+      await settleRoute(tester);
+
+      await tester.tapAt(starOnScreen(tester, heartOrder[5]));
+      await settleRoute(tester);
+      expect(find.byKey(StarNightKeys.sheet), findsNothing);
+
+      label.properties.onTap!();
+      await settleRoute(tester);
+      expect(find.byKey(StarNightKeys.sheet), findsOneWidget);
+      expect(find.text('Mine 3'), findsOneWidget);
+      await press(tester, iconButton(DailyCopy.close));
+      await settleRoute(tester);
+      await settle(tester, space);
+    });
+
+    testWidgets('a gentle tip shows once after a star is lit and is remembered', (tester) async {
+      calm(tester);
+      final space = await coupleSpace(tester);
+      await pumpNight(tester, space);
+      await waitForCard(tester);
+      expect(find.byKey(SkyPageKeys.reliveTip), findsNothing);
+      expect(StarNightTip.seen(space.store.settings), isFalse);
+
+      await iAnswer(tester, space, 'Mine tonight');
+      await partnerAnswers(tester, space, 'Hers tonight');
+      await untilFound(tester, find.byKey(SkyPageKeys.reliveTip));
+      expect(find.text(StarNightCopy.relive), findsOneWidget);
+      expect(StarNightTip.seen(space.store.settings), isTrue);
+      final tip = tester.getRect(find.byKey(SkyPageKeys.reliveTip));
+      final sky = tester.getRect(find.byKey(SkyPageKeys.canvas));
+      expect(tip.left, greaterThanOrEqualTo(sky.left));
+      expect(tip.right, lessThanOrEqualTo(sky.right));
+
+      await tester.tap(find.byKey(SkyPageKeys.reliveTip));
+      await settleRoute(tester);
+      expect(find.byKey(StarNightKeys.sheet), findsOneWidget);
+      expect(find.text('Hers tonight'), findsOneWidget);
+      await press(tester, iconButton(DailyCopy.close));
+      await settleRoute(tester);
+      expect(find.byKey(SkyPageKeys.reliveTip), findsNothing);
+      await settle(tester, space);
+    });
+
+    testWidgets('once remembered the tip does not come back', (tester) async {
+      calm(tester);
+      final space = await coupleSpace(tester);
+      await bothAnswered(tester, space, 2);
+      await iAnswer(tester, space, 'Mine tonight');
+      await partnerAnswers(tester, space, 'Hers tonight');
+      await real(tester, () => StarNightTip.remember(space.store.settings));
+      await pumpNight(tester, space);
+      await waitForCard(tester);
+      await until(tester, () => statLabel(tester, SkyPageKeys.starsStat) == '3 stars joined');
+      expect(find.byKey(SkyPageKeys.night(3)), findsOneWidget);
+      expect(find.byKey(SkyPageKeys.reliveTip), findsNothing);
+      await settle(tester, space);
+    });
+
+    testWidgets('while tonight waits the tip stays away so the two never crowd', (tester) async {
+      calm(tester);
+      final space = await coupleSpace(tester);
+      await bothAnswered(tester, space, 2);
+      await pumpNight(tester, space);
+      await waitForCard(tester);
+      await until(tester, () => statLabel(tester, SkyPageKeys.starsStat) == '2 stars joined');
+      expect(find.byKey(SkyPageKeys.tonightTip), findsOneWidget);
+      expect(find.byKey(SkyPageKeys.reliveTip), findsNothing);
+      expect(StarNightTip.seen(space.store.settings), isFalse);
+      await settle(tester, space);
+    });
   });
 }
