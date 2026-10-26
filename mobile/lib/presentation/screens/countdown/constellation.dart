@@ -168,10 +168,7 @@ class _OurConstellationState extends State<OurConstellation> {
               title: MilestoneCopy.constellation,
               action: MilestoneCopy.addMoment,
               onAction: () => unawaited(_open()),
-              trailing: Padding(
-                padding: const EdgeInsets.only(right: SkySpace.md),
-                child: SkyMapLink(key: SkyMapKeys.fromUs, onTap: () => unawaited(_openMap())),
-              ),
+              trailing: SkyMapLink(key: SkyMapKeys.fromUs, compact: true, onTap: () => unawaited(_openMap())),
             ),
             const SizedBox(height: 10),
             if (notice != null)

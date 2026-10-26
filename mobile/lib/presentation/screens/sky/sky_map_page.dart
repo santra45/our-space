@@ -414,27 +414,31 @@ class SkyMapEmpty extends StatelessWidget {
 }
 
 class SkyMapLink extends StatelessWidget {
-  const SkyMapLink({super.key, required this.onTap});
+  const SkyMapLink({super.key, required this.onTap, this.compact = false});
 
   final VoidCallback onTap;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
     final t = context.sky;
+    final star = SkyIcon(SkyIcons.star, size: compact ? 16 : 13, color: t.isNight ? t.gold : t.goldDeep);
     return SkyPressable(
       onTap: onTap,
       semanticLabel: SkyMapCopy.action,
       excludeSemantics: true,
       child: SkyTapTarget(
         minWidth: SkySizes.minTap,
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            SkyIcon(SkyIcons.star, size: 13, color: t.isNight ? t.gold : t.goldDeep),
-            const SizedBox(width: 5),
-            Text(SkyMapCopy.action, style: SkyType.sans(12, weight: FontWeight.w600).copyWith(color: t.rose)),
-          ],
-        ),
+        child: compact
+            ? star
+            : Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  star,
+                  const SizedBox(width: 5),
+                  Text(SkyMapCopy.action, style: SkyType.sans(12, weight: FontWeight.w600).copyWith(color: t.rose)),
+                ],
+              ),
       ),
     );
   }

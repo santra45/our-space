@@ -155,7 +155,12 @@ void main() {
     final link = tester.getSize(find.byKey(SkyMapKeys.fromUs));
     expect(link.width, greaterThanOrEqualTo(SkySizes.minTap));
     expect(link.height, greaterThanOrEqualTo(SkySizes.minTap));
-    expect(find.descendant(of: find.byKey(SkyMapKeys.fromUs), matching: find.text(SkyMapCopy.action)), findsOneWidget);
+    expect(find.descendant(of: find.byKey(SkyMapKeys.fromUs), matching: find.text(SkyMapCopy.action)), findsNothing);
+    expect(
+      tester.widget<SkyPressable>(find.descendant(of: find.byKey(SkyMapKeys.fromUs), matching: find.byType(SkyPressable))).semanticLabel,
+      SkyMapCopy.action,
+    );
+    expect(find.descendant(of: find.byKey(SkyMapKeys.fromUs), matching: find.byType(SkyIcon)), findsOneWidget);
 
     await press(tester, find.byKey(SkyMapKeys.fromUs));
     await settleRoute(tester);
