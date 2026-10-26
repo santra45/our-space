@@ -159,10 +159,19 @@ class SkyScrollScaffold extends StatelessWidget {
 }
 
 class SkyTopBar extends StatelessWidget {
-  const SkyTopBar({super.key, required this.title, this.kicker, this.leading, this.trailing, this.compact = false});
+  const SkyTopBar({
+    super.key,
+    required this.title,
+    this.kicker,
+    this.note,
+    this.leading,
+    this.trailing,
+    this.compact = false,
+  });
 
   final String title;
   final String? kicker;
+  final String? note;
   final Widget? leading;
   final Widget? trailing;
   final bool compact;
@@ -178,6 +187,15 @@ class SkyTopBar extends StatelessWidget {
       children: [
         if (kicker != null) ...[
           Text(kicker!.toUpperCase(), style: text.kicker, maxLines: 1, overflow: TextOverflow.ellipsis),
+          const SizedBox(height: 6),
+        ],
+        if (note != null) ...[
+          Text(
+            note!,
+            style: SkyType.sans(11.5, height: 1.3).copyWith(color: context.sky.muted.withValues(alpha: 0.85)),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
           const SizedBox(height: 6),
         ],
         Semantics(

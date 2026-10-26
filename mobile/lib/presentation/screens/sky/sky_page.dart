@@ -138,6 +138,7 @@ class _OurSkyPageState extends State<OurSkyPage> with WidgetsBindingObserver {
     final t = context.sky;
     final night = t.isNight;
     final now = DateTime.now();
+    final moonPhase = MoonPhase.tonight(now);
     final start = SkyDays.startOf(startDate);
     final dayNumber = start == null ? null : SkyDays.dayNumber(start, now);
     final milestone = SkyDays.next(start ?? SkyDays.dateOnly(now), now);
@@ -249,6 +250,7 @@ class _OurSkyPageState extends State<OurSkyPage> with WidgetsBindingObserver {
       builder: (context, dim, _) => SkyBackdrop(
         key: SkyPageKeys.canvas,
         scene: SkyScene.home.copyWith(
+          moonPhase: moonPhase,
           constellation: constellation.copyWith(dim: dim),
           clearShootingStar: waiting == 0,
         ),
@@ -327,6 +329,7 @@ class _OurSkyPageState extends State<OurSkyPage> with WidgetsBindingObserver {
         top: SkyEntrance(
           child: SkyTopBar(
             kicker: SkyHomeCopy.kicker(night: night, dayNumber: dayNumber, weekday: weekday),
+            note: night ? SkyHomeCopy.moonLine(moonPhase) : null,
             title: SkyHomeCopy.title(night),
             trailing: const ShellAvatar(),
           ),

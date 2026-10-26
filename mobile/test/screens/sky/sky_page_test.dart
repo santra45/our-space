@@ -559,4 +559,36 @@ void main() {
     expect(find.byType(SettingsPage), findsOneWidget);
     await settle(tester, space);
   });
+
+  group('the real moon', () {
+    testWidgets('the night home names tonight\'s moon and paints it', (tester) async {
+      calm(tester);
+      final space = await coupleSpace(tester);
+      await pumpNight(tester, space);
+      await waitForCard(tester);
+      final phase = homeScene(tester).moonPhase!;
+      expect((phase.age - MoonPhase.at(DateTime.now()).age).abs(), lessThan(1 / 24 + 0.001));
+      expect(find.text(SkyHomeCopy.moonLine(phase)), findsOneWidget);
+      expect(find.textContaining('the same moon tonight'), findsOneWidget);
+      await settle(tester, space);
+    });
+
+    testWidgets('by day the moon line stays away', (tester) async {
+      calm(tester);
+      final space = await coupleSpace(tester);
+      await pumpLove(
+        tester,
+        space,
+        shell: Theme(data: SkyThemes.legacy(SkyTokens.day), child: const HomeShell()),
+      );
+      await waitForCard(tester);
+      expect(find.textContaining('the same moon tonight'), findsNothing);
+      await settle(tester, space);
+    });
+
+    test('the moon line reads like a quiet aside', () {
+      expect(SkyHomeCopy.moonLine(const MoonPhase(4)), 'Waxing crescent · the same moon tonight');
+      expect(SkyHomeCopy.moonLine(MoonPhase(MoonPhase.synodicMonth / 2)), 'Full moon · the same moon tonight');
+    });
+  });
 }

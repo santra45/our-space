@@ -1,3 +1,4 @@
+import '../../sky/sky_moon.dart';
 import 'sky_days.dart';
 
 abstract final class SkyHomeCopy {
@@ -11,6 +12,8 @@ abstract final class SkyHomeCopy {
   }
 
   static String title(bool night) => night ? 'Our sky, tonight' : 'Our sky, today';
+
+  static String moonLine(MoonPhase phase) => '${phase.name} · the same moon tonight';
 
   static String tonightStar(bool night) => night ? "Tonight's star" : "Today's star";
 
