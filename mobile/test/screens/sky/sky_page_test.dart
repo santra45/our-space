@@ -591,4 +591,29 @@ void main() {
       expect(SkyHomeCopy.moonLine(MoonPhase(MoonPhase.synodicMonth / 2)), 'Full moon · the same moon tonight');
     });
   });
+
+  testWidgets('the 29th star completes the heart and the reveal celebrates it', (tester) async {
+    calm(tester);
+    final space = await coupleSpace(tester);
+    await bothAnswered(tester, space, 28);
+    await iAnswer(tester, space, 'Mine tonight');
+    await partnerAnswers(tester, space, 'Hers tonight');
+    await pumpNight(tester, space);
+    await waitForCard(tester);
+    await until(tester, () => statLabel(tester, SkyPageKeys.starsStat) == '29 stars joined');
+
+    final whole = homeHeart(tester);
+    expect(whole.shape, ConstellationShape.heart);
+    expect(whole.complete, isTrue);
+    expect(whole.litPoints, hasLength(29));
+
+    await press(tester, find.byKey(DailyKeys.action));
+    await settleRoute(tester);
+    expect(find.byKey(DailyKeys.reveal), findsOneWidget);
+    expect(find.text('Our first constellation is complete'), findsOneWidget);
+    expect(find.text("Tonight's star is lit"), findsNothing);
+    await tester.tap(semanticsLabelled('Back'));
+    await settleRoute(tester);
+    await settle(tester, space);
+  });
 }

@@ -146,10 +146,13 @@ class _DailyRevealPageState extends State<DailyRevealPage> {
         final partner = identity.partnerName;
         final theirs = model.day?.partnerAnswer;
         final media = MediaQuery.of(context);
+        final badgeText = SkyConstellationPlan.completes(stars)
+            ? SkyConstellationPlan.completeLine(stars)
+            : DailyCopy.starIsLit(night);
 
         final badge = Semantics(
           liveRegion: true,
-          label: DailyCopy.starIsLit(night),
+          label: badgeText,
           excludeSemantics: true,
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 7),
@@ -164,7 +167,7 @@ class _DailyRevealPageState extends State<DailyRevealPage> {
                 SkyIcon(SkyIcons.sparkle, size: 13, color: t.activeFg),
                 const SizedBox(width: 6),
                 Text(
-                  DailyCopy.starIsLit(night),
+                  badgeText,
                   style: SkyType.sans(11.5, weight: FontWeight.w700, height: 1.2).copyWith(color: t.activeFg),
                 ),
               ],
