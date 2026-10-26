@@ -32,7 +32,8 @@ Future<void> chooseFile(WidgetTester tester, PickedVaultFile file) async {
   await tester.pump();
 }
 
-HeartConstellation? skyOfHeart(WidgetTester tester) => tester.widget<SkyCanvas>(find.byType(SkyCanvas)).scene.heart;
+SkyConstellation? skyOfHeart(WidgetTester tester) =>
+    tester.widget<SkyCanvas>(find.byType(SkyCanvas)).scene.constellation;
 
 String fieldText(WidgetTester tester, String hint) => tester.widget<TextField>(lockField(hint)).controller!.text;
 

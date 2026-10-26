@@ -8,7 +8,7 @@ import 'sky_painter.dart';
 import 'sky_scene.dart';
 import 'sky_tokens.dart';
 
-enum SkyPointKind { me, partner, gap, heart, moon, design }
+enum SkyPointKind { me, partner, gap, star, moon, design }
 
 @immutable
 class SkyPoint {
@@ -18,7 +18,7 @@ class SkyPoint {
 
   const SkyPoint.gap() : kind = SkyPointKind.gap, index = 0, design = Offset.zero;
 
-  const SkyPoint.heart(this.index) : kind = SkyPointKind.heart, design = Offset.zero;
+  const SkyPoint.star(this.index) : kind = SkyPointKind.star, design = Offset.zero;
 
   const SkyPoint.moon() : kind = SkyPointKind.moon, index = 0, design = Offset.zero;
 
@@ -29,17 +29,17 @@ class SkyPoint {
   final Offset design;
 
   Offset? resolve(SkyScene scene) {
-    final heart = scene.heart;
+    final constellation = scene.constellation;
     switch (kind) {
       case SkyPointKind.me:
-        return heart?.pointAt(heart.me);
+        return constellation?.pointAt(constellation.me);
       case SkyPointKind.partner:
-        return heart?.pointAt(heart.partner);
+        return constellation?.pointAt(constellation.partner);
       case SkyPointKind.gap:
-        final gap = heart?.gap;
-        return gap == null ? null : heart!.pointAt(gap);
-      case SkyPointKind.heart:
-        return heart?.pointAt(index);
+        final gap = constellation?.gap;
+        return gap == null ? null : constellation!.pointAt(gap);
+      case SkyPointKind.star:
+        return constellation?.pointAt(index);
       case SkyPointKind.moon:
         return scene.moon;
       case SkyPointKind.design:
@@ -87,7 +87,7 @@ class _SkyCanvasState extends State<SkyCanvas> with SingleTickerProviderStateMix
   Duration? _burstFrom;
   Duration? _streakFrom;
 
-  bool get _bursting => widget.scene.heart?.burst == true && widget.scene.heart?.complete == true;
+  bool get _bursting => widget.scene.constellation?.burst == true && widget.scene.constellation?.complete == true;
 
   bool get _playing => _burstFrom != null || _streakFrom != null;
 
@@ -107,7 +107,7 @@ class _SkyCanvasState extends State<SkyCanvas> with SingleTickerProviderStateMix
   @override
   void didUpdateWidget(covariant SkyCanvas oldWidget) {
     super.didUpdateWidget(oldWidget);
-    final wasBursting = oldWidget.scene.heart?.burst == true && oldWidget.scene.heart?.complete == true;
+    final wasBursting = oldWidget.scene.constellation?.burst == true && oldWidget.scene.constellation?.complete == true;
     if (_bursting && !wasBursting) _burstFrom = _queued;
     if (widget.scene.shootingStar != null && oldWidget.scene.shootingStar != widget.scene.shootingStar) {
       _streakFrom = _queued;
@@ -117,7 +117,7 @@ class _SkyCanvasState extends State<SkyCanvas> with SingleTickerProviderStateMix
 
   bool get _hasLife {
     final scene = widget.scene;
-    return scene.twinkle || scene.heart != null || scene.shootingStar != null;
+    return scene.twinkle || scene.constellation != null || scene.shootingStar != null;
   }
 
   void _syncMotion() {

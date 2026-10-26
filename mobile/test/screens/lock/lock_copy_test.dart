@@ -177,7 +177,7 @@ void main() {
     expect(scene.moon, const Offset(312, 92));
     expect(scene.skyline, closeTo(844 - 58, 0.01));
     expect(scene.sunAt!.dy, closeTo(844 - 44, 0.01));
-    expect(scene.heart, heart);
+    expect(scene.constellation, heart);
   });
 
   test('the heart always fits between her name and the touch ring', () {
@@ -194,9 +194,9 @@ void main() {
 
   test('the heart fades away behind the longer forms', () {
     const metrics = LockMetrics(size: Size(390, 844));
-    expect(metrics.sceneWithHeart(0).heart, isNull);
-    expect(metrics.sceneWithHeart(0.5).heart!.dim, closeTo(LockMetrics.heartDim / 2, 0.0001));
-    expect(metrics.sceneWithHeart(1).heart!.dim, LockMetrics.heartDim);
+    expect(metrics.sceneWithHeart(0).constellation, isNull);
+    expect(metrics.sceneWithHeart(0.5).constellation!.dim, closeTo(LockMetrics.heartDim / 2, 0.0001));
+    expect(metrics.sceneWithHeart(1).constellation!.dim, LockMetrics.heartDim);
   });
 
   test('the lock screen picks the same first mode as before', () {

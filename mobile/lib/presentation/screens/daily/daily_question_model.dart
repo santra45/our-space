@@ -30,6 +30,7 @@ class DailyQuestionModel extends ChangeNotifier {
   List<ArchiveDay> _archive = const [];
   DailyCatchUp? _catchUp;
   int _stars = 0;
+  List<AnsweredDay> _nights = const [];
   bool _failed = false;
 
   VaultKey? _key;
@@ -47,6 +48,8 @@ class DailyQuestionModel extends ChangeNotifier {
   List<ArchiveDay> get archive => _archive;
   DailyCatchUp? get catchUp => _catchUp;
   int get stars => _stars;
+  List<AnsweredDay> get nights => _nights;
+  String? get todayKey => _day?.day ?? _today?.day;
   bool get failed => _failed && _key != null;
   bool get loading => _key != null && _today == null && !_failed;
 
@@ -101,15 +104,18 @@ class DailyQuestionModel extends ChangeNotifier {
     try {
       final question = space.dailyQuestion.questionForDay(key);
       final day = await space.dailyQuestion.readDay(key, ownerId: ownerId, ownerIds: _ownerIds);
-      var stars = _stars;
+      var nights = _nights;
       try {
         final answered = await space.dailyQuestion.listAnswered(key, ownerId: ownerId, ownerIds: _ownerIds);
-        stars = answered.where((entry) => entry.theirs != null).length;
+        nights = List<AnsweredDay>.unmodifiable(
+          answered.where((entry) => entry.theirs != null).toList()..sort((a, b) => a.day.compareTo(b.day)),
+        );
       } catch (_) {}
       if (_disposed || ticket != _generation) return;
       _today = question;
       _day = day;
-      _stars = stars;
+      _nights = nights;
+      _stars = nights.length;
       _failed = false;
     } catch (_) {
       if (_disposed || ticket != _generation) return;

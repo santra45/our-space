@@ -14,7 +14,8 @@ import '../daily/daily_question_sheet.dart';
 import '../daily/daily_reveal_page.dart';
 import 'sky_copy.dart';
 import 'sky_days.dart';
-import 'sky_heart_plan.dart';
+import 'sky_constellation_plan.dart';
+import 'sky_constellations.dart';
 import 'sky_letters_watch.dart';
 import 'sky_marks.dart';
 import 'sky_sheet_layout.dart';
@@ -24,7 +25,6 @@ abstract final class SkyPageKeys {
   static const Key canvas = ValueKey<String>('sky-home-canvas');
   static const Key letterTip = ValueKey<String>('sky-letter-tip');
   static const Key tonightTip = ValueKey<String>('sky-tonight-tip');
-  static const Key tonightAside = ValueKey<String>('sky-tonight-aside');
   static const Key presenceRing = ValueKey<String>('sky-presence-ring');
   static const Key myName = ValueKey<String>('sky-my-name');
   static const Key partnerName = ValueKey<String>('sky-partner-name');
@@ -147,16 +147,17 @@ class _OurSkyPageState extends State<OurSkyPage> with WidgetsBindingObserver {
     final stars = _daily.stars;
     final litToday = _daily.bothIn;
     final waiting = _letters.waiting;
-    final heart = SkyHeartPlan.home(stars: stars, litToday: litToday, presence: presence.isHere);
-    final aside = SkyHeartPlan.tonightAside(stars: stars, litToday: litToday);
+    final series = ConstellationSeries.fromAnswered(_daily.nights, today: _daily.todayKey ?? dayKey());
+    final constellation = SkyConstellationPlan.forSeries(series, presence: presence.isHere);
+    final shape = constellation.shape;
     final showTonight = _daily.visible && !litToday;
-    final tonightAt = aside ? SkyHeartPlan.asideStar : (heart.gap == null ? null : heart.pointAt(heart.gap!));
+    final tonightAt = constellation.gap == null ? null : constellation.pointAt(constellation.gap!);
     final scaler = MediaQuery.textScalerOf(context);
     final k = SkyPageFrame.scaleOf(MediaQuery.sizeOf(context).width);
     final letterTip = SkyTip.measure(SkyHomeCopy.letterFell, textScaler: scaler) / k;
     final avoid = [
-      ...SkyHeartPlan.labelAreas(
-        heart,
+      ...SkyConstellationPlan.labelAreas(
+        constellation,
         me: me != null,
         partner: partner != null,
         partnerChip: presence.label != null,
@@ -168,17 +169,10 @@ class _OurSkyPageState extends State<OurSkyPage> with WidgetsBindingObserver {
     final tipSize = SkyTip.measureTwo(tipTitle, tipSubtitle, textScaler: scaler) / k;
     final placement = tonightAt == null
         ? null
-        : (aside
-              ? SkyHeartPlan.below
-              : SkyHeartPlan.tipFor(
-                  tonightAt,
-                  heart: heart,
-                  avoid: avoid,
-                  size: tipSize,
-                ));
+        : SkyConstellationPlan.tipFor(tonightAt, constellation: constellation, avoid: avoid, size: tipSize);
 
     final anchors = <SkyAnchor>[
-      if (loaded && presence.isHere && partner != null && !heart.isLit(heart.partner))
+      if (loaded && presence.isHere && partner != null && !constellation.isLit(constellation.partner))
         const SkyAnchor(
           at: SkyPoint.partner(),
           alignment: Alignment.center,
@@ -187,13 +181,15 @@ class _OurSkyPageState extends State<OurSkyPage> with WidgetsBindingObserver {
       if (loaded && me != null)
         SkyAnchor(
           at: const SkyPoint.me(),
-          offset: const Offset(0, 18),
+          offset: shape.meLabel.offset,
+          alignment: shape.meLabel.alignment,
           child: SkyEntrance(child: SkyNameLabel(me, key: SkyPageKeys.myName)),
         ),
       if (loaded && partner != null)
         SkyAnchor(
           at: const SkyPoint.partner(),
-          offset: const Offset(-12, 30),
+          offset: shape.partnerLabel.offset,
+          alignment: shape.partnerLabel.alignment,
           child: SkyEntrance(
             index: 1,
             child: Column(
@@ -204,12 +200,6 @@ class _OurSkyPageState extends State<OurSkyPage> with WidgetsBindingObserver {
               ],
             ),
           ),
-        ),
-      if (showTonight && aside)
-        const SkyAnchor(
-          at: SkyPoint.design(SkyHeartPlan.asideStar),
-          alignment: Alignment.center,
-          child: SkyTonightStar(key: SkyPageKeys.tonightAside),
         ),
       if (showTonight && tonightAt != null && placement != null)
         SkyAnchor(
@@ -259,7 +249,7 @@ class _OurSkyPageState extends State<OurSkyPage> with WidgetsBindingObserver {
       builder: (context, dim, _) => SkyBackdrop(
         key: SkyPageKeys.canvas,
         scene: SkyScene.home.copyWith(
-          heart: heart.copyWith(dim: dim),
+          constellation: constellation.copyWith(dim: dim),
           clearShootingStar: waiting == 0,
         ),
         anchors: anchors,

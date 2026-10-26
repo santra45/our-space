@@ -42,7 +42,7 @@ class LockMetrics {
 
   double get openBlock => touchBlock + footerGap;
 
-  HeartConstellation get heart {
+  SkyConstellation get heart {
     final top = brandHeight;
     final bottom = size.height - openBlock - ringReach;
     final room = math.max(0.0, bottom - top);
@@ -50,7 +50,7 @@ class LockMetrics {
     final height = 29 * scale * k;
     final heartTop = top + math.max(0.0, room - height) * heartLift;
     final centerY = (heartTop + 12 * scale * k) / k;
-    return HeartConstellation(
+    return SkyConstellation(
       center: Offset(designWidth / 2, centerY),
       scale: scale,
       dim: heartDim,
@@ -73,7 +73,7 @@ class LockMetrics {
         SkyCloud(70, 260, scale: 0.75, opacity: 0.55),
         SkyCloud(340, 470, scale: 0.6, opacity: 0.45),
       ],
-      heart: shown <= 0.01 ? null : heart.copyWith(dim: heartDim * shown),
+      constellation: shown <= 0.01 ? null : heart.copyWith(dim: heartDim * shown),
     );
   }
 

@@ -3,6 +3,8 @@ import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/painting.dart';
 
+import 'sky_constellation.dart';
+
 class SkyRandom {
   SkyRandom(int seed) : _seed = seed <= 0 ? 7 : seed;
 
@@ -66,116 +68,6 @@ class SkyShootingStar {
 }
 
 @immutable
-class HeartConstellation {
-  const HeartConstellation({
-    this.center = const Offset(195, 284),
-    this.scale = 6.4,
-    this.gap = 10,
-    this.me = 24,
-    this.partner = 5,
-    this.complete = false,
-    this.burst = false,
-    this.presence = true,
-    this.dim = 1,
-    this.unlit = const <int>{},
-    this.gapGuide = true,
-  });
-
-  static const int count = 29;
-
-  final Offset center;
-  final double scale;
-  final int? gap;
-  final int me;
-  final int partner;
-  final bool complete;
-  final bool burst;
-  final bool presence;
-  final double dim;
-  final Set<int> unlit;
-  final bool gapGuide;
-
-  static Offset curve(double t, {Offset center = const Offset(195, 284), double scale = 6.4}) {
-    final s = math.sin(t);
-    return Offset(
-      center.dx + scale * 16 * s * s * s,
-      center.dy - scale * (13 * math.cos(t) - 5 * math.cos(2 * t) - 2 * math.cos(3 * t) - math.cos(4 * t)),
-    );
-  }
-
-  Offset pointAt(int index) => curve((index % count) / count * math.pi * 2, center: center, scale: scale);
-
-  List<Offset> get points => [for (var i = 0; i < count; i++) pointAt(i)];
-
-  bool get hasOpenGap => gap != null && !complete;
-
-  bool isLit(int index) => !unlit.contains(index) && !(hasOpenGap && index == gap);
-
-  bool isBig(int index) => index == me || index == partner;
-
-  double smallRadius(int index) => 1.7 + ((index * 37) % 10) / 7;
-
-  HeartConstellation copyWith({
-    Offset? center,
-    double? scale,
-    int? gap,
-    bool clearGap = false,
-    int? me,
-    int? partner,
-    bool? complete,
-    bool? burst,
-    bool? presence,
-    double? dim,
-    Set<int>? unlit,
-    bool? gapGuide,
-  }) {
-    return HeartConstellation(
-      center: center ?? this.center,
-      scale: scale ?? this.scale,
-      gap: clearGap ? null : (gap ?? this.gap),
-      me: me ?? this.me,
-      partner: partner ?? this.partner,
-      complete: complete ?? this.complete,
-      burst: burst ?? this.burst,
-      presence: presence ?? this.presence,
-      dim: dim ?? this.dim,
-      unlit: unlit ?? this.unlit,
-      gapGuide: gapGuide ?? this.gapGuide,
-    );
-  }
-
-  @override
-  bool operator ==(Object other) =>
-      other is HeartConstellation &&
-      other.center == center &&
-      other.scale == scale &&
-      other.gap == gap &&
-      other.me == me &&
-      other.partner == partner &&
-      other.complete == complete &&
-      other.burst == burst &&
-      other.presence == presence &&
-      other.dim == dim &&
-      setEquals(other.unlit, unlit) &&
-      other.gapGuide == gapGuide;
-
-  @override
-  int get hashCode => Object.hash(
-    center,
-    scale,
-    gap,
-    me,
-    partner,
-    complete,
-    burst,
-    presence,
-    dim,
-    Object.hashAllUnordered(unlit),
-    gapGuide,
-  );
-}
-
-@immutable
 class SkyScene {
   const SkyScene({
     this.seed = 7,
@@ -186,7 +78,7 @@ class SkyScene {
     this.sunAt,
     this.clouds = defaultClouds,
     this.skyline,
-    this.heart,
+    this.constellation,
     this.shootingStar,
     this.haze = true,
     this.horizonGlow = false,
@@ -212,7 +104,7 @@ class SkyScene {
     sunAt: Offset(40, 420),
     skyline: 416,
     horizonGlow: true,
-    heart: HeartConstellation(),
+    constellation: SkyConstellation(),
     shootingStar: SkyShootingStar(),
   );
 
@@ -231,7 +123,7 @@ class SkyScene {
   final Offset? sunAt;
   final List<SkyCloud> clouds;
   final double? skyline;
-  final HeartConstellation? heart;
+  final SkyConstellation? constellation;
   final SkyShootingStar? shootingStar;
   final bool haze;
   final bool horizonGlow;
@@ -253,8 +145,8 @@ class SkyScene {
     List<SkyCloud>? clouds,
     double? skyline,
     bool clearSkyline = false,
-    HeartConstellation? heart,
-    bool clearHeart = false,
+    SkyConstellation? constellation,
+    bool clearConstellation = false,
     SkyShootingStar? shootingStar,
     bool clearShootingStar = false,
     bool? haze,
@@ -271,7 +163,7 @@ class SkyScene {
       sunAt: sunAt ?? this.sunAt,
       clouds: clouds ?? this.clouds,
       skyline: clearSkyline ? null : (skyline ?? this.skyline),
-      heart: clearHeart ? null : (heart ?? this.heart),
+      constellation: clearConstellation ? null : (constellation ?? this.constellation),
       shootingStar: clearShootingStar ? null : (shootingStar ?? this.shootingStar),
       haze: haze ?? this.haze,
       horizonGlow: horizonGlow ?? this.horizonGlow,
@@ -291,7 +183,7 @@ class SkyScene {
       other.sunAt == sunAt &&
       listEquals(other.clouds, clouds) &&
       other.skyline == skyline &&
-      other.heart == heart &&
+      other.constellation == constellation &&
       other.shootingStar == shootingStar &&
       other.haze == haze &&
       other.horizonGlow == horizonGlow &&
@@ -308,7 +200,7 @@ class SkyScene {
     sunAt,
     Object.hashAll(clouds),
     skyline,
-    heart,
+    constellation,
     shootingStar,
     haze,
     horizonGlow,

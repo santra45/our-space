@@ -11,7 +11,7 @@ import 'package:our_space_mobile/presentation/screens/letters/letters_page.dart'
 import 'package:our_space_mobile/presentation/screens/settings/settings_page.dart';
 import 'package:our_space_mobile/presentation/screens/sky/sky_copy.dart';
 import 'package:our_space_mobile/presentation/screens/sky/sky_days.dart';
-import 'package:our_space_mobile/presentation/screens/sky/sky_heart_plan.dart';
+import 'package:our_space_mobile/presentation/screens/sky/sky_constellation_plan.dart';
 import 'package:our_space_mobile/presentation/screens/sky/sky_page.dart';
 import 'package:our_space_mobile/presentation/screens/sky/sky_sheet_layout.dart';
 import 'package:our_space_mobile/presentation/screens/sky/sky_stats.dart';
@@ -21,8 +21,10 @@ import 'package:our_space_mobile/presentation/sky/sky.dart';
 import '../../widgets/harness.dart' show recordHaptics, usePhoneSize;
 import '../love/love_harness.dart';
 
-HeartConstellation homeHeart(WidgetTester tester) =>
-    tester.widget<SkyBackdrop>(find.byKey(SkyPageKeys.canvas)).scene.heart!;
+SkyConstellation homeHeart(WidgetTester tester) =>
+    tester.widget<SkyBackdrop>(find.byKey(SkyPageKeys.canvas)).scene.constellation!;
+
+final List<int> heartOrder = ConstellationShape.heart.order;
 
 SkyScene homeScene(WidgetTester tester) => tester.widget<SkyBackdrop>(find.byKey(SkyPageKeys.canvas)).scene;
 
@@ -62,82 +64,98 @@ void main() {
 
   group('the heart lights one star for every day you both answered', () {
     test('the order touches every point once and closes the heart at the design gap', () {
-      expect(SkyHeartPlan.order, hasLength(HeartConstellation.count));
-      expect(SkyHeartPlan.order.toSet(), hasLength(HeartConstellation.count));
-      expect(SkyHeartPlan.order.take(2), [24, 5]);
-      expect(SkyHeartPlan.order.last, 10);
+      expect(heartOrder, hasLength(SkyConstellation.count));
+      expect(heartOrder.toSet(), hasLength(SkyConstellation.count));
+      expect(heartOrder.take(2), [24, 5]);
+      expect(heartOrder.last, 10);
     });
 
     test('lit stars follow the count, tonight waits in the next gap', () {
-      final design = SkyHeartPlan.home(stars: 28, litToday: false, presence: true);
+      final design = SkyConstellationPlan.home(stars: 28, litToday: false, presence: true);
+      expect(design.shape, ConstellationShape.heart);
       expect(design.gap, 10);
       expect(design.unlit, isEmpty);
       expect(design.complete, isFalse);
       expect(design.presence, isTrue);
 
-      final early = SkyHeartPlan.home(stars: 5, litToday: false, presence: false);
-      expect(early.gap, SkyHeartPlan.order[5]);
+      final early = SkyConstellationPlan.home(stars: 5, litToday: false, presence: false);
+      expect(early.gap, heartOrder[5]);
       expect(early.unlit, hasLength(23));
-      expect([for (var i = 0; i < 29; i++) if (early.isLit(i)) i], unorderedEquals(SkyHeartPlan.order.take(5)));
+      expect([for (var i = 0; i < 29; i++) if (early.isLit(i)) i], unorderedEquals(heartOrder.take(5)));
 
-      final first = SkyHeartPlan.home(stars: 0, litToday: false, presence: false);
+      final first = SkyConstellationPlan.home(stars: 0, litToday: false, presence: false);
       expect(first.gap, 24);
       expect(first.unlit, hasLength(28));
 
-      final lit = SkyHeartPlan.home(stars: 6, litToday: true, presence: false);
+      final lit = SkyConstellationPlan.home(stars: 6, litToday: true, presence: false);
       expect(lit.gap, isNull);
       expect(lit.unlit, hasLength(23));
-      expect(SkyHeartPlan.tonightIndex(stars: 6, litToday: true), isNull);
-      expect(SkyHeartPlan.tonightIndex(stars: 6, litToday: false), SkyHeartPlan.order[6]);
+      expect(SkyConstellationPlan.tonightSlot(stars: 6, litToday: true), isNull);
+      expect(SkyConstellationPlan.tonightSlot(stars: 6, litToday: false), heartOrder[6]);
     });
 
-    test('past 29 the heart stays full and tonight waits beside it', () {
-      for (final stars in [29, 40]) {
-        final heart = SkyHeartPlan.home(stars: stars, litToday: false, presence: false);
-        expect(heart.complete, isTrue);
-        expect(heart.gap, isNull);
-        expect(heart.unlit, isEmpty);
-        expect(SkyHeartPlan.tonightAside(stars: stars, litToday: false), isTrue);
-        expect(SkyHeartPlan.tonightAside(stars: stars, litToday: true), isFalse);
-      }
-      expect(SkyHeartPlan.tonightAside(stars: 28, litToday: false), isFalse);
+    test('the night the 29th star lights the heart is whole, the next night the moon begins', () {
+      final whole = SkyConstellationPlan.home(stars: 29, litToday: true, presence: false);
+      expect(whole.shape, ConstellationShape.heart);
+      expect(whole.complete, isTrue);
+      expect(whole.gap, isNull);
+      expect(whole.unlit, isEmpty);
+
+      final next = SkyConstellationPlan.home(stars: 29, litToday: false, presence: false);
+      expect(next.shape, ConstellationShape.moon);
+      expect(next.complete, isFalse);
+      expect(next.gap, ConstellationShape.moon.order.first);
+      expect(next.unlit, hasLength(28));
+
+      final later = SkyConstellationPlan.home(stars: 40, litToday: false, presence: false);
+      expect(later.shape, ConstellationShape.moon);
+      expect(later.gap, ConstellationShape.moon.order[11]);
+      expect(later.unlit, hasLength(17));
     });
 
     test('the reveal bursts the star that was just lit', () {
-      final design = SkyHeartPlan.reveal(stars: 29);
+      final design = SkyConstellationPlan.reveal(stars: 29);
       expect(design.gap, 10);
       expect(design.complete, isTrue);
       expect(design.burst, isTrue);
       expect(design.presence, isFalse);
       expect(design.unlit, isEmpty);
 
-      final early = SkyHeartPlan.reveal(stars: 5);
-      expect(early.gap, SkyHeartPlan.order[4]);
+      final early = SkyConstellationPlan.reveal(stars: 5);
+      expect(early.gap, heartOrder[4]);
       expect(early.unlit, hasLength(24));
-      expect(SkyHeartPlan.reveal(stars: 0).gap, SkyHeartPlan.order.first);
-      expect(SkyHeartPlan.reveal(stars: 31).gap, SkyHeartPlan.order[1]);
+      expect(SkyConstellationPlan.reveal(stars: 0).gap, heartOrder.first);
+      final moon = SkyConstellationPlan.reveal(stars: 31);
+      expect(moon.shape, ConstellationShape.moon);
+      expect(moon.gap, ConstellationShape.moon.order[1]);
+      expect(moon.unlit, hasLength(27));
     });
 
     testWidgets('the tooltip sits beside the gap like the design and avoids names and lit stars', (tester) async {
-      final design = SkyHeartPlan.home(stars: 28, litToday: false, presence: true);
+      final design = SkyConstellationPlan.home(stars: 28, litToday: false, presence: true);
       final gap = design.pointAt(design.gap!);
-      expect(SkyHeartPlan.tipFor(gap, heart: design), SkyHeartPlan.right);
-      expect(SkyHeartPlan.tipRect(gap, SkyHeartPlan.right).right, lessThanOrEqualTo(390));
+      expect(SkyConstellationPlan.tipFor(gap, constellation: design), SkyConstellationPlan.right);
+      expect(SkyConstellationPlan.tipRect(gap, SkyConstellationPlan.right).right, lessThanOrEqualTo(390));
 
-      for (var stars = 0; stars < 29; stars++) {
-        final heart = SkyHeartPlan.home(stars: stars, litToday: false, presence: true);
-        final at = heart.pointAt(heart.gap!);
-        final labels = SkyHeartPlan.labelAreas(heart, me: true, partner: true, partnerChip: true);
-        final size = SkyTip.measureTwo("Tonight's star", SkyHomeCopy.answerToLight, textScaler: TextScaler.noScaling);
-        final placement = SkyHeartPlan.tipFor(at, heart: heart, avoid: labels, size: size);
-        final rect = SkyHeartPlan.tipRect(at, placement, size);
+      final size = SkyTip.measureTwo("Tonight's star", SkyHomeCopy.answerToLight, textScaler: TextScaler.noScaling);
+      for (var stars = 0; stars < 29 * 4; stars++) {
+        final shape = SkyConstellationPlan.home(stars: stars, litToday: false, presence: true);
+        final at = shape.pointAt(shape.gap!);
+        final labels = SkyConstellationPlan.labelAreas(shape, me: true, partner: true, partnerChip: true);
+        final placement = SkyConstellationPlan.tipFor(at, constellation: shape, avoid: labels, size: size);
+        final rect = SkyConstellationPlan.tipRect(at, placement, size);
         expect(rect.left, greaterThanOrEqualTo(0), reason: '$stars');
         expect(rect.right, lessThanOrEqualTo(390), reason: '$stars');
-        final cost = SkyHeartPlan.tipCost(at, placement, size: size, heart: heart, avoid: labels);
-        for (final other in [SkyHeartPlan.right, SkyHeartPlan.left, SkyHeartPlan.above, SkyHeartPlan.belowFar]) {
+        final cost = SkyConstellationPlan.tipCost(at, placement, size: size, constellation: shape, avoid: labels);
+        for (final other in [
+          SkyConstellationPlan.right,
+          SkyConstellationPlan.left,
+          SkyConstellationPlan.above,
+          SkyConstellationPlan.belowFar,
+        ]) {
           expect(
             cost,
-            lessThanOrEqualTo(SkyHeartPlan.tipCost(at, other, size: size, heart: heart, avoid: labels)),
+            lessThanOrEqualTo(SkyConstellationPlan.tipCost(at, other, size: size, constellation: shape, avoid: labels)),
             reason: '$stars',
           );
         }
@@ -290,7 +308,7 @@ void main() {
     expect(skyDescribed("3 stars in our sky. Tonight's star is waiting."), findsOneWidget);
 
     final heart = homeHeart(tester);
-    expect(heart.gap, SkyHeartPlan.order[3]);
+    expect(heart.gap, heartOrder[3]);
     expect(heart.unlit, hasLength(25));
     expect(heart.presence, isFalse);
     expect(homeScene(tester).shootingStar, isNull);
@@ -317,7 +335,7 @@ void main() {
     await pumpNight(tester, space);
     await waitForCard(tester);
 
-    expect(homeHeart(tester).gap, SkyHeartPlan.order[2]);
+    expect(homeHeart(tester).gap, heartOrder[2]);
     final sky = tester.getRect(find.byKey(SkyPageKeys.canvas));
     final tip = tester.getRect(find.byKey(SkyPageKeys.tonightTip));
     expect(sky.width, 360);
@@ -433,7 +451,7 @@ void main() {
     await settle(tester, space);
   });
 
-  testWidgets('past 29 stars the heart stays full and the true count shows', (tester) async {
+  testWidgets('past 29 stars the moon begins and the true count shows', (tester) async {
     calm(tester);
     final space = await coupleSpace(tester);
     await bothAnswered(tester, space, 30);
@@ -441,11 +459,12 @@ void main() {
     await waitForCard(tester);
     await until(tester, () => statLabel(tester, SkyPageKeys.starsStat) == '30 stars joined');
 
-    final heart = homeHeart(tester);
-    expect(heart.complete, isTrue);
-    expect(heart.gap, isNull);
-    expect(heart.unlit, isEmpty);
-    expect(find.byKey(SkyPageKeys.tonightAside), findsOneWidget);
+    final moon = homeHeart(tester);
+    expect(moon.shape, ConstellationShape.moon);
+    expect(moon.complete, isFalse);
+    expect(moon.gap, ConstellationShape.moon.order[1]);
+    expect(moon.unlit, hasLength(27));
+    expect(moon.isLit(ConstellationShape.moon.me), isTrue);
     expect(find.byKey(SkyPageKeys.tonightTip), findsOneWidget);
     await settle(tester, space);
   });
@@ -458,7 +477,7 @@ void main() {
     await pumpNight(tester, space);
     await waitForCard(tester);
     expect(find.text(SkyHomeCopy.almostLit), findsOneWidget);
-    expect(homeHeart(tester).gap, SkyHeartPlan.order[2]);
+    expect(homeHeart(tester).gap, heartOrder[2]);
 
     await partnerAnswers(tester, space, 'Hers tonight');
     await until(tester, () => statLabel(tester, SkyPageKeys.starsStat) == '3 stars joined');
@@ -466,7 +485,6 @@ void main() {
     expect(heart.gap, isNull);
     expect(heart.unlit, hasLength(26));
     expect(find.byKey(SkyPageKeys.tonightTip), findsNothing);
-    expect(find.byKey(SkyPageKeys.tonightAside), findsNothing);
     expect(skyDescribed("3 stars in our sky. Tonight's star is lit."), findsOneWidget);
     await settle(tester, space);
   });

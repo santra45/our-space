@@ -46,7 +46,7 @@ void main() {
     expect(find.text(LockCopy.moreWays), findsNothing);
     expect(lockField(LockCopy.unlockHint), findsNothing);
 
-    final heart = skyOf(tester).heart!;
+    final heart = skyOf(tester).constellation!;
     expect(heart.dim, LockMetrics.heartDim);
     expect(heart.presence, isFalse);
     expect(skyOf(tester).moon, isNotNull);
@@ -221,7 +221,7 @@ void main() {
     await pumpLock(tester, space, invite: invite);
     await lockUntilFound(tester, find.textContaining(LockCopy.inviteElsewhereLead, findRichText: true));
     expect(find.text(LockCopy.inviteHere), findsNothing);
-    expect(skyOf(tester).heart, isNull);
+    expect(skyOf(tester).constellation, isNull);
     expect(lockField(LockCopy.unlockHint), findsOneWidget);
     await closeLock(tester, space);
   });
@@ -231,7 +231,7 @@ void main() {
     final space = await lockReal(tester, openLockSpace);
     await pumpLock(tester, space);
     await lockUntilFound(tester, find.text(LockCopy.setupTitle));
-    expect(skyOf(tester).heart, isNull);
+    expect(skyOf(tester).constellation, isNull);
 
     await lockPress(tester, find.text(LockCopy.freshAction));
     expect(find.text(LockCopy.joinTitle), findsOneWidget);

@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/widgets.dart';
 
 import '../../sky/sky.dart';
+import 'sky_constellations.dart';
 
 enum SkyTipSide { right, left, below, above }
 
@@ -27,66 +28,89 @@ class SkyTipPlacement {
   int get hashCode => Object.hash(side, offset, alignment, arrow);
 }
 
-abstract final class SkyHeartPlan {
-  static const int points = HeartConstellation.count;
+abstract final class SkyConstellationPlan {
+  static const int points = SkyConstellation.count;
 
-  static const List<int> order = [24, 5, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 25, 26, 27, 28, 0, 1, 2, 3, 4, 6, 7, 8, 9, 10];
-
-  static const Offset asideStar = Offset(195, 274);
-
-  static int litCount(int stars) => stars.clamp(0, points);
-
-  static Set<int> _unlitFrom(int start) => {for (var i = start; i < points; i++) order[i]};
-
-  static bool tonightAside({required int stars, required bool litToday}) => !litToday && litCount(stars) >= points;
-
-  static int? tonightIndex({required int stars, required bool litToday}) {
-    if (litToday) return null;
-    final lit = litCount(stars);
-    return lit < points ? order[lit] : null;
+  static int constellationOf({required int stars, required bool litToday}) {
+    if (stars <= 0) return 0;
+    return litToday ? (stars - 1) ~/ points : stars ~/ points;
   }
 
-  static HeartConstellation home({
+  static ConstellationShape shapeFor({required int stars, required bool litToday}) =>
+      ConstellationShape.at(constellationOf(stars: stars, litToday: litToday));
+
+  static int litIn({required int stars, required bool litToday}) {
+    if (stars <= 0) return 0;
+    return stars - constellationOf(stars: stars, litToday: litToday) * points;
+  }
+
+  static bool completes(int stars) => stars > 0 && stars % points == 0;
+
+  static int? tonightSlot({required int stars, required bool litToday}) {
+    if (litToday) return null;
+    return shapeFor(stars: stars, litToday: false).order[litIn(stars: stars, litToday: false)];
+  }
+
+  static Set<int> _unlitFrom(ConstellationShape shape, int start) => {
+    for (var i = start; i < points; i++) shape.order[i],
+  };
+
+  static SkyConstellation home({
     required int stars,
     required bool litToday,
     required bool presence,
-    HeartConstellation base = const HeartConstellation(),
+    SkyConstellation base = const SkyConstellation(),
   }) {
-    final lit = litCount(stars);
+    final shape = shapeFor(stars: stars, litToday: litToday);
+    final lit = litIn(stars: stars, litToday: litToday);
     if (litToday || lit >= points) {
       return base.copyWith(
+        shape: shape,
         clearGap: true,
         complete: lit >= points,
         burst: false,
         presence: presence,
-        unlit: _unlitFrom(lit),
+        unlit: _unlitFrom(shape, lit),
       );
     }
     return base.copyWith(
-      gap: order[lit],
+      shape: shape,
+      gap: shape.order[lit],
       complete: false,
       burst: false,
       presence: presence,
-      unlit: _unlitFrom(lit + 1),
+      unlit: _unlitFrom(shape, lit + 1),
     );
   }
 
-  static int burstIndex(int stars) {
+  static SkyConstellation forSeries(
+    ConstellationSeries series, {
+    required bool presence,
+    SkyConstellation base = const SkyConstellation(),
+  }) => home(stars: series.stars, litToday: series.litToday, presence: presence, base: base);
+
+  static int burstSlot(int stars) {
     final total = math.max(stars, 1);
-    final lit = litCount(total);
-    return lit < points ? order[lit - 1] : order[(total - 1) % points];
+    final lit = litIn(stars: total, litToday: true);
+    return shapeFor(stars: total, litToday: true).order[lit - 1];
   }
 
-  static HeartConstellation reveal({required int stars, HeartConstellation base = const HeartConstellation()}) {
-    final lit = litCount(math.max(stars, 1));
+  static SkyConstellation reveal({required int stars, SkyConstellation base = const SkyConstellation()}) {
+    final total = math.max(stars, 1);
+    final shape = shapeFor(stars: total, litToday: true);
+    final lit = litIn(stars: total, litToday: true);
     return base.copyWith(
-      gap: burstIndex(stars),
+      shape: shape,
+      gap: burstSlot(total),
       complete: true,
       burst: true,
       presence: false,
-      unlit: _unlitFrom(lit),
+      unlit: _unlitFrom(shape, lit),
     );
   }
+
+  static String completeLine(int stars) =>
+      ConstellationChapter.completeLineOf(constellationOf(stars: stars, litToday: true));
 
   static const Size tipSize = Size(112, 40);
   static const double tipGap = 18;
@@ -141,17 +165,24 @@ abstract final class SkyHeartPlan {
     }
   }
 
+  static const Size meLabelSize = Size(64, 22);
+
+  static Size partnerLabelSize({required bool chip}) => Size(80, chip ? 40 : 22);
+
   static List<Rect> labelAreas(
-    HeartConstellation heart, {
+    SkyConstellation constellation, {
     required bool me,
     required bool partner,
     required bool partnerChip,
   }) {
-    final mine = heart.pointAt(heart.me);
-    final theirs = heart.pointAt(heart.partner);
+    final shape = constellation.shape;
     return [
-      if (me) Rect.fromLTWH(mine.dx - 32, mine.dy + 16, 64, 22),
-      if (partner) Rect.fromLTWH(theirs.dx - 52, theirs.dy + 28, 80, partnerChip ? 40 : 22),
+      if (me) shape.meLabel.area(constellation.pointAt(constellation.me), meLabelSize),
+      if (partner)
+        shape.partnerLabel.area(
+          constellation.pointAt(constellation.partner),
+          partnerLabelSize(chip: partnerChip),
+        ),
     ];
   }
 
@@ -159,7 +190,7 @@ abstract final class SkyHeartPlan {
     Offset point,
     SkyTipPlacement placement, {
     Size size = tipSize,
-    HeartConstellation? heart,
+    SkyConstellation? constellation,
     List<Rect> avoid = const [],
   }) {
     final rect = tipRect(point, placement, size);
@@ -173,9 +204,9 @@ abstract final class SkyHeartPlan {
       final overlap = rect.intersect(area);
       if (overlap.width > 0 && overlap.height > 0) cost += overlap.width * overlap.height;
     }
-    if (heart != null) {
-      for (var i = 0; i < points; i++) {
-        if (heart.isLit(i) && rect.contains(heart.pointAt(i))) cost += 400;
+    if (constellation != null) {
+      for (final i in constellation.litPoints) {
+        if (rect.contains(constellation.pointAt(i))) cost += 400;
       }
     }
     return cost;
@@ -183,7 +214,7 @@ abstract final class SkyHeartPlan {
 
   static SkyTipPlacement tipFor(
     Offset point, {
-    HeartConstellation? heart,
+    SkyConstellation? constellation,
     List<Rect> avoid = const [],
     Size size = tipSize,
   }) {
@@ -192,7 +223,7 @@ abstract final class SkyHeartPlan {
     var best = outside;
     var bestCost = double.infinity;
     for (final placement in [outside, inside, above, belowFar]) {
-      final cost = tipCost(point, placement, size: size, heart: heart, avoid: avoid);
+      final cost = tipCost(point, placement, size: size, constellation: constellation, avoid: avoid);
       if (cost < bestCost) {
         best = placement;
         bestCost = cost;

@@ -23,7 +23,8 @@ class SlowQuickUnlock extends FakeQuickUnlock {
   }
 }
 
-HeartConstellation? heartOf(WidgetTester tester) => tester.widget<SkyCanvas>(find.byType(SkyCanvas)).scene.heart;
+SkyConstellation? heartOf(WidgetTester tester) =>
+    tester.widget<SkyCanvas>(find.byType(SkyCanvas)).scene.constellation;
 
 Future<OurSpace> lockedSpace(WidgetTester tester, {FakeQuickUnlock? quick}) async {
   final space = await lockReal(tester, () => openLockSpace(quickUnlock: quick));

@@ -17,10 +17,10 @@ class _LineCounter implements Canvas {
   dynamic noSuchMethod(Invocation invocation) => null;
 }
 
-int heartLines(HeartConstellation heart) {
+int heartLines(SkyConstellation heart) {
   final canvas = _LineCounter();
   SkyLivePainter(
-    scene: SkyScene(heart: heart, twinkle: false, stars: 0, dayStars: 0),
+    scene: SkyScene(constellation: heart, twinkle: false, stars: 0, dayStars: 0),
     tokens: SkyTokens.night,
     time: SkyTime(),
   ).paint(canvas, const Size(390, 484));
@@ -101,9 +101,9 @@ void main() {
 
   group('heart constellation', () {
     test('29 points follow the sky.js heart curve', () {
-      const heart = HeartConstellation();
+      const heart = SkyConstellation();
       final points = heart.points;
-      expect(points, hasLength(HeartConstellation.count));
+      expect(points, hasLength(SkyConstellation.count));
       final t = 5 / 29 * math.pi * 2;
       final expected = Offset(
         195 + 6.4 * 16 * math.pow(math.sin(t), 3),
@@ -116,8 +116,8 @@ void main() {
     });
 
     test('centre and scale move the whole heart', () {
-      const small = HeartConstellation(center: Offset(100, 100), scale: 3.2);
-      const big = HeartConstellation(center: Offset(100, 100), scale: 6.4);
+      const small = SkyConstellation(center: Offset(100, 100), scale: 3.2);
+      const big = SkyConstellation(center: Offset(100, 100), scale: 6.4);
       final a = small.pointAt(7) - const Offset(100, 100);
       final b = big.pointAt(7) - const Offset(100, 100);
       expect(b.dx, closeTo(a.dx * 2, 1e-9));
@@ -125,7 +125,7 @@ void main() {
     });
 
     test('the gap is unlit until the heart is complete', () {
-      const heart = HeartConstellation(gap: 10, unlit: {3});
+      const heart = SkyConstellation(gap: 10, unlit: {3});
       expect(heart.hasOpenGap, isTrue);
       expect(heart.isLit(10), isFalse);
       expect(heart.isLit(3), isFalse);
@@ -159,11 +159,11 @@ void main() {
           sunAt: Offset(40, 420),
           skyline: 416,
           horizonGlow: true,
-          heart: HeartConstellation(),
+          constellation: SkyConstellation(),
           shootingStar: SkyShootingStar(),
         ),
       );
-      expect(SkyScene.home.copyWith(clearHeart: true).heart, isNull);
+      expect(SkyScene.home.copyWith(clearConstellation: true).constellation, isNull);
       expect(SkyScene.page.scaleFor(const Size(780, 100)), 2);
       expect(SkyScene.page.designHeightFor(const Size(780, 100)), 50);
       const shooting = SkyShootingStar();
@@ -182,7 +182,7 @@ void main() {
   });
 
   test('only the home heart draws the dotted guides and the plus into the empty star', () {
-    const home = HeartConstellation();
+    const home = SkyConstellation();
     final quiet = home.copyWith(gapGuide: false);
     final lit = home.copyWith(complete: true);
     expect(heartLines(quiet), heartLines(lit) - 2);
@@ -192,7 +192,7 @@ void main() {
 
   group('sky canvas', () {
     testWidgets('anchors sit on the heart points, scaled to the width', (tester) async {
-      const scene = SkyScene(heart: HeartConstellation());
+      const scene = SkyScene(constellation: SkyConstellation());
       await tester.pumpWidget(
         skyHost(
           const SkyCanvas(
@@ -218,11 +218,11 @@ void main() {
           size: const Size(780, 968),
         ),
       );
-      final q = scene.heart!.pointAt(24);
+      final q = scene.constellation!.pointAt(24);
       final qRect = tester.getRect(find.byKey(const Key('q')));
       expect(qRect.center.dx, closeTo(q.dx * 2, 0.01));
       expect(qRect.top, closeTo((q.dy + 18) * 2, 0.01));
-      final g = scene.heart!.pointAt(10);
+      final g = scene.constellation!.pointAt(10);
       expect(tester.getTopLeft(find.byKey(const Key('g'))), offsetMoreOrLessEquals((g + const Offset(18, -18)) * 2));
       expect(find.byKey(const Key('m')), findsNothing);
     });
@@ -242,7 +242,7 @@ void main() {
     });
 
     testWidgets('twinkles at a resting pace, streaks the shooting star and bursts the new star', (tester) async {
-      const still = SkyScene(heart: HeartConstellation(complete: false));
+      const still = SkyScene(constellation: SkyConstellation(complete: false));
       await tester.pumpWidget(skyHost(const SkyCanvas(scene: still), animations: true));
       await tester.pump(const Duration(milliseconds: 100));
       SkyLivePainter live() => tester
@@ -263,7 +263,10 @@ void main() {
       await tester.pumpWidget(
         skyHost(
           const SkyCanvas(
-            scene: SkyScene(heart: HeartConstellation(complete: true, burst: true), shootingStar: SkyShootingStar()),
+            scene: SkyScene(
+              constellation: SkyConstellation(complete: true, burst: true),
+              shootingStar: SkyShootingStar(),
+            ),
           ),
           animations: true,
         ),
@@ -290,7 +293,7 @@ void main() {
               child: SkyBackdrop(
                 fade: true,
                 scene: SkyScene.home.copyWith(
-                  heart: const HeartConstellation(complete: true, burst: true, dim: 0.6, unlit: {2, 3}),
+                  constellation: const SkyConstellation(complete: true, burst: true, dim: 0.6, unlit: {2, 3}),
                 ),
               ),
             ),

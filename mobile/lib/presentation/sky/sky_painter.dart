@@ -5,6 +5,7 @@ import 'package:flutter/animation.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/rendering.dart';
 
+import 'sky_constellation.dart';
 import 'sky_scene.dart';
 import 'sky_tokens.dart';
 
@@ -305,8 +306,8 @@ class SkyLivePainter extends CustomPainter {
     }
     final shooting = scene.shootingStar;
     if (shooting != null) _paintShootingStar(canvas, shooting);
-    final heart = scene.heart;
-    if (heart != null) _paintHeart(canvas, heart, field);
+    final constellation = scene.constellation;
+    if (constellation != null) _paintConstellation(canvas, constellation, field);
     canvas.restore();
   }
 
@@ -373,18 +374,18 @@ class SkyLivePainter extends CustomPainter {
     canvas.restore();
   }
 
-  void _paintHeart(Canvas canvas, HeartConstellation heart, SkyField field) {
+  void _paintConstellation(Canvas canvas, SkyConstellation figure, SkyField field) {
     final night = tokens.isNight;
-    final pts = heart.points;
-    final n = HeartConstellation.count;
-    final gap = heart.gap;
+    final pts = figure.points;
+    const n = SkyConstellation.count;
+    final gap = figure.gap;
     final sigma = tokens.glowSigma;
-    final burst = heart.burst && heart.complete && gap != null;
+    final burst = figure.burst && figure.complete && gap != null;
     final b = burst ? time.burst.clamp(0.0, 1.0) : 1.0;
 
-    final layer = heart.dim < 1;
+    final layer = figure.dim < 1;
     if (layer) {
-      canvas.saveLayer(null, Paint()..color = Color.fromRGBO(0, 0, 0, heart.dim));
+      canvas.saveLayer(null, Paint()..color = Color.fromRGBO(0, 0, 0, figure.dim));
     }
 
     final under = Paint()
@@ -394,8 +395,8 @@ class SkyLivePainter extends CustomPainter {
     for (var i = 0; i < n; i++) {
       final j = (i + 1) % n;
       final touchesGap = gap != null && (i == gap || j == gap);
-      if (!heart.complete && touchesGap) continue;
-      if (heart.unlit.contains(i) || heart.unlit.contains(j)) continue;
+      if (!figure.complete && touchesGap) continue;
+      if (figure.unlit.contains(i) || figure.unlit.contains(j)) continue;
       var a = pts[i];
       var c = pts[j];
       if (burst && touchesGap && b < 1) {
@@ -407,7 +408,7 @@ class SkyLivePainter extends CustomPainter {
         }
       }
       if (!night) canvas.drawLine(a, c, under);
-      final width = !night ? 1.3 : (heart.complete && touchesGap ? 1.6 : 0.9);
+      final width = !night ? 1.3 : (figure.complete && touchesGap ? 1.6 : 0.9);
       canvas.drawLine(
         a,
         c,
@@ -418,7 +419,7 @@ class SkyLivePainter extends CustomPainter {
       );
     }
 
-    if (heart.hasOpenGap && heart.gapGuide) {
+    if (figure.hasOpenGap && figure.gapGuide) {
       final g = pts[gap!];
       final before = pts[(gap - 1 + n) % n];
       final after = pts[(gap + 1) % n];
@@ -433,15 +434,15 @@ class SkyLivePainter extends CustomPainter {
 
     for (var i = 0; i < n; i++) {
       final p = pts[i];
-      if (heart.hasOpenGap && i == gap) {
-        _paintGap(canvas, p, plus: heart.gapGuide);
+      if (figure.hasOpenGap && i == gap) {
+        _paintGap(canvas, p, plus: figure.gapGuide);
         continue;
       }
-      if (heart.unlit.contains(i)) {
+      if (figure.unlit.contains(i)) {
         canvas.drawCircle(p, 1.3, Paint()..color = tokens.star.withValues(alpha: night ? 0.22 : 0.4));
         continue;
       }
-      final big = heart.isBig(i);
+      final big = figure.isBig(i);
       if (!night) canvas.drawCircle(p, big ? 9 : 4.6, Paint()..color = tokens.pointUnder);
       if (burst && i == gap) {
         _paintBurst(canvas, p, b, field);
@@ -461,9 +462,9 @@ class SkyLivePainter extends CustomPainter {
           ..strokeWidth = 0.8;
         canvas.drawLine(p - const Offset(11, 0), p + const Offset(11, 0), cross);
         canvas.drawLine(p - const Offset(0, 11), p + const Offset(0, 11), cross);
-        if (i == heart.partner && heart.presence) _paintPresence(canvas, p);
+        if (i == figure.partner && figure.presence) _paintPresence(canvas, p);
       } else {
-        final r = heart.smallRadius(i);
+        final r = figure.smallRadius(i);
         final w = _wave(i * 1.7, 2.6 + (i % 5) * 0.35);
         canvas.drawCircle(
           p,

@@ -8,7 +8,7 @@ import '../../../core/engine.dart';
 import '../../sky/sky.dart';
 import '../love/love_sheet.dart';
 import '../sky/sky_days.dart';
-import '../sky/sky_heart_plan.dart';
+import '../sky/sky_constellation_plan.dart';
 import '../sky/sky_sheet_layout.dart';
 import 'daily_answer_card.dart';
 import 'daily_copy.dart';
@@ -78,7 +78,7 @@ class DailyRevealPage extends StatefulWidget {
   static const double skyHeight = 420;
   static const double sheetTop = 360;
   static const Offset badgeAt = Offset(195, 314);
-  static const HeartConstellation heartBase = HeartConstellation(center: Offset(195, 206), scale: 5.1);
+  static const SkyConstellation constellationBase = SkyConstellation(center: Offset(195, 206), scale: 5.1);
 
   final DailyQuestionModel model;
   final VoidCallback? onSendLove;
@@ -87,7 +87,7 @@ class DailyRevealPage extends StatefulWidget {
     moon: const Offset(330, 120),
     sunAt: const Offset(30, 380),
     clouds: const [SkyCloud(322, 120, scale: 0.9, opacity: 0.8), SkyCloud(52, 200, scale: 0.6, opacity: 0.55)],
-    heart: SkyHeartPlan.reveal(stars: stars, base: heartBase),
+    constellation: SkyConstellationPlan.reveal(stars: stars, base: constellationBase),
   );
 
   @override

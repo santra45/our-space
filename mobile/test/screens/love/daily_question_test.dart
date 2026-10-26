@@ -8,7 +8,6 @@ import 'package:our_space_mobile/presentation/screens/daily/daily_question_model
 import 'package:our_space_mobile/presentation/screens/daily/daily_reveal_page.dart';
 import 'package:our_space_mobile/presentation/screens/love/love_sheet.dart';
 import 'package:our_space_mobile/presentation/screens/sky/sky_days.dart';
-import 'package:our_space_mobile/presentation/screens/sky/sky_heart_plan.dart';
 import 'package:our_space_mobile/presentation/sky/sky.dart';
 import 'package:our_space_mobile/presentation/widgets/app_haptics.dart';
 
@@ -291,9 +290,9 @@ void main() {
     final reveal = tester.widget<SkyBackdrop>(
       find.descendant(of: find.byType(DailyRevealPage), matching: find.byType(SkyBackdrop)),
     );
-    expect(reveal.scene.heart?.burst, isTrue);
-    expect(reveal.scene.heart?.complete, isTrue);
-    expect(reveal.scene.heart?.gap, SkyHeartPlan.order.first);
+    expect(reveal.scene.constellation?.burst, isTrue);
+    expect(reveal.scene.constellation?.complete, isTrue);
+    expect(reveal.scene.constellation?.gap, ConstellationShape.heart.order.first);
 
     final day = await drive(
       tester,
@@ -477,8 +476,8 @@ void main() {
     final reveal = tester.widget<SkyBackdrop>(
       find.descendant(of: find.byType(DailyRevealPage), matching: find.byType(SkyBackdrop)),
     );
-    expect(reveal.scene.heart?.gap, SkyHeartPlan.order[2]);
-    expect(reveal.scene.heart?.unlit, hasLength(26));
+    expect(reveal.scene.constellation?.gap, ConstellationShape.heart.order[2]);
+    expect(reveal.scene.constellation?.unlit, hasLength(26));
 
     await press(tester, find.byKey(DailyKeys.everyDay));
     await settleRoute(tester);
