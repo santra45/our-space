@@ -38,6 +38,17 @@
                 <data android:scheme="https" android:host="sameskytonight.vercel.app" />
             </intent-filter>
         </activity>
+        <receiver
+            android:name=".SkyWidgetProvider"
+            android:exported="false"
+            android:label="@string/sky_widget_name">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/sky_widget_info" />
+        </receiver>
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />

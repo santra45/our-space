@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="sky_widget_name">Our sky</string>
+    <string name="sky_widget_description">Your constellation and every star you have lit together</string>
+    <string name="sky_widget_empty">Our Space</string>
+    <color name="sky_widget_night">#0B0B2B</color>
+    <color name="sky_widget_night_text">#FFE8B5</color>
+    <color name="sky_widget_day_text">#2B2A6B</color>
+</resources>
