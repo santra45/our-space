@@ -597,7 +597,7 @@ void main() {
     });
 
     test('the moon line reads like a quiet aside', () {
-      expect(SkyHomeCopy.moonLine(const MoonPhase(4)), 'Waxing crescent · the same moon tonight');
+      expect(SkyHomeCopy.moonLine(const MoonPhase(4)), 'A growing crescent · the same moon tonight');
       expect(SkyHomeCopy.moonLine(MoonPhase(MoonPhase.synodicMonth / 2)), 'Full moon · the same moon tonight');
     });
   });

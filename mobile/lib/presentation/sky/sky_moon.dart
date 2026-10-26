@@ -5,13 +5,13 @@ import 'package:flutter/painting.dart';
 
 enum MoonPhaseName {
   newMoon('New moon'),
-  waxingCrescent('Waxing crescent'),
-  firstQuarter('First quarter'),
-  waxingGibbous('Waxing gibbous'),
+  waxingCrescent('A growing crescent'),
+  firstQuarter('Half moon'),
+  waxingGibbous('Almost full'),
   fullMoon('Full moon'),
-  waningGibbous('Waning gibbous'),
-  lastQuarter('Last quarter'),
-  waningCrescent('Waning crescent');
+  waningGibbous('Just past full'),
+  lastQuarter('Half moon'),
+  waningCrescent('A fading crescent');
 
   const MoonPhaseName(this.label);
 

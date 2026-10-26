@@ -46,7 +46,7 @@ void main() {
       final later = DateTime.utc(2000, 1, 6, 18, 14).add(const Duration(days: 10));
       expect(ageOn(later), closeTo(10, 1e-6));
       expect(ageOn(DateTime.utc(1999, 12, 31)), inInclusiveRange(0, MoonPhase.synodicMonth));
-      expect(MoonPhase.at(DateTime.utc(1999, 12, 31)).name, 'Last quarter');
+      expect(MoonPhase.at(DateTime.utc(1999, 12, 31)).name, 'Half moon');
     });
 
     test('full moon on 26 October 2026 and new moon on 9 November 2026, within a day of the tables', () {
@@ -66,26 +66,30 @@ void main() {
       expect(MoonPhase.at(DateTime.utc(2024, 4, 8, 18, 21)).daysFromNew, lessThan(1));
     });
 
-    test('quarters, crescents and gibbous nights get their names', () {
-      expect(MoonPhase.at(DateTime.utc(2026, 10, 18, 16, 13)).name, 'First quarter');
-      expect(MoonPhase.at(DateTime.utc(2026, 11, 1, 20, 28)).name, 'Last quarter');
-      expect(MoonPhase.at(DateTime.utc(2026, 10, 14, 12)).name, 'Waxing crescent');
-      expect(MoonPhase.at(DateTime.utc(2026, 10, 22, 12)).name, 'Waxing gibbous');
-      expect(MoonPhase.at(DateTime.utc(2026, 10, 29, 12)).name, 'Waning gibbous');
-      expect(MoonPhase.at(DateTime.utc(2026, 11, 5, 12)).name, 'Waning crescent');
+    test('every night of the month gets a plain, warm name', () {
+      expect(MoonPhase.at(DateTime.utc(2026, 10, 18, 16, 13)).name, 'Half moon');
+      expect(MoonPhase.at(DateTime.utc(2026, 11, 1, 20, 28)).name, 'Half moon');
+      expect(MoonPhase.at(DateTime.utc(2026, 10, 14, 12)).name, 'A growing crescent');
+      expect(MoonPhase.at(DateTime.utc(2026, 10, 22, 12)).name, 'Almost full');
+      expect(MoonPhase.at(DateTime.utc(2026, 10, 29, 12)).name, 'Just past full');
+      expect(MoonPhase.at(DateTime.utc(2026, 11, 5, 12)).name, 'A fading crescent');
       expect(
         [for (final name in MoonPhaseName.values) name.label],
         [
           'New moon',
-          'Waxing crescent',
-          'First quarter',
-          'Waxing gibbous',
+          'A growing crescent',
+          'Half moon',
+          'Almost full',
           'Full moon',
-          'Waning gibbous',
-          'Last quarter',
-          'Waning crescent',
+          'Just past full',
+          'Half moon',
+          'A fading crescent',
         ],
       );
+      final stargazing = RegExp(r'(waxing|waning|gibbous|quarter)', caseSensitive: false);
+      for (final name in MoonPhaseName.values) {
+        expect(stargazing.hasMatch(name.label), isFalse, reason: name.label);
+      }
     });
 
     test('the lit fraction grows to full and shrinks back, waxing then waning', () {
@@ -166,7 +170,7 @@ void main() {
     test('without a phase the resting crescent shows, and nothing at all by day', () {
       final resting = paintMoon(null);
       expect(resting.paths, hasLength(3));
-      expect(MoonPhase.resting.name, 'Waxing crescent');
+      expect(MoonPhase.resting.name, 'A growing crescent');
       expect(paintMoon(const MoonPhase(4), tokens: SkyTokens.day).paths, isEmpty);
       expect(paintMoon(const MoonPhase(4), moon: null).paths, isEmpty);
     });
