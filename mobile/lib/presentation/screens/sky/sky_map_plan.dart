@@ -16,6 +16,7 @@ abstract final class SkyMapKeys {
   static const Key keepNote = ValueKey<String>('sky-map-keep-note');
   static const Key detail = ValueKey<String>('sky-map-detail');
   static const Key canvas = ValueKey<String>('sky-map-canvas');
+  static const Key ghost = ValueKey<String>('sky-map-ghost');
   static const Key starTouch = ValueKey<String>('sky-map-star-touch');
   static const Key status = ValueKey<String>('sky-map-status');
   static const Key myName = ValueKey<String>('sky-map-my-name');
@@ -78,6 +79,8 @@ abstract final class SkyMapPlan {
   static const double maxWidth = 520;
   static const double maxScale = 11;
   static const double margin = 28;
+  static const double edge = 8;
+  static const double ghostDim = 0.16;
 
   static SkyMapEntries entriesOf(ConstellationSeries series) {
     if (series.stars <= 0) return const SkyMapEntries();
@@ -110,10 +113,45 @@ abstract final class SkyMapPlan {
     return Rect.fromLTRB(0, upper, size.width / k, lower);
   }
 
-  static SkyConstellation fit(SkyConstellation figure, Rect frame, {double margin = margin, double limit = maxScale}) {
-    final fitted = figure.fitted(frame, margin: margin);
-    if (fitted.scale <= limit) return fitted;
+  static SkyConstellation fit(
+    SkyConstellation figure,
+    Rect frame, {
+    double margin = margin,
+    double limit = maxScale,
+    bool names = false,
+  }) {
     final room = frame.deflate(margin);
-    return figure.copyWith(center: room.center - figure.shape.unitBounds.center * limit, scale: limit);
+    SkyConstellation at(double scale) =>
+        figure.copyWith(center: room.center - figure.shape.unitBounds.center * scale, scale: scale);
+    var fitted = figure.fitted(frame, margin: margin);
+    if (fitted.scale > limit) fitted = at(limit);
+    if (!names) return fitted;
+    for (var i = 0; i < 40 && nameSpill(fitted, frame) > 0; i++) {
+      fitted = at(fitted.scale * 0.96);
+    }
+    return fitted;
+  }
+
+  static List<Rect> nameAreas(SkyConstellation figure) =>
+      SkyConstellationPlan.labelAreas(figure, me: true, partner: true, partnerChip: false);
+
+  static double nameSpill(SkyConstellation figure, Rect frame) {
+    var spill = 0.0;
+    for (final area in nameAreas(figure)) {
+      spill += math.max(0, frame.left + edge - area.left) + math.max(0, area.right - (frame.right - edge));
+    }
+    return spill;
+  }
+
+  static SkyConstellation? ghostOf(SkyConstellation figure) {
+    if (figure.complete && figure.unlit.isEmpty) return null;
+    return figure.copyWith(
+      complete: true,
+      clearGap: true,
+      unlit: const <int>{},
+      presence: false,
+      burst: false,
+      dim: ghostDim,
+    );
   }
 }
