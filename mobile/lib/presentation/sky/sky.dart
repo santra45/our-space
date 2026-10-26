@@ -1,5 +1,6 @@
 export 'sky_canvas.dart';
 export 'sky_constellation.dart';
+export 'sky_constellation_view.dart';
 export 'sky_controls.dart';
 export 'sky_dock.dart';
 export 'sky_icons.dart';
