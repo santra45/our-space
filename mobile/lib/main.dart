@@ -7,6 +7,8 @@ import 'package:flutter/services.dart';
 import 'core/engine.dart';
 import 'presentation/deep_links.dart';
 import 'presentation/home_shell.dart';
+import 'presentation/home_widget/sky_widget_host.dart';
+import 'presentation/home_widget/sky_widget_sync.dart';
 import 'presentation/screens/lock/lock_screen.dart';
 import 'presentation/space_scope.dart';
 import 'presentation/sky/sky.dart';
@@ -53,11 +55,12 @@ Future<OurSpace> openOurSpace() async => OurSpace.open(pushPlatform: await Fireb
 Widget vaultGate(BuildContext context, Widget shell) => InviteLinkGate(shell: shell);
 
 class OurSpaceApp extends StatefulWidget {
-  const OurSpaceApp({super.key, this.openSpace = openOurSpace, this.gate = vaultGate, this.shell});
+  const OurSpaceApp({super.key, this.openSpace = openOurSpace, this.gate = vaultGate, this.shell, this.skyWidget});
 
   final SpaceOpener openSpace;
   final VaultGateBuilder gate;
   final Widget? shell;
+  final SkyWidgetPublisher? skyWidget;
 
   @override
   State<OurSpaceApp> createState() => _OurSpaceAppState();
@@ -68,6 +71,7 @@ class _OurSpaceAppState extends State<OurSpaceApp> {
   bool _failed = false;
   int _attempt = 0;
   SkyModeController _sky = SkyModeController();
+  late final SkyWidgetPublisher? _skyWidget = widget.skyWidget ?? SkyWidgetPublisher.forPlatform();
 
   @override
   void initState() {
@@ -129,7 +133,12 @@ class _OurSpaceAppState extends State<OurSpaceApp> {
             controller: sky,
             child: SpaceScope(
               space: space,
-              child: Stack(fit: StackFit.expand, children: [navigator!, const VaultWarningBanner()]),
+              child: SkyWidgetLink(
+                space: space,
+                sky: sky,
+                publisher: _skyWidget,
+                child: Stack(fit: StackFit.expand, children: [navigator!, const VaultWarningBanner()]),
+              ),
             ),
           );
         },
