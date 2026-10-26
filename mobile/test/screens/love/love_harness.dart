@@ -110,21 +110,21 @@ void calm(WidgetTester tester) {
   addTearDown(tester.platformDispatcher.clearAccessibilityFeaturesTestValue);
 }
 
-Future<OurSpace> coupleSpace(WidgetTester tester) async {
+Future<OurSpace> coupleSpace(WidgetTester tester, {String me = 'Sam', String partner = 'Alex'}) async {
   final space = await real(tester, openLoveSpace);
   await real(
     tester,
     () => space.vault.create(
       passphrase: passphrase,
-      coupleNames: 'Sam & Alex',
+      coupleNames: '$me & $partner',
       startDate: startDate,
       iterations: fastIterations,
     ),
   );
-  await real(tester, () => space.identity.createCouple(myName: 'Sam', partnerName: 'Alex', partnerPronoun: 'she'));
+  await real(tester, () => space.identity.createCouple(myName: me, partnerName: partner, partnerPronoun: 'she'));
   await real(tester, space.identity.refresh);
   expect(space.identity.status, IdentityStatus.ready);
-  expect(space.identity.partnerName, 'Alex');
+  expect(space.identity.partnerName, partner);
   return space;
 }
 

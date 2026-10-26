@@ -298,6 +298,33 @@ void main() {
       await settle(tester, space);
     });
 
+    testWidgets('long names in larger text stay whole on a narrow phone', (tester) async {
+      calm(tester);
+      tester.view.physicalSize = const Size(1080, 2220);
+      tester.platformDispatcher.textScaleFactorTestValue = 1.3;
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+      const me = 'Christopher';
+      const partner = 'Alexandria';
+      const size = SkyConstellation.count;
+      final space = await coupleSpace(tester, me: me, partner: partner);
+      await bothAnswered(tester, space, (ConstellationShape.values.length - 1) * size + 2);
+      for (var index = 0; index < ConstellationShape.values.length; index++) {
+        await pumpNight(tester, space, shell: MapHost(detail: index));
+        await untilFound(tester, find.byKey(SkyMapKeys.partnerName));
+        expect(detailScene(tester).constellation!.shape, ConstellationShape.at(index));
+        final screen = tester.getRect(find.byKey(SkyMapKeys.canvas));
+        for (final (key, name) in [(SkyMapKeys.myName, me), (SkyMapKeys.partnerName, partner)]) {
+          final label = tester.getRect(find.byKey(key));
+          final measured = SkyNameLabel.measure(tester.element(find.byKey(key)), name);
+          expect(label.width, closeTo(measured.width, 0.01), reason: '$index $name');
+          expect(label.height, closeTo(measured.height, 0.01), reason: '$index $name');
+          expect(label.left, greaterThanOrEqualTo(screen.left), reason: '$index $name');
+          expect(label.right, lessThanOrEqualTo(screen.right), reason: '$index $name');
+        }
+      }
+      await settle(tester, space);
+    });
+
     testWidgets('a constellation waiting for its first star has nothing to tap yet', (tester) async {
       calm(tester);
       final space = await coupleSpace(tester);

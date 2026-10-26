@@ -165,6 +165,38 @@ void main() {
       expect(SkyMapPlan.fit(const SkyConstellation(), phone, names: true).scale, heart.scale);
     });
 
+    test('longer names make room for themselves and still stay inside the sky', () {
+      final frame = SkyMapPlan.frameFor(const Size(360, 740), const EdgeInsets.only(top: 24, bottom: 16));
+      final inside = frame.deflate(SkyMapPlan.edge);
+      const meSize = Size(118, 22);
+      const partnerSize = Size(111, 22);
+      for (final shape in [ConstellationShape.moon, ConstellationShape.star]) {
+        final figure = SkyConstellation(shape: shape);
+        final usual = SkyMapPlan.fit(figure, frame, names: true);
+        final wide = SkyMapPlan.fit(figure, frame, names: true, meSize: meSize, partnerSize: partnerSize);
+        expect(wide.scale, lessThan(usual.scale), reason: shape.name);
+        expect(SkyMapPlan.nameSpill(wide, frame, meSize: meSize, partnerSize: partnerSize), 0, reason: shape.name);
+        final areas = SkyMapPlan.nameAreas(wide, meSize: meSize, partnerSize: partnerSize);
+        expect(areas.first.width, closeTo(meSize.width, 1e-6));
+        expect(areas.last.width, closeTo(partnerSize.width, 1e-6));
+        for (final area in areas) {
+          expect(area.left, greaterThanOrEqualTo(inside.left - 1e-6), reason: shape.name);
+          expect(area.right, lessThanOrEqualTo(inside.right + 1e-6), reason: shape.name);
+        }
+        final group = SkyMapPlan.nameGroup(wide, meSize: meSize, partnerSize: partnerSize);
+        expect(group.center.dx, closeTo(frame.center.dx, 1e-6), reason: shape.name);
+      }
+      final heart = SkyMapPlan.fit(const SkyConstellation(), frame, names: true);
+      final quiet = SkyMapPlan.fit(
+        const SkyConstellation(),
+        frame,
+        names: true,
+        meSize: Size.zero,
+        partnerSize: Size.zero,
+      );
+      expect(quiet.scale, heart.scale);
+    });
+
     test('the moon keeps nearly its full size when both names sit beside it', () {
       for (final size in const [Size(390, 844), Size(360, 740), Size(412, 915)]) {
         final frame = SkyMapPlan.frameFor(size, const EdgeInsets.only(top: 24, bottom: 16));

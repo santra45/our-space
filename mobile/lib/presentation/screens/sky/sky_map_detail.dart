@@ -170,7 +170,14 @@ class _SkyMapConstellationPageState extends State<SkyMapConstellationPage> {
           top: SkyMapConstellationPage.topRoom,
           bottom: SkyMapConstellationPage.bottomRoom,
         );
-        final figure = SkyMapPlan.fit(base, frame, names: me != null || partner != null);
+        Size nameSize(String? name) => name == null ? Size.zero : SkyNameLabel.measure(context, name) / k;
+        final figure = SkyMapPlan.fit(
+          base,
+          frame,
+          names: me != null || partner != null,
+          meSize: nameSize(me),
+          partnerSize: nameSize(partner),
+        );
         final ghost = SkyMapPlan.ghostOf(figure);
         final anchors = <SkyAnchor>[
           for (final night in chapter.nights)

@@ -119,6 +119,8 @@ abstract final class SkyMapPlan {
     double margin = margin,
     double limit = maxScale,
     bool names = false,
+    Size? meSize,
+    Size? partnerSize,
   }) {
     final room = frame.deflate(margin);
     SkyConstellation at(double scale) =>
@@ -127,26 +129,37 @@ abstract final class SkyMapPlan {
     if (fitted.scale > limit) fitted = at(limit);
     if (!names) return fitted;
     SkyConstellation centred(SkyConstellation shown) {
-      final group = nameGroup(shown);
+      final group = nameGroup(shown, meSize: meSize, partnerSize: partnerSize);
       return shown.copyWith(center: shown.center + Offset(frame.center.dx - group.center.dx, 0));
     }
 
     fitted = centred(fitted);
-    for (var i = 0; i < 40 && nameSpill(fitted, frame) > 0; i++) {
+    for (var i = 0; i < 40 && nameSpill(fitted, frame, meSize: meSize, partnerSize: partnerSize) > 0; i++) {
       fitted = centred(at(fitted.scale * 0.96));
     }
     return fitted;
   }
 
-  static Rect nameGroup(SkyConstellation figure) =>
-      nameAreas(figure).fold<Rect>(figure.bounds, (group, area) => group.expandToInclude(area));
+  static Rect nameGroup(SkyConstellation figure, {Size? meSize, Size? partnerSize}) => nameAreas(
+    figure,
+    meSize: meSize,
+    partnerSize: partnerSize,
+  ).fold<Rect>(figure.bounds, (group, area) => group.expandToInclude(area));
 
-  static List<Rect> nameAreas(SkyConstellation figure) =>
-      SkyConstellationPlan.labelAreas(figure, me: true, partner: true, partnerChip: false);
+  static List<Rect> nameAreas(SkyConstellation figure, {Size? meSize, Size? partnerSize}) {
+    final shape = figure.shape;
+    return [
+      shape.meLabel.area(figure.pointAt(figure.me), meSize ?? SkyConstellationPlan.meLabelSize),
+      shape.partnerLabel.area(
+        figure.pointAt(figure.partner),
+        partnerSize ?? SkyConstellationPlan.partnerLabelSize(chip: false),
+      ),
+    ];
+  }
 
-  static double nameSpill(SkyConstellation figure, Rect frame) {
+  static double nameSpill(SkyConstellation figure, Rect frame, {Size? meSize, Size? partnerSize}) {
     var spill = 0.0;
-    for (final area in nameAreas(figure)) {
+    for (final area in nameAreas(figure, meSize: meSize, partnerSize: partnerSize)) {
       spill += math.max(0, frame.left + edge - area.left) + math.max(0, area.right - (frame.right - edge));
     }
     return spill;

@@ -183,6 +183,19 @@ class SkyNameLabel extends StatelessWidget {
 
   final String name;
 
+  static Size measure(BuildContext context, String name) {
+    var style = DefaultTextStyle.of(context).style.merge(SkyType.name);
+    if (MediaQuery.boldTextOf(context)) style = style.merge(const TextStyle(fontWeight: FontWeight.bold));
+    final painter = TextPainter(
+      text: TextSpan(text: name, style: style),
+      textDirection: TextDirection.ltr,
+      textScaler: MediaQuery.textScalerOf(context),
+    )..layout();
+    final size = painter.size;
+    painter.dispose();
+    return size;
+  }
+
   @override
   Widget build(BuildContext context) {
     final t = context.sky;
