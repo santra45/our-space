@@ -5,7 +5,8 @@ import 'package:our_space_mobile/presentation/screens/sky/sky_map_plan.dart';
 import 'package:our_space_mobile/presentation/screens/sky/sky_night_sheet.dart';
 import 'package:our_space_mobile/presentation/sky/sky.dart';
 
-final RegExp _emoji = RegExp(r'[\p{Extended_Pictographic}\u{FE0F}]', unicode: true);
+const String _emojiPattern = r'[\p{Extended_Pictographic}\u{FE0F}]';
+final RegExp _emoji = RegExp(_emojiPattern, unicode: true);
 final RegExp _engineWords = RegExp(
   r'\b(sync\w*|devices?|pair\w*|servers?|upload\w*|download\w*|data|peers?|relays?|mailbox\w*|encrypt\w*|keys?)\b',
   caseSensitive: false,
