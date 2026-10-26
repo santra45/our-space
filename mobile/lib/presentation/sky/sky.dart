@@ -5,6 +5,7 @@ export 'sky_dock.dart';
 export 'sky_icons.dart';
 export 'sky_metrics.dart';
 export 'sky_mode.dart';
+export 'sky_moon.dart';
 export 'sky_motion.dart';
 export 'sky_overlays.dart';
 export 'sky_painter.dart';

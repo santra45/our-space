@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/widgets.dart';
 
+import 'sky_moon.dart';
 import 'sky_motion.dart';
 import 'sky_painter.dart';
 import 'sky_scene.dart';
@@ -179,6 +180,9 @@ class _SkyCanvasState extends State<SkyCanvas> with SingleTickerProviderStateMix
   Widget build(BuildContext context) {
     final tokens = context.sky;
     final scene = widget.scene;
+    final painted = scene.moon != null && scene.moonPhase == null
+        ? scene.copyWith(moonPhase: MoonPhase.tonight())
+        : scene;
     return LayoutBuilder(
       builder: (context, constraints) {
         final size = constraints.biggest;
@@ -189,13 +193,13 @@ class _SkyCanvasState extends State<SkyCanvas> with SingleTickerProviderStateMix
           children: [
             RepaintBoundary(
               child: CustomPaint(
-                painter: SkyBackdropPainter(scene: scene, tokens: tokens),
+                painter: SkyBackdropPainter(scene: painted, tokens: tokens),
                 isComplex: true,
               ),
             ),
             RepaintBoundary(
               child: CustomPaint(
-                painter: SkyLivePainter(scene: scene, tokens: tokens, time: _time),
+                painter: SkyLivePainter(scene: painted, tokens: tokens, time: _time),
               ),
             ),
             for (final anchor in widget.anchors)

@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/painting.dart';
 
 import 'sky_constellation.dart';
+import 'sky_moon.dart';
 
 class SkyRandom {
   SkyRandom(int seed) : _seed = seed <= 0 ? 7 : seed;
@@ -74,6 +75,7 @@ class SkyScene {
     this.stars = 70,
     this.dayStars = 12,
     this.moon,
+    this.moonPhase,
     this.sun = true,
     this.sunAt,
     this.clouds = defaultClouds,
@@ -119,6 +121,7 @@ class SkyScene {
   final int stars;
   final int dayStars;
   final Offset? moon;
+  final MoonPhase? moonPhase;
   final bool sun;
   final Offset? sunAt;
   final List<SkyCloud> clouds;
@@ -140,6 +143,7 @@ class SkyScene {
     int? dayStars,
     Offset? moon,
     bool clearMoon = false,
+    MoonPhase? moonPhase,
     bool? sun,
     Offset? sunAt,
     List<SkyCloud>? clouds,
@@ -159,6 +163,7 @@ class SkyScene {
       stars: stars ?? this.stars,
       dayStars: dayStars ?? this.dayStars,
       moon: clearMoon ? null : (moon ?? this.moon),
+      moonPhase: moonPhase ?? this.moonPhase,
       sun: sun ?? this.sun,
       sunAt: sunAt ?? this.sunAt,
       clouds: clouds ?? this.clouds,
@@ -179,6 +184,7 @@ class SkyScene {
       other.stars == stars &&
       other.dayStars == dayStars &&
       other.moon == moon &&
+      other.moonPhase == moonPhase &&
       other.sun == sun &&
       other.sunAt == sunAt &&
       listEquals(other.clouds, clouds) &&
@@ -196,6 +202,7 @@ class SkyScene {
     stars,
     dayStars,
     moon,
+    moonPhase,
     sun,
     sunAt,
     Object.hashAll(clouds),

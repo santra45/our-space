@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/rendering.dart';
 
 import 'sky_constellation.dart';
+import 'sky_moon.dart';
 import 'sky_scene.dart';
 import 'sky_tokens.dart';
 
@@ -38,15 +39,54 @@ class SkyTime extends ChangeNotifier {
 }
 
 abstract final class SkyShapes {
-  static final Path moon = () {
-    final path = Path()
-      ..moveTo(8.2, 5)
-      ..arcToPoint(const Offset(-2, -9.4), radius: const Radius.circular(9.6), largeArc: true)
-      ..arcToPoint(const Offset(8.2, 5), radius: const Radius.circular(7.4), clockwise: false)
-      ..close();
-    final rotation = Matrix4.rotationZ(-14 * math.pi / 180);
-    return path.transform(rotation.storage);
-  }();
+  static const double moonRadius = 9.2;
+  static const double moonHalo = 46;
+  static const double moonTilt = 22 * math.pi / 180;
+  static const Color moonLight = Color(0xFFFFF2DC);
+  static const Color moonGlow = Color(0xFFFFECD1);
+
+  static void moon(Canvas canvas, Offset center, double k, MoonPhase phase, double sigma) {
+    final glow = 0.3 + 0.7 * phase.illumination;
+    final haloRadius = moonHalo * k;
+    canvas.drawCircle(
+      center,
+      haloRadius,
+      Paint()
+        ..shader = ui.Gradient.radial(
+          center,
+          haloRadius,
+          [
+            moonGlow.withValues(alpha: 0.35 * glow),
+            moonGlow.withValues(alpha: 0.1 * glow),
+            moonGlow.withValues(alpha: 0),
+          ],
+          const [0, 0.45, 1],
+        ),
+    );
+    canvas.save();
+    canvas.translate(center.dx, center.dy);
+    canvas.scale(k);
+    canvas.rotate(moonTilt);
+    canvas.drawCircle(Offset.zero, moonRadius, Paint()..color = moonLight.withValues(alpha: 0.07));
+    if (phase.isNew) {
+      canvas.drawCircle(
+        Offset.zero,
+        moonRadius,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 0.9
+          ..color = moonLight.withValues(alpha: 0.38),
+      );
+    }
+    final lit = phase.litPath(moonRadius);
+    final blur = Paint()
+      ..color = moonLight
+      ..maskFilter = MaskFilter.blur(BlurStyle.normal, sigma);
+    canvas.drawPath(lit, blur);
+    canvas.drawPath(lit, blur);
+    canvas.drawPath(lit, Paint()..color = moonLight);
+    canvas.restore();
+  }
 
   static const String _skyline =
       'M0 Y58 L0 Y22 L22 Y22 L28 Y14 L36 Y22 L52 Y22 C58 Y16 64 Y8 72 Y8 C80 Y8 85 Y18 92 Y18 L108 Y18 L116 Y8 L124 Y18 '
@@ -185,32 +225,7 @@ class SkyBackdropPainter extends CustomPainter {
         );
       }
       final moon = scene.moon;
-      if (moon != null) {
-        final center = moon * k;
-        final haloRadius = 46 * k;
-        canvas.drawCircle(
-          center,
-          haloRadius,
-          Paint()
-            ..shader = ui.Gradient.radial(
-              center,
-              haloRadius,
-              const [Color(0x59FFECD1), Color(0x1AFFECD1), Color(0x00FFECD1)],
-              const [0, 0.45, 1],
-            ),
-        );
-        canvas.save();
-        canvas.translate(center.dx, center.dy);
-        canvas.scale(k);
-        final moonPaint = Paint()..color = const Color(0xFFFFF2DC);
-        final blur = Paint()
-          ..color = const Color(0xFFFFF2DC)
-          ..maskFilter = MaskFilter.blur(BlurStyle.normal, tokens.glowSigma);
-        canvas.drawPath(SkyShapes.moon, blur);
-        canvas.drawPath(SkyShapes.moon, blur);
-        canvas.drawPath(SkyShapes.moon, moonPaint);
-        canvas.restore();
-      }
+      if (moon != null) SkyShapes.moon(canvas, moon * k, k, scene.moonPhase ?? MoonPhase.resting, tokens.glowSigma);
     } else {
       if (scene.sun) {
         final at = (scene.sunAt ?? Offset(40, h - 56)) * k;
