@@ -306,5 +306,44 @@ void main() {
       expect(publisher.states.last.label, '2 stars');
       expect(publisher.states.where((state) => state.stars == 2), hasLength(1));
     });
+
+    testWidgets('the link follows a new publisher and stops without one', (tester) async {
+      final space = (await tester.runAsync(coupleSpace))!;
+      await tester.runAsync(() => pastNights(space, 1));
+      final first = RecordingPublisher();
+      final second = RecordingPublisher();
+      Future<void> settleWith(RecordingPublisher publisher) async {
+        for (var i = 0; i < 300 && publisher.states.isEmpty; i++) {
+          await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 10)));
+          await tester.pump();
+        }
+      }
+
+      Widget link(SkyWidgetPublisher? publisher) =>
+          SkyWidgetLink(space: space, sky: sky, publisher: publisher, child: const SizedBox.shrink());
+
+      await tester.pumpWidget(link(first));
+      await settleWith(first);
+      expect(first.states.single.label, '1 star');
+
+      await tester.pumpWidget(link(second));
+      await settleWith(second);
+      expect(second.states.single.label, '1 star');
+      expect(first.states, hasLength(1));
+
+      await tester.pumpWidget(link(null));
+      clock.now = DateTime(2026, 10, 27, 9);
+      sky.refresh();
+      await tester.runAsync(quiet);
+      await tester.pump();
+      expect(first.states, hasLength(1));
+      expect(second.states, hasLength(1));
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.runAsync(() async {
+        await quiet();
+        await space.close();
+      });
+    });
   });
 }
