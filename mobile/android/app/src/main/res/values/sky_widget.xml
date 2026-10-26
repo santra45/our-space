@@ -6,4 +6,5 @@
     <color name="sky_widget_night">#0B0B2B</color>
     <color name="sky_widget_night_text">#FFE8B5</color>
     <color name="sky_widget_day_text">#2B2A6B</color>
+    <dimen name="sky_widget_radius">22dp</dimen>
 </resources>
