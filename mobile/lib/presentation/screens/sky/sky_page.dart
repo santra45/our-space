@@ -17,6 +17,7 @@ import 'sky_days.dart';
 import 'sky_constellation_plan.dart';
 import 'sky_constellations.dart';
 import 'sky_letters_watch.dart';
+import 'sky_map_page.dart';
 import 'sky_marks.dart';
 import 'sky_night_sheet.dart';
 import 'sky_sheet_layout.dart';
@@ -57,6 +58,7 @@ class _OurSkyPageState extends State<OurSkyPage> with WidgetsBindingObserver {
   bool _sheetOpen = false;
   bool _revealOpen = false;
   bool _nightOpen = false;
+  bool _mapOpen = false;
   bool? _relive;
 
   @override
@@ -117,6 +119,13 @@ class _OurSkyPageState extends State<OurSkyPage> with WidgetsBindingObserver {
     _nightOpen = false;
     if (!mounted || result != StarNightResult.everyDay) return;
     await _openSheet(archive: true);
+  }
+
+  Future<void> _openMap() async {
+    if (_mapOpen || !mounted) return;
+    _mapOpen = true;
+    await openSkyMap(context, model: _daily);
+    _mapOpen = false;
   }
 
   void _touchSky(Offset design, SkyConstellation constellation, ConstellationChapter chapter, double scale) {
@@ -359,7 +368,7 @@ class _OurSkyPageState extends State<OurSkyPage> with WidgetsBindingObserver {
           value: SkyHomeCopy.stars(stars),
           label: SkyHomeCopy.starsLabel(stars),
           valueColor: t.gold,
-          onTap: () => unawaited(_openSheet(archive: true)),
+          onTap: () => unawaited(_openMap()),
         ),
         SkyStat(
           key: SkyPageKeys.milestoneStat,

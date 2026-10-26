@@ -14,6 +14,8 @@ import 'package:our_space_mobile/presentation/screens/sky/sky_constellations.dar
 import 'package:our_space_mobile/presentation/screens/sky/sky_days.dart';
 import 'package:our_space_mobile/presentation/screens/sky/sky_night_sheet.dart';
 import 'package:our_space_mobile/presentation/screens/sky/sky_constellation_plan.dart';
+import 'package:our_space_mobile/presentation/screens/sky/sky_map_page.dart';
+import 'package:our_space_mobile/presentation/screens/sky/sky_map_plan.dart';
 import 'package:our_space_mobile/presentation/screens/sky/sky_page.dart';
 import 'package:our_space_mobile/presentation/screens/sky/sky_sheet_layout.dart';
 import 'package:our_space_mobile/presentation/screens/sky/sky_stats.dart';
@@ -426,7 +428,7 @@ void main() {
     await settle(tester, space);
   });
 
-  testWidgets('the stats lead to every day so far, our story and the letters', (tester) async {
+  testWidgets('the stats lead to the sky map and every day so far, our story and the letters', (tester) async {
     calm(tester);
     final space = await coupleSpace(tester);
     await pumpNight(tester, space);
@@ -434,9 +436,15 @@ void main() {
 
     await tester.tap(find.byKey(SkyPageKeys.starsStat));
     await settleRoute(tester);
+    expect(find.byType(SkyMapPage), findsOneWidget);
+    await press(tester, find.byKey(SkyMapKeys.everyDay));
+    await settleRoute(tester);
     await untilFound(tester, find.text('EVERY DAY SO FAR'));
     await press(tester, iconButton(DailyCopy.close));
     await settleRoute(tester);
+    await tester.tap(semanticsLabelled('Back'));
+    await settleRoute(tester);
+    expect(find.byType(SkyMapPage), findsNothing);
 
     await tester.tap(find.byKey(SkyPageKeys.milestoneStat));
     await tester.pump();
