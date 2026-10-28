@@ -467,12 +467,12 @@ class _OurSkyPageState extends State<OurSkyPage> with WidgetsBindingObserver {
             child: Stack(fit: StackFit.expand, children: [backdrop, keepsakes]),
           ),
         );
-        if (!togetherReady) return touch;
         return Stack(
           fit: StackFit.expand,
           children: [
             touch,
-            SkyTogetherLayer(home: together, constellation: constellation, partner: partner, moonPhase: moonPhase),
+            if (togetherReady)
+              SkyTogetherLayer(home: together, constellation: constellation, partner: partner, moonPhase: moonPhase),
           ],
         );
       },

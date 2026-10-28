@@ -184,10 +184,13 @@ void main() {
         .widget<AnimatedOpacity>(find.ancestor(of: find.byKey(SkyPageKeys.letterTip), matching: find.byType(AnimatedOpacity)))
         .opacity;
     expect(tipOpacity(), 1);
+    final canvas = find.descendant(of: find.byKey(SkyPageKeys.canvas), matching: find.byType(SkyCanvas));
+    final before = tester.state(canvas);
     phones.pair.connect();
     await phones.meet();
     expect(find.text(SkyTogetherCopy.hold(true)), findsOneWidget);
     expect(tipOpacity(), 0);
+    expect(tester.state(canvas), same(before));
     phones.pair.drop();
     await phones.run(beat * 2);
     expect(find.text(SkyTogetherCopy.hold(true)), findsNothing);
