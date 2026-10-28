@@ -42,7 +42,6 @@ class SkyTogetherHome extends ChangeNotifier {
   String? _unfinished;
   int? _lastTick;
   bool _visible = true;
-  bool _ready = true;
   bool _disposed = false;
 
   void Function(SkyPatchSession session)? onOpen;
@@ -69,15 +68,6 @@ class SkyTogetherHome extends ChangeNotifier {
     _sync();
   }
 
-  bool get ready => _ready;
-
-  set ready(bool value) {
-    if (value == _ready || _disposed) return;
-    _ready = value;
-    if (!value) release();
-    _sync();
-  }
-
   void _announceHere() {
     if (_disposed) return;
     link.setPresence(here: _visible || _session != null);
@@ -87,7 +77,7 @@ class SkyTogetherHome extends ChangeNotifier {
     if (_disposed || _session != null) return SkyTogetherStage.off;
     final phase = gate.phaseAt(link.sharedNow());
     if (phase == SkyGatePhase.opening || phase == SkyGatePhase.open) return SkyTogetherStage.opening;
-    if (!_visible || !_ready || !link.together) return SkyTogetherStage.off;
+    if (!_visible || !link.together) return SkyTogetherStage.off;
     return switch (phase) {
       SkyGatePhase.idle => SkyTogetherStage.invite,
       SkyGatePhase.holdingAlone => SkyTogetherStage.alone,
@@ -230,7 +220,7 @@ class SkyTogetherHome extends ChangeNotifier {
   @override
   void dispose() {
     if (_disposed) return;
-    release();
+    if (gate.holding) link.sendHold(down: false);
     final session = _session;
     _session = null;
     if (session != null) unawaited(session.leave().whenComplete(session.dispose));
