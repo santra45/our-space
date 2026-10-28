@@ -23,6 +23,12 @@ import 'sky_night_sheet.dart';
 import 'sky_sheet_layout.dart';
 import 'sky_stats.dart';
 import 'together/sky_keepsakes.dart';
+import 'together/sky_patch_page.dart';
+import 'together/sky_patch_session.dart';
+import 'together/sky_together_home.dart';
+import 'together/sky_together_layer.dart';
+import 'together/sky_together_route.dart';
+import 'together/sky_together_scope.dart';
 
 abstract final class SkyPageKeys {
   static const Key canvas = ValueKey<String>('sky-home-canvas');
@@ -62,6 +68,13 @@ class _OurSkyPageState extends State<OurSkyPage> with WidgetsBindingObserver {
   bool _nightOpen = false;
   bool _mapOpen = false;
   bool? _relive;
+  SkyTogetherHome? _together;
+  VaultService? _vault;
+  (bool, bool)? _announced;
+  SkyPanHome? _panHome;
+  String? _partnerName;
+  String? _myName;
+  int? _dayNumber;
 
   @override
   void initState() {
@@ -69,6 +82,56 @@ class _OurSkyPageState extends State<OurSkyPage> with WidgetsBindingObserver {
     final space = context.space;
     _letters = SkyLettersWatch(space.letters, settings: space.store.settings);
     WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final link = SkyTogetherScope.maybeOf(context);
+    if (identical(link, _together?.link)) return;
+    _together?.dispose();
+    _announced = null;
+    _together = link == null
+        ? null
+        : (SkyTogetherHome(
+            link: link,
+            drawings: SkyTogetherScope.drawingsOf(context),
+            keyOf: () => _vault?.key,
+          )..onOpen = _openPatch);
+  }
+
+  void _present({required bool visible, required bool night}) {
+    if (_announced == (visible, night)) return;
+    _announced = (visible, night);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _together?.present(visible: visible, night: night);
+    });
+  }
+
+  void _openPatch(SkyPatchSession session) {
+    final home = _together;
+    final pan = _panHome;
+    final partner = _partnerName;
+    if (!mounted || home == null || pan == null || partner == null) {
+      unawaited(home?.endSession());
+      return;
+    }
+    unawaited(
+      Navigator.of(context).push<void>(
+        SkyTogetherRoute<void>(
+          home: pan,
+          motion: skyMotionAllowed(context),
+          builder: (_) => SkyPatchPage(
+            session: session,
+            partner: partner,
+            me: _myName,
+            dayNumber: _dayNumber,
+            onClosed: () => unawaited(home.endSession()),
+          ),
+        ),
+      ),
+    );
   }
 
   @override
@@ -81,6 +144,7 @@ class _OurSkyPageState extends State<OurSkyPage> with WidgetsBindingObserver {
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _together?.dispose();
     _daily.dispose();
     _letters.dispose();
     _topBar.dispose();
@@ -171,8 +235,10 @@ class _OurSkyPageState extends State<OurSkyPage> with WidgetsBindingObserver {
     final me = identity.me != null ? identity.myName : null;
     final partner = identity.partner != null ? identity.partnerName : null;
     final startDate = vault.config?.startDate;
+    _vault = vault;
+    final together = _together;
     return ListenableBuilder(
-      listenable: _changes,
+      listenable: together == null ? _changes : Listenable.merge([_changes, together]),
       builder: (context, _) => _build(
         context,
         presence: presence,
@@ -204,13 +270,26 @@ class _OurSkyPageState extends State<OurSkyPage> with WidgetsBindingObserver {
     final litToday = _daily.bothIn;
     final waiting = _letters.waiting;
     final series = ConstellationSeries.fromAnswered(_daily.nights, today: _daily.todayKey ?? dayKey());
-    final constellation = SkyConstellationPlan.forSeries(series, presence: presence.isHere);
+    final together = _together;
+    final togetherReady = together != null && loaded && partner != null;
+    final stage = togetherReady ? together.stage : SkyTogetherStage.off;
+    final holdingTogether = stage == SkyTogetherStage.together || stage == SkyTogetherStage.opening;
+    final constellation = SkyConstellationPlan.forSeries(series, presence: presence.isHere && !holdingTogether);
     final shape = constellation.shape;
     final showTonight = _daily.visible && !litToday;
     final tonightAt = constellation.gap == null ? null : constellation.pointAt(constellation.gap!);
     final scaler = MediaQuery.textScalerOf(context);
     final k = SkyPageFrame.scaleOf(MediaQuery.sizeOf(context).width);
     final letterTip = SkyTip.measure(SkyHomeCopy.letterFell, textScaler: scaler) / k;
+    final lineRect = partner == null
+        ? null
+        : SkyTogetherLine.rectFor(stage, night: night, partner: partner, tokens: t, scaler: scaler, scale: k);
+    final letterYields = waiting > 0 && lineRect != null && lineRect.overlaps(OurSkyPage.letterTipAt & letterTip);
+    _present(visible: TickerMode.valuesOf(context).enabled, night: night);
+    _panHome = SkyPanHome(constellation: constellation.copyWith(presence: false), moonPhase: moonPhase);
+    _partnerName = partner;
+    _myName = me;
+    _dayNumber = dayNumber;
     final avoid = [
       ...SkyConstellationPlan.labelAreas(
         constellation,
@@ -249,7 +328,7 @@ class _OurSkyPageState extends State<OurSkyPage> with WidgetsBindingObserver {
               child: const SizedBox.square(dimension: SkyConstellation.hitRadius),
             ),
           ),
-      if (loaded && presence.isHere && partner != null && !constellation.isLit(constellation.partner))
+      if (loaded && presence.isHere && partner != null && !holdingTogether && !constellation.isLit(constellation.partner))
         const SkyAnchor(
           at: SkyPoint.partner(),
           alignment: Alignment.center,
@@ -316,13 +395,20 @@ class _OurSkyPageState extends State<OurSkyPage> with WidgetsBindingObserver {
         SkyAnchor(
           at: const SkyPoint.design(OurSkyPage.letterTipAt),
           alignment: Alignment.topLeft,
-          child: SkyEntrance(
-            delay: const Duration(milliseconds: 620),
-            child: SkyTip(
-              key: SkyPageKeys.letterTip,
-              text: SkyHomeCopy.letterFell,
-              icon: SkyIcons.letter,
-              onTap: () => _select(SkyTab.letters),
+          child: IgnorePointer(
+            ignoring: letterYields,
+            child: AnimatedOpacity(
+              opacity: letterYields ? 0 : 1,
+              duration: skyMotionAllowed(context) ? SkyMotion.quick : Duration.zero,
+              child: SkyEntrance(
+                delay: const Duration(milliseconds: 620),
+                child: SkyTip(
+                  key: SkyPageKeys.letterTip,
+                  text: SkyHomeCopy.letterFell,
+                  icon: SkyIcons.letter,
+                  onTap: () => _select(SkyTab.letters),
+                ),
+              ),
             ),
           ),
         ),
@@ -368,7 +454,7 @@ class _OurSkyPageState extends State<OurSkyPage> with WidgetsBindingObserver {
     final sky = LayoutBuilder(
       builder: (context, box) {
         final scale = box.maxWidth.isFinite && box.maxWidth > 0 ? box.maxWidth / SkyPageFrame.designWidth : k;
-        return GestureDetector(
+        final touch = GestureDetector(
           key: SkyPageKeys.starTouch,
           behavior: HitTestBehavior.translucent,
           onTapUp: loaded && chapter.started
@@ -380,6 +466,14 @@ class _OurSkyPageState extends State<OurSkyPage> with WidgetsBindingObserver {
             label: skyLabel,
             child: Stack(fit: StackFit.expand, children: [backdrop, keepsakes]),
           ),
+        );
+        if (!togetherReady) return touch;
+        return Stack(
+          fit: StackFit.expand,
+          children: [
+            touch,
+            SkyTogetherLayer(home: together, constellation: constellation, partner: partner, moonPhase: moonPhase),
+          ],
         );
       },
     );
