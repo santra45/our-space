@@ -364,6 +364,8 @@ class _SkyKeepsakesState extends State<SkyKeepsakes> {
   List<SkyKeepsakeSpot> _last = const [];
   final Map<String, SkyKeepsakeSpot> _leaving = {};
   final Map<String, (int, SkyDrawnSketch)> _sketches = {};
+  (String?, TextScaler, Size)? _line;
+  (List<Rect>, Size, List<Rect>)? _slots;
 
   @override
   void didChangeDependencies() {
@@ -413,13 +415,29 @@ class _SkyKeepsakesState extends State<SkyKeepsakes> {
     });
   }
 
+  Size _measured(String? partner, TextScaler scaler) {
+    final cached = _line;
+    if (cached != null && cached.$1 == partner && cached.$2 == scaler) return cached.$3;
+    final size = SkyKeepsakePlan.measureLine(partner, textScaler: scaler);
+    _line = (partner, scaler, size);
+    return size;
+  }
+
+  List<Rect> _slotsFor(List<Rect> avoid) {
+    final cached = _slots;
+    if (cached != null && listEquals(cached.$1, avoid) && cached.$2 == widget.sky) return cached.$3;
+    final slots = SkyKeepsakePlan.slots(sky: widget.sky, avoid: avoid);
+    _slots = (avoid, widget.sky, slots);
+    return slots;
+  }
+
   List<SkyKeepsakeSpot> _plan(
     BuildContext context, {
     required double topBarBottom,
     required double k,
     required bool night,
   }) {
-    final line = SkyKeepsakePlan.measureLine(widget.partner, textScaler: MediaQuery.textScalerOf(context));
+    final line = _measured(widget.partner, MediaQuery.textScalerOf(context));
     final avoid = SkyKeepsakePlan.avoid(
       sky: widget.sky,
       constellation: widget.constellation,
@@ -430,7 +448,7 @@ class _SkyKeepsakesState extends State<SkyKeepsakes> {
       line: line / k,
       streak: widget.streak,
     );
-    return SkyKeepsakePlan.spots(finished: _finished, slots: SkyKeepsakePlan.slots(sky: widget.sky, avoid: avoid));
+    return SkyKeepsakePlan.spots(finished: _finished, slots: _slotsFor(avoid));
   }
 
   void _track(List<SkyKeepsakeSpot> spots, {required bool motion}) {
