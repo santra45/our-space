@@ -7,6 +7,7 @@ export '../models/memory_record.dart';
 export '../models/milestone_record.dart';
 export '../models/person_record.dart';
 export '../models/plain_record.dart';
+export '../models/sky_drawing_record.dart';
 export '../models/vault_config.dart';
 export 'engine/crypto/aes_gcm.dart' show VaultKey, CryptoFailure;
 export 'engine/crypto/base64.dart' show generateUrlSafeNonce, isValidSalt, isValidBase64;
@@ -27,6 +28,8 @@ export 'engine/invite/invite.dart' show Invite, parseInvite, buildInviteUrl, def
 export 'engine/our_space.dart';
 export 'engine/p2p/peer_hub.dart' show PeerSyncHub, PeerNotice;
 export 'engine/p2p/peer_status.dart';
+export 'engine/p2p/sky_together_link.dart';
+export 'engine/p2p/sky_together_wire.dart';
 export 'engine/repositories/bucket_list_repository.dart';
 export 'engine/repositories/letters_repository.dart';
 export 'engine/repositories/memories_repository.dart';

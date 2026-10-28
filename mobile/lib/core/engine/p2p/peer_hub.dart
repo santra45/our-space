@@ -12,6 +12,7 @@ import '../vault/vault_service.dart';
 import 'peer_clock.dart';
 import 'peer_status.dart';
 import 'peer_sync_engine.dart';
+import 'sky_together_link.dart';
 
 const String trustedPartnerKey = 'sweetheart_trusted_partner_id';
 const String pairedPartnerKey = 'sweetheart_paired_partner_id';
@@ -47,6 +48,11 @@ class PeerSyncHub extends ChangeNotifier {
     engine.addConfigListener(_handleConfigSynced);
     vault.addListener(_onVault);
     _rowsSub = store.localRows.listen(_onLocalRow);
+    skyTogether = SkyTogetherLink(
+      transport: _HubSkyTransport(this),
+      owner: () => identity.myOwnerId ?? identity.people.device.deviceId,
+      clock: _clock,
+    );
     _lastKey = vault.key;
     if (_lastKey != null && autoStart) start();
   }
@@ -59,6 +65,7 @@ class PeerSyncHub extends ChangeNotifier {
   final PeerClock _clock;
 
   late final StreamSubscription<SealedWrite> _rowsSub;
+  late final SkyTogetherLink skyTogether;
   final StreamController<PeerNotice> _notices = StreamController<PeerNotice>.broadcast();
   final StreamController<PeerLinkState> _linkStates = StreamController<PeerLinkState>.broadcast();
   final StreamController<PeerStatus> _statuses = StreamController<PeerStatus>.broadcast();
@@ -438,12 +445,13 @@ class PeerSyncHub extends ChangeNotifier {
   }
 
   void onForeground() {
+    skyTogether.setForeground(true);
     if (!_active) return;
     engine.onForeground();
     _maybeResume();
   }
 
-  void onBackground() {}
+  void onBackground() => skyTogether.setForeground(false);
 
   void _maybeResume() {
     if (!_active) return;
@@ -462,6 +470,7 @@ class PeerSyncHub extends ChangeNotifier {
 
   @override
   void dispose() {
+    skyTogether.dispose();
     _disposed = true;
     _active = false;
     _ready = false;
@@ -478,4 +487,41 @@ class PeerSyncHub extends ChangeNotifier {
     unawaited(_statuses.close());
     super.dispose();
   }
+}
+
+class _HubSkyTransport implements SkyTogetherTransport {
+  _HubSkyTransport(this._hub);
+
+  final PeerSyncHub _hub;
+  void Function()? _onReadiness;
+  void Function(Object? event)? _onEvent;
+
+  @override
+  bool get ready => _hub._active && !_hub._disposed && _hub.isAuthorized;
+
+  @override
+  void attach({required void Function() onReadiness, required void Function(Object? event) onEvent}) {
+    _onReadiness = onReadiness;
+    _onEvent = onEvent;
+    _hub.addListener(_readiness);
+    _hub.engine.addSkyTogetherListener(_event);
+  }
+
+  void _readiness() => _onReadiness?.call();
+
+  void _event(Object? event) {
+    if (ready) _onEvent?.call(event);
+  }
+
+  @override
+  void detach() {
+    _hub.removeListener(_readiness);
+    _hub.engine.removeSkyTogetherListener(_event);
+    _onReadiness = null;
+    _onEvent = null;
+  }
+
+  @override
+  Future<bool> send(Map<String, Object?> event) =>
+      ready ? _hub.engine.sendSkyTogether(event) : Future<bool>.value(false);
 }
