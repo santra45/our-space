@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -98,7 +99,11 @@ class SkyTogetherLayer extends StatefulWidget {
 class _SkyTogetherLayerState extends State<SkyTogetherLayer> with SingleTickerProviderStateMixin {
   late final Ticker _ticker = createTicker(_onTick);
   final ValueNotifier<SkyTogetherPaint?> _frame = ValueNotifier<SkyTogetherPaint?>(null);
-  double _base = 0;
+  static const Duration _rest = Duration(milliseconds: 28);
+
+  Duration? _origin;
+  Timer? _resting;
+  bool _fresh = true;
   double _now = 0;
   double _last = 0;
   bool _motion = true;
@@ -183,27 +188,46 @@ class _SkyTogetherLayerState extends State<SkyTogetherLayer> with SingleTickerPr
 
   bool get _wanted => widget.home.needsTicks || (_motion && _stage != SkyTogetherStage.off) || !_settled;
 
+  bool get _ambient => !widget.home.needsTicks && _settled;
+
   void _wake() {
     if (!mounted) return;
-    if (_wanted) {
-      if (!_ticker.isActive) {
-        _last = _now;
-        _ticker.start();
-      }
-    } else if (_ticker.isActive) {
-      _ticker.stop();
-      _base = _now;
+    if (!_wanted) {
+      _resting?.cancel();
+      _resting = null;
+      if (_ticker.isActive) _ticker.stop();
+      _fresh = true;
+      return;
     }
+    if (_resting != null && !_ambient) {
+      _resting!.cancel();
+      _resting = null;
+    }
+    if (!_ticker.isActive && _resting == null) _ticker.start();
   }
 
-  void _onTick(Duration elapsed) {
-    _now = _base + elapsed.inMicroseconds / 1e6;
+  void _onTick(Duration _) {
+    final stamp = SchedulerBinding.instance.currentFrameTimeStamp;
+    final origin = _origin ??= stamp;
+    _now = (stamp - origin).inMicroseconds / 1e6;
+    if (_fresh) {
+      _last = _now;
+      _fresh = false;
+    }
     widget.home.tick();
     if (!mounted) return;
     _compute();
     if (!_wanted) {
       _ticker.stop();
-      _base = _now;
+      _fresh = true;
+      return;
+    }
+    if (_ambient) {
+      _ticker.stop();
+      _resting = Timer(_rest, () {
+        _resting = null;
+        _wake();
+      });
     }
   }
 
@@ -342,6 +366,7 @@ class _SkyTogetherLayerState extends State<SkyTogetherLayer> with SingleTickerPr
   @override
   void dispose() {
     widget.home.removeListener(_onHome);
+    _resting?.cancel();
     _ticker.dispose();
     _frame.dispose();
     super.dispose();
