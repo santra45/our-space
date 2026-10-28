@@ -14,6 +14,11 @@ import 'sky_keepsakes_home_test.dart' show daysAgo, drew;
 
 DateTime get start => SkyDays.startOf(startDate)!;
 
+Widget dayRoutes() => Theme(
+  data: SkyThemes.legacy(SkyTokens.day),
+  child: Navigator(onGenerateRoute: (settings) => MaterialPageRoute<void>(settings: settings, builder: (_) => const MapHost())),
+);
+
 SkyDrawingRecord made({required String name, required String night, int createdAt = 1000}) => SkyDrawingRecord.tryParse(
   SkyDrawingRecord.fieldsFor(
     id: 'sky-test',
@@ -196,7 +201,7 @@ void main() {
       calm(tester);
       final space = await coupleSpace(tester);
       final record = await drew(tester, space, 'Day kite', at: daysAgo(1));
-      await pumpLove(tester, space, shell: dayHost());
+      await pumpLove(tester, space, shell: dayRoutes());
       await untilFound(tester, find.byKey(SkyDrawnKeys.tile(record.id)));
       await press(tester, find.byKey(SkyDrawnKeys.tile(record.id)));
       await settleRoute(tester);
