@@ -2,13 +2,12 @@ import 'package:intl/intl.dart';
 
 abstract final class UsCopy {
   static const String title = 'Us';
-  static const String fallbackKicker = 'The two of us';
+  static const String kicker = 'The two of us';
   static const String story = 'Our story';
   static const String dreams = 'Dreams';
   static const String dates = 'Date night';
   static const String dateLabel = 'Date';
-
-  static String since(DateTime start, DateTime now) => 'Since ${UsDates.long(start, now)}';
+  static const String since = 'Since';
 }
 
 abstract final class UsDates {

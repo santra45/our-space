@@ -61,7 +61,8 @@ void main() {
     await untilFound(tester, find.text(BucketCopy.count(0, 6)));
 
     expect(find.byType(ShellAvatar), findsOneWidget);
-    expect(find.text('SINCE 14 JUNE 2021'), findsOneWidget);
+    expect(find.text('THE TWO OF US'), findsOneWidget);
+    expect(find.text('Since 14 June 2021'), findsOneWidget);
     final order = [
       find.byKey(UsKeys.hero),
       find.byKey(UsKeys.upcoming),

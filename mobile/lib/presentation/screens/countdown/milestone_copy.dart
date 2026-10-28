@@ -1,7 +1,7 @@
 abstract final class MilestoneCopy {
   static const String together = 'Together, and counting';
-  static const String days = 'days';
-  static const String hours = 'hours';
+  static const String and = 'and';
+  static const String hours = 'hrs';
   static const String minutes = 'min';
   static const String seconds = 'sec';
   static const String changeDay = 'Change the day we began';
@@ -53,6 +53,8 @@ abstract final class MilestoneCopy {
     'Ten',
     'Eleven',
   ];
+
+  static String dayWord(int days) => days == 1 ? 'day' : 'days';
 
   static String today(int day) => 'Today · day $day';
 

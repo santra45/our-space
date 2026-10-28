@@ -54,6 +54,8 @@ void main() {
       expect(MilestoneCopy.todayStar(lit: null, stars: 3, night: true), MilestoneCopy.todayNote);
       expect(MilestoneCopy.clock(1, 1, 1), 'Together 1 day, 1 hour and 1 minute');
       expect(MilestoneCopy.clock(28, 14, 32), 'Together 28 days, 14 hours and 32 minutes');
+      expect(MilestoneCopy.dayWord(1), 'day');
+      expect(MilestoneCopy.dayWord(28), 'days');
       expect(twoDigitCount(7), '07');
       expect(twoDigitCount(42), '42');
     });
@@ -65,7 +67,6 @@ void main() {
       expect(UsDates.short(DateTime(2025, 10, 2), now), '2 Oct');
       expect(UsDates.short(DateTime(2021, 6, 14), now), '14 Jun 2021');
       expect(UsDates.full(DateTime(2025, 9, 25)), '25 September 2025');
-      expect(UsCopy.since(DateTime(2025, 9, 25), now), 'Since 25 September');
     });
   });
 
@@ -179,10 +180,13 @@ void main() {
     expect(find.text(twoDigitCount(duration.hours)), findsOneWidget);
     expect(find.text(twoDigitCount(duration.minutes)), findsOneWidget);
     expect(find.text('05'), findsOneWidget);
-    for (final label in ['DAYS', 'HOURS', 'MIN', 'SEC']) {
+    expect(find.text('days'), findsOneWidget);
+    expect(find.text(MilestoneCopy.and), findsOneWidget);
+    for (final label in ['HRS', 'MIN', 'SEC']) {
       expect(find.text(label), findsOneWidget);
     }
-    expect(find.text('SINCE 14 JUNE 2021'), findsOneWidget);
+    expect(find.text('THE TWO OF US'), findsOneWidget);
+    expect(find.descendant(of: find.byKey(UsKeys.since), matching: find.text('Since 14 June 2021')), findsOneWidget);
     expect(find.text('Us'), findsWidgets);
     final gold = tester.widget<Text>(find.text('${duration.totalDays}')).style!;
     expect(gold.color, SkyTokens.night.gold);
@@ -224,7 +228,7 @@ void main() {
     expect(find.text('0'), findsOneWidget);
     expect(find.text('18'), findsOneWidget);
     expect(find.text('30'), findsOneWidget);
-    expect(find.text('SINCE 12 OCTOBER'), findsOneWidget);
+    expect(find.text('Since 12 October 2025'), findsOneWidget);
     expect(find.text(MilestoneCopy.beganNote('12 Oct')), findsOneWidget);
     expect(find.text('One month'), findsOneWidget);
     await rest(tester, space);
@@ -235,7 +239,7 @@ void main() {
     final now = DateTime(2025, 10, 12, 9).millisecondsSinceEpoch;
     final space = await usSpace(tester);
     await pumpUs(tester, space, clock: () => now);
-    await untilFound(tester, find.text('SINCE 14 JUNE 2021'));
+    await untilFound(tester, find.text('Since 14 June 2021'));
 
     await pressAndSettle(tester, find.byKey(UsKeys.hero));
     expect(find.text(MilestoneCopy.dayTitle), findsOneWidget);
@@ -256,7 +260,7 @@ void main() {
     await press(tester, find.byKey(UsKeys.togetherSave));
     await until(tester, () => space.vault.config?.startDate == '2021-06-20');
     await settleRoutes(tester);
-    await untilFound(tester, find.text('SINCE 20 JUNE 2021'));
+    await untilFound(tester, find.text('Since 20 June 2021'));
     expect(find.text(MilestoneCopy.dayTitle), findsNothing);
     expect(recordedHaptics, contains(HapticKind.celebration));
     final duration = calculateLoveDuration('2021-06-20', now: now);

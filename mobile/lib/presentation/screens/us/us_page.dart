@@ -124,14 +124,14 @@ class _UsPageState extends State<UsPage> {
           padding: const EdgeInsets.fromLTRB(SkySpace.gutter, SkySpace.gutter, SkySpace.gutter, 0),
           spacing: 0,
           topBar: SkyTopBar(
-            kicker: UsCopy.since(start, now),
+            kicker: UsCopy.kicker,
             title: UsCopy.title,
             trailing: const Padding(padding: EdgeInsets.only(top: 6), child: ShellAvatar()),
           ),
           children: [
             _anchored(
               UsSection.story,
-              TogetherHero(key: UsKeys.hero, counter: _counter, onTap: () => _changeDay(startDate)),
+              TogetherHero(key: UsKeys.hero, counter: _counter, since: start, onTap: () => _changeDay(startDate)),
             ),
             Padding(
               padding: const EdgeInsets.only(top: SkySpace.md),
