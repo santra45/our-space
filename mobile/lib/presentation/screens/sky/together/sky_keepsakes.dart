@@ -11,6 +11,8 @@ import '../../../sky/sky.dart';
 import 'sky_drawn.dart';
 import 'sky_drawn_placement.dart';
 import 'sky_drawn_watch.dart';
+import 'sky_together_copy.dart';
+import 'sky_together_fx.dart';
 import 'sky_together_scope.dart';
 
 @immutable
@@ -54,7 +56,7 @@ class SkyKeepsakeSpot {
 
 abstract final class SkyKeepsakePlan {
   static const int maxShown = 4;
-  static const Offset sun = Offset(278, 112);
+  static const Offset sun = SkyTogetherSpot.sun;
   static const double moonLineGap = 28;
   static const double sunLineGap = 36;
   static const double lineEdge = 18;
@@ -66,10 +68,10 @@ abstract final class SkyKeepsakePlan {
   static final TextStyle lineStyle = SkyType.serif(15, weight: FontWeight.w500, height: 1.2);
 
   static List<String> lines(String? partner) => [
-    'Hold the moon together',
-    'Hold the sun together',
-    "You're both holding on",
-    if (partner != null && partner.trim().isNotEmpty) 'Waiting for ${partner.trim()} to hold on too',
+    SkyTogetherCopy.hold(true),
+    SkyTogetherCopy.hold(false),
+    SkyTogetherCopy.bothHolding,
+    if (partner != null && partner.trim().isNotEmpty) SkyTogetherCopy.waiting(partner.trim()),
   ];
 
   static Size measureLine(String? partner, {TextScaler textScaler = TextScaler.noScaling}) {

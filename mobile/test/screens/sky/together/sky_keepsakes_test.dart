@@ -7,6 +7,9 @@ import 'package:our_space_mobile/presentation/screens/sky/sky_constellation_plan
 import 'package:our_space_mobile/presentation/screens/sky/together/sky_drawn.dart';
 import 'package:our_space_mobile/presentation/screens/sky/together/sky_drawn_placement.dart';
 import 'package:our_space_mobile/presentation/screens/sky/together/sky_keepsakes.dart';
+import 'package:our_space_mobile/presentation/screens/sky/together/sky_together_fx.dart';
+import 'package:our_space_mobile/presentation/screens/sky/together/sky_together_home.dart';
+import 'package:our_space_mobile/presentation/screens/sky/together/sky_together_layer.dart';
 import 'package:our_space_mobile/presentation/sky/sky.dart';
 
 const String her = 'owner-aaaa1111';
@@ -194,6 +197,32 @@ void main() {
         SkyKeepsakePlan.measureLine('Alex', textScaler: const TextScaler.linear(1.5)).width,
         greaterThan(measured.width),
       );
+    });
+
+    test('the room kept for the invitation covers the line home really shows at every step', () {
+      for (final night in [true, false]) {
+        for (final scale in [1.0, 1.3]) {
+          final scaler = TextScaler.linear(scale);
+          final room = SkyKeepsakePlan.lineArea(SkyKeepsakePlan.measureLine('Alex', textScaler: scaler), night: night)!;
+          for (final stage in SkyTogetherStage.values.where((stage) => stage != SkyTogetherStage.off)) {
+            final shown = SkyTogetherLine.rectFor(
+              stage,
+              night: night,
+              partner: 'Alex',
+              tokens: night ? SkyTokens.night : SkyTokens.day,
+              scaler: scaler,
+              scale: 1,
+            )!;
+            final why = '$stage, night $night, text $scale';
+            expect(room.left, lessThanOrEqualTo(shown.left + 0.01), reason: why);
+            expect(room.top, lessThanOrEqualTo(shown.top + 0.01), reason: why);
+            expect(room.right, greaterThanOrEqualTo(shown.right - 0.01), reason: why);
+            expect(room.bottom, greaterThanOrEqualTo(shown.bottom - 0.01), reason: why);
+          }
+        }
+      }
+      expect(SkyKeepsakePlan.bodyOf(night: true), SkyTogetherSpot.moon);
+      expect(SkyKeepsakePlan.bodyOf(night: false), SkyTogetherSpot.sun);
     });
   });
 
