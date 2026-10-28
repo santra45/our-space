@@ -22,6 +22,7 @@ import 'sky_marks.dart';
 import 'sky_night_sheet.dart';
 import 'sky_sheet_layout.dart';
 import 'sky_stats.dart';
+import 'together/sky_keepsakes.dart';
 
 abstract final class SkyPageKeys {
   static const Key canvas = ValueKey<String>('sky-home-canvas');
@@ -55,6 +56,7 @@ class _OurSkyPageState extends State<OurSkyPage> with WidgetsBindingObserver {
   late final DailyQuestionModel _daily = DailyQuestionModel(context.space);
   late final SkyLettersWatch _letters;
   late final Listenable _changes = Listenable.merge([_daily, _letters]);
+  final ValueNotifier<double?> _topBar = ValueNotifier<double?>(null);
   bool _sheetOpen = false;
   bool _revealOpen = false;
   bool _nightOpen = false;
@@ -81,7 +83,12 @@ class _OurSkyPageState extends State<OurSkyPage> with WidgetsBindingObserver {
     WidgetsBinding.instance.removeObserver(this);
     _daily.dispose();
     _letters.dispose();
+    _topBar.dispose();
     super.dispose();
+  }
+
+  void _measureTopBar(double height) {
+    if (mounted) _topBar.value = height;
   }
 
   Future<void> _openSheet({bool archive = false}) async {
@@ -223,14 +230,10 @@ class _OurSkyPageState extends State<OurSkyPage> with WidgetsBindingObserver {
     final latest = chapter.latest;
     final relive = latest != null && _reliveTip(eligible: loaded && !showTonight);
     final reliveAt = latest != null && relive ? constellation.pointAt(latest.slot) : null;
+    final reliveSize = SkyTip.measure(StarNightCopy.relive, textScaler: scaler) / k;
     final relivePlacement = reliveAt == null
         ? null
-        : SkyConstellationPlan.tipFor(
-            reliveAt,
-            constellation: constellation,
-            avoid: avoid,
-            size: SkyTip.measure(StarNightCopy.relive, textScaler: scaler) / k,
-          );
+        : SkyConstellationPlan.tipFor(reliveAt, constellation: constellation, avoid: avoid, size: reliveSize);
 
     final anchors = <SkyAnchor>[
       if (loaded)
@@ -346,6 +349,22 @@ class _OurSkyPageState extends State<OurSkyPage> with WidgetsBindingObserver {
         anchors: anchors,
       ),
     );
+    final keepsakes = SkyKeepsakes(
+      constellation: constellation,
+      topBar: _topBar,
+      sky: const Size(SkyPageFrame.designWidth, OurSkyPage.skyHeight),
+      sheetTop: OurSkyPage.sheetTopMin,
+      avoid: [
+        ...avoid,
+        if (showTonight && tonightAt != null && placement != null)
+          SkyConstellationPlan.tipRect(tonightAt, placement, tipSize),
+        if (reliveAt != null && relivePlacement != null)
+          SkyConstellationPlan.tipRect(reliveAt, relivePlacement, reliveSize),
+      ],
+      streak: waiting > 0 ? SkyScene.home.shootingStar : null,
+      partner: partner,
+      shown: loaded,
+    );
     final sky = LayoutBuilder(
       builder: (context, box) {
         final scale = box.maxWidth.isFinite && box.maxWidth > 0 ? box.maxWidth / SkyPageFrame.designWidth : k;
@@ -355,7 +374,12 @@ class _OurSkyPageState extends State<OurSkyPage> with WidgetsBindingObserver {
           onTapUp: loaded && chapter.started
               ? (details) => _touchSky(details.localPosition / scale, constellation, chapter, scale)
               : null,
-          child: Semantics(container: true, image: true, label: skyLabel, child: backdrop),
+          child: Semantics(
+            container: true,
+            image: true,
+            label: skyLabel,
+            child: Stack(fit: StackFit.expand, children: [backdrop, keepsakes]),
+          ),
         );
       },
     );
@@ -427,12 +451,15 @@ class _OurSkyPageState extends State<OurSkyPage> with WidgetsBindingObserver {
         minSheetTop: OurSkyPage.sheetTopMin,
         maxSheetTop: OurSkyPage.sheetTop,
         sky: sky,
-        top: SkyEntrance(
-          child: SkyTopBar(
-            kicker: SkyHomeCopy.kicker(night: night, dayNumber: dayNumber, weekday: weekday),
-            note: night ? SkyHomeCopy.moonLine(moonPhase) : null,
-            title: SkyHomeCopy.title(night),
-            trailing: const ShellAvatar(),
+        top: SkyHeightProbe(
+          onHeight: _measureTopBar,
+          child: SkyEntrance(
+            child: SkyTopBar(
+              kicker: SkyHomeCopy.kicker(night: night, dayNumber: dayNumber, weekday: weekday),
+              note: night ? SkyHomeCopy.moonLine(moonPhase) : null,
+              title: SkyHomeCopy.title(night),
+              trailing: const ShellAvatar(),
+            ),
           ),
         ),
         sheet: sheet,
