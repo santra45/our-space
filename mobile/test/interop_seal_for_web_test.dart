@@ -56,7 +56,7 @@ void main() {
     final webRows = asStringMap(fixture['rows'])!;
     final tombstones = <Map<String, Object?>>[];
 
-    for (final table in syncedTables) {
+    for (final table in webSyncedTables) {
       for (final entry in (webRows[table] as List).cast<Map>()) {
         final fields = _plainFields(entry['expected']);
         final id = fields['id'] as String;
@@ -95,7 +95,7 @@ void main() {
     final samples = <Map<String, Object?>>[];
     final liveIds = <String, Object?>{};
     var liveCount = 0;
-    for (final table in syncedTables) {
+    for (final table in webSyncedTables) {
       final list = <Map<String, Object?>>[];
       final live = <String>[];
       for (final row in await store.allRows(table)) {

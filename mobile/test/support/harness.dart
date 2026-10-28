@@ -4,8 +4,14 @@ import 'dart:typed_data';
 
 import 'package:our_space_mobile/core/engine/crypto/base64.dart';
 import 'package:our_space_mobile/core/engine/crypto/js_compat.dart';
+import 'package:our_space_mobile/core/engine/storage/tables.dart';
 import 'package:our_space_mobile/core/engine/storage/vault_store.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+
+final List<String> webSyncedTables = [
+  for (final table in syncedTables)
+    if (!appOnlyTables.contains(table)) table,
+];
 
 bool _ffiReady = false;
 

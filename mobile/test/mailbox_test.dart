@@ -376,7 +376,7 @@ void main() {
       final liveCount = liveIds.values.fold<int>(0, (n, list) => n + (list as List).length);
       expect(got.applied, liveCount + tombstones.length);
 
-      for (final table in syncedTables) {
+      for (final table in webSyncedTables) {
         final have = (await store.allRows(table)).where((r) => r['deleted'] != true).map((r) => r['id']).toList()..sort();
         expect(have, liveIds[table], reason: table);
       }
@@ -386,7 +386,7 @@ void main() {
       }
 
       final webRows = asStringMap(fixture['rows'])!;
-      for (final table in syncedTables) {
+      for (final table in webSyncedTables) {
         for (final entry in (webRows[table] as List).cast<Map>()) {
           final expected = asStringMap(fromFixtureValue(entry['expected']))!;
           if (expected['deleted'] == true) continue;

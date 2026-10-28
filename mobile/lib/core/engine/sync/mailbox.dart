@@ -245,6 +245,7 @@ class Mailbox {
       final entries = local[table] ?? const <Map<String, Object?>>[];
       final already = <Object?, (Object?, bool)>{};
       final publishedEntries = published?[table];
+      if (entries.isEmpty && publishedEntries == null && appOnlyTables.contains(table)) continue;
       if (publishedEntries is List) {
         for (final e in publishedEntries) {
           if (e is Map) already[e['id']] = (e['updatedAt'], e['deleted'] == true);

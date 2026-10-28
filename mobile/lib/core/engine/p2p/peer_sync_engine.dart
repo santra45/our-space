@@ -69,7 +69,7 @@ const String localPeerIdKey = 'sweetheart_device_peer_id';
 const String knownPartnerKey = 'sweetheart_known_partner_peer';
 
 const String skyTogetherMessageType = 'SKY_TOGETHER';
-const int maxSkyTogetherChars = 16 * 1024;
+const int maxSkyTogetherChars = 32 * 1024;
 
 const Set<String> allowedPeerMessageTypes = {
   'CHALLENGE',
@@ -1234,7 +1234,10 @@ class PeerSyncEngine {
     _openSession('out', sessionId, phase: 'advertised');
 
     try {
-      final manifest = await records.getManifest();
+      final manifest = {
+        for (final entry in (await records.getManifest()).entries)
+          if (entry.value.isNotEmpty || !appOnlyTables.contains(entry.key)) entry.key: entry.value,
+      };
       await _send({
         'type': 'SYNC_MANIFEST',
         'sessionId': sessionId,

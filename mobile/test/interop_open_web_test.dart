@@ -137,8 +137,9 @@ void main() {
       expect(maxSingleRecordBytes, constants['maxSingleRecordBytes']);
       expect(maxBatchPayloadBytes, constants['maxBatchPayloadBytes']);
       expect(maxMailboxObjectBytes, constants['maxObjectBytes']);
-      expect(syncedTables, constants['syncedTables']);
-      expect(exportedTables, constants['exportedTables']);
+      expect(webSyncedTables, constants['syncedTables']);
+      expect(syncedTables, [...constants['syncedTables'] as List, ...appOnlyTables]);
+      expect(exportedTables, [...constants['exportedTables'] as List, ...appOnlyTables]);
     });
   });
 
@@ -146,12 +147,12 @@ void main() {
     final rows = asStringMap(fixture['rows'])!;
 
     test('there is at least one web row for every synced table', () {
-      for (final table in syncedTables) {
+      for (final table in webSyncedTables) {
         expect((rows[table] as List).isNotEmpty, isTrue, reason: table);
       }
     });
 
-    for (final table in syncedTables) {
+    for (final table in webSyncedTables) {
       test('Dart opens every web $table row exactly as the web does', () {
         for (final entry in (rows[table] as List).cast<Map>()) {
           final row = rowFromFixture(asStringMap(entry['row'])!);

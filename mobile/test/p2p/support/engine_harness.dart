@@ -101,6 +101,7 @@ class EngineSide {
     final out = <String, Object?>{};
     for (final table in syncedTables) {
       final rows = await store.allRows(table);
+      if (rows.isEmpty && appOnlyTables.contains(table)) continue;
       out[table] = [
         for (final row in rows)
           {

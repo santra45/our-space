@@ -19,6 +19,7 @@ export 'engine/domain/daily_question.dart'
 export 'engine/domain/date_helpers.dart';
 export 'engine/domain/limits.dart';
 export 'engine/domain/love_bursts.dart' show LoveBurstService, describeBursts, manyBursts;
+export 'engine/domain/sky_drawings.dart';
 export 'engine/identity/device_id.dart' show DeviceIdentity;
 export 'engine/identity/identity_controller.dart';
 export 'engine/identity/people.dart'

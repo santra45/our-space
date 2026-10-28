@@ -9,6 +9,7 @@ import 'package:our_space_mobile/core/engine/crypto/envelope.dart';
 import 'package:our_space_mobile/core/engine/p2p/peer_endpoint.dart';
 import 'package:our_space_mobile/core/engine/p2p/peer_framing.dart';
 import 'package:our_space_mobile/core/engine/storage/tables.dart';
+import 'package:our_space_mobile/models/sky_drawing_record.dart';
 
 import '../support/harness.dart';
 import 'support/engine_harness.dart';
@@ -168,6 +169,19 @@ Future<void> live(String phoneRole) async {
   final network = FakeNetwork()..deliverDials = false;
   final phone = await EngineSide.open(phoneRole, peers[phoneRole]!, key, endpoints: network.create, clock: clock);
   await phone.seed((start[phoneRole] as Map).cast<String, Object?>());
+  final drawing = encryptRecord(
+    SkyDrawingRecord.fieldsFor(
+      id: 'sky-from-the-phone',
+      drawing: SkyDrawing(
+        stars: [const SkyDrawnStar(id: 's-1', x: 0.5, y: 0.5, by: 'owner-phone000', at: 1, gen: 0)],
+      ),
+      startedAt: 1,
+      updatedAt: clock.now(),
+    ),
+    key,
+    table: skyDrawingsTable,
+  );
+  await phone.store.putRow(skyDrawingsTable, drawing);
   phone.engine.addStatusListener((status) {
     if (status.state == 'authorized') phone.engine.syncVaultConfig((configs[phoneRole] as Map).cast<String, Object?>());
   });
@@ -205,7 +219,24 @@ Future<void> live(String phoneRole) async {
   expect(web.saw('authorized'), isTrue);
 
   final webDump = await web.dump();
-  expect(canonicalJson(await phone.dump()), canonicalJson(webDump));
+  expect(webDump.containsKey(skyDrawingsTable), isFalse);
+  final phoneDump = await phone.dump();
+  expect(phoneDump.remove(skyDrawingsTable), hasLength(1));
+  expect(canonicalJson(phoneDump), canonicalJson(webDump));
+  int webWarnings() => web.statuses.where((s) => s['warning'] != null || s['error'] != null).length;
+  final quiet = webWarnings();
+  expect(
+    await phone.engine.sendSkyTogether({
+      'v': 1,
+      'k': 'presence',
+      'here': true,
+      'night': true,
+      'owner': 'owner-phone000',
+      'tag': 'tag-phone',
+      't': clock.now(),
+    }),
+    isTrue,
+  );
   expect((webDump[memoriesTable] as List).single, isA<Map>());
   expect(((webDump[memoriesTable] as List).single as Map)['imageBlobBase64'], isA<String>());
 
@@ -221,6 +252,7 @@ Future<void> live(String phoneRole) async {
   expect(await phone.engine.broadcastLiveRecord(memoriesTable, mine), isTrue);
   await waitFor(() => web.events.any((e) => e['event'] == 'data-updated' && e['single'] == true), reason: 'the web side to take the live photo');
   expect(link.sentFrames.where((f) => f.length > 16000).length, greaterThanOrEqualTo(5));
+  expect(webWarnings(), quiet);
 
   final letter = encryptRecord(
     {'id': 'let-from-web', 'title': 'From the website', 'content': 'Hi love', 'updatedAt': clock.now()},
@@ -234,7 +266,13 @@ Future<void> live(String phoneRole) async {
   web.send({'cmd': 'sync'});
   await waitFor(() => web.count('sync_complete') >= 2, reason: 'a manual web sync');
   await settle(50);
-  expect(canonicalJson(await phone.dump()), canonicalJson(await web.dump()));
+  final phoneAfter = await phone.dump()..remove(skyDrawingsTable);
+  expect(canonicalJson(phoneAfter), canonicalJson(await web.dump()));
+  expect(webWarnings(), quiet);
+
+  expect(await phone.engine.broadcastLiveRecord(skyDrawingsTable, drawing), isTrue);
+  await waitFor(() => web.statuses.any((s) => s['code'] == 'table'), reason: 'the website to refuse a drawing sent live');
+  expect((await web.dump()).containsKey(skyDrawingsTable), isFalse);
 
   link.close();
   await waitFor(() => web.saw('peer_closed'), reason: 'the web side to see the phone leave');

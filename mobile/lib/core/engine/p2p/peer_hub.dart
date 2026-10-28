@@ -290,6 +290,7 @@ class PeerSyncHub extends ChangeNotifier {
 
   void _handleDataUpdated(PeerDataUpdate update) {
     if (!_active || _disposed) return;
+    if (update.single && update.table == skyDrawingsTable) return;
     final count = update.count == 0 ? 1 : update.count;
     _notice('Synced $count new item(s) from ${identity.partnerName} 💕');
   }
@@ -340,6 +341,7 @@ class PeerSyncHub extends ChangeNotifier {
   void _onLocalRow(SealedWrite write) {
     if (!_active || _disposed) return;
     if (!syncedTables.contains(write.table)) return;
+    if (write.table == skyDrawingsTable && !skyTogether.partnerSpeaksSky) return;
     unawaited(engine.broadcastLiveRecord(write.table, write.row));
   }
 

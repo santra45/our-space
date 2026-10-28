@@ -4,6 +4,7 @@ import 'package:sqflite/sqflite.dart';
 import 'crypto/js_compat.dart';
 import 'domain/daily_question.dart';
 import 'domain/love_bursts.dart';
+import 'domain/sky_drawings.dart';
 import 'identity/device_id.dart';
 import 'identity/identity_controller.dart';
 import 'identity/people.dart';
@@ -48,6 +49,7 @@ class OurSpace {
     required this.backup,
     required this.quickUnlock,
     required this.push,
+    required this.skyDrawings,
   });
 
   static Future<OurSpace> open({
@@ -128,6 +130,7 @@ class OurSpace {
         sync: sync,
         platform: pushPlatform,
       ),
+      skyDrawings: SkyDrawingService(store: store),
     );
     await vault.check();
     return space;
@@ -151,6 +154,7 @@ class OurSpace {
   final BackupService backup;
   final QuickUnlockService quickUnlock;
   final PushService push;
+  final SkyDrawingService skyDrawings;
 
   PeerSyncHub get peer => sync.peer!;
 

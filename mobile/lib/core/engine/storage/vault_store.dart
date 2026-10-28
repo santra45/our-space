@@ -151,6 +151,9 @@ class VaultStore {
         onCreate: (db, version) async {
           await _createSchema(db);
         },
+        onOpen: (db) async {
+          await _createSchema(db);
+        },
       ),
     );
     final settings = await LocalSettings.load(db);
