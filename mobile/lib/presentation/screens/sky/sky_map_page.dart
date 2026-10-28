@@ -8,9 +8,13 @@ import '../../sky/sky.dart';
 import '../daily/daily_copy.dart';
 import '../daily/daily_question_model.dart';
 import 'sky_constellations.dart';
+import 'sky_days.dart';
 import 'sky_map_detail.dart';
 import 'sky_map_plan.dart';
 import 'sky_night_sheet.dart';
+import 'together/sky_drawn_map.dart';
+import 'together/sky_drawn_watch.dart';
+import 'together/sky_together_scope.dart';
 
 Future<void> openSkyMap(BuildContext context, {required DailyQuestionModel model}) => skyPush<void>(
   context,
@@ -39,8 +43,35 @@ class SkyMapPage extends StatefulWidget {
 class _SkyMapPageState extends State<SkyMapPage> {
   bool _opening = false;
   bool _leaving = false;
+  SkyDrawnWatch? _drawn;
+  Listenable? _changes;
 
   DailyQuestionModel get model => widget.model;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_drawn != null) return;
+    final drawn = SkyDrawnWatch(
+      service: SkyTogetherScope.drawingsOf(context),
+      vault: Provider.of<VaultService>(context, listen: false),
+    );
+    _drawn = drawn;
+    _changes = Listenable.merge([model, drawn]);
+  }
+
+  @override
+  void dispose() {
+    _drawn?.dispose();
+    super.dispose();
+  }
+
+  Future<void> _openDrawn(SkyDrawingRecord record) async {
+    if (_opening || !mounted) return;
+    _opening = true;
+    await openSkyDrawn(context, record);
+    _opening = false;
+  }
 
   void _leaveSoon() {
     if (_leaving) return;
@@ -71,15 +102,16 @@ class _SkyMapPageState extends State<SkyMapPage> {
 
   @override
   Widget build(BuildContext context) {
-    final unlocked = context.watch<VaultService>().isUnlocked;
-    if (!unlocked) {
+    final vault = context.watch<VaultService>();
+    if (!vault.isUnlocked) {
       _leaveSoon();
       return const SkyScaffold(showSky: false, body: SizedBox.shrink());
     }
-    return ListenableBuilder(listenable: model, builder: (context, _) => _build(context));
+    final start = SkyDays.startOf(vault.config?.startDate);
+    return ListenableBuilder(listenable: _changes ?? model, builder: (context, _) => _build(context, start: start));
   }
 
-  Widget _build(BuildContext context) {
+  Widget _build(BuildContext context, {DateTime? start}) {
     final t = context.sky;
     final series = skyMapSeries(model);
     final entries = SkyMapPlan.entriesOf(series);
@@ -122,6 +154,17 @@ class _SkyMapPageState extends State<SkyMapPage> {
       );
     }
 
+    final drawn = _drawn;
+    final drawnRow = drawn != null && drawn.loaded && (model.visible || drawn.finished.isNotEmpty)
+        ? SkyDrawnMapRow(
+            key: SkyDrawnKeys.row,
+            drawings: drawn.finished,
+            start: start,
+            onOpen: (record) => unawaited(_openDrawn(record)),
+          )
+        : null;
+    if (drawnRow != null && drawnRow.drawings.isNotEmpty) children.add(drawnRow);
+
     if (entries.finished.isNotEmpty) {
       children.add(
         const Padding(
@@ -153,6 +196,8 @@ class _SkyMapPageState extends State<SkyMapPage> {
         ),
       );
     }
+
+    if (drawnRow != null && drawnRow.drawings.isEmpty) children.add(drawnRow);
 
     return SkyScrollScaffold(
       key: SkyMapKeys.page,
