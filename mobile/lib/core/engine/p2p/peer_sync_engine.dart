@@ -68,6 +68,9 @@ const String openTimeoutMessage =
 const String localPeerIdKey = 'sweetheart_device_peer_id';
 const String knownPartnerKey = 'sweetheart_known_partner_peer';
 
+const String skyTogetherMessageType = 'SKY_TOGETHER';
+const int maxSkyTogetherChars = 16 * 1024;
+
 const Set<String> allowedPeerMessageTypes = {
   'CHALLENGE',
   'CHALLENGE_RESPONSE',
@@ -81,6 +84,7 @@ const Set<String> allowedPeerMessageTypes = {
   'SYNC_CONFIG',
   'PING',
   'PONG',
+  skyTogetherMessageType,
 };
 
 final Set<String> allowedPeerTables = syncedTables.where((name) => name != vaultMetaTable).toSet();
@@ -236,6 +240,7 @@ class PeerSyncEngine {
   final List<void Function(PeerDataUpdate update)> _dataListeners = [];
   final List<void Function(PeerConfigUpdate config)> _configListeners = [];
   final List<void Function(String table, String id)> _localRecordListeners = [];
+  final List<void Function(Object? event)> _skyTogetherListeners = [];
 
   PeerStatus _lastStatus = PeerStatus.initial;
 
@@ -263,6 +268,8 @@ class PeerSyncEngine {
   void addLocalRecordListener(void Function(String table, String id) listener) => _localRecordListeners.add(listener);
   void removeLocalRecordListener(void Function(String table, String id) listener) =>
       _localRecordListeners.remove(listener);
+  void addSkyTogetherListener(void Function(Object? event) listener) => _skyTogetherListeners.add(listener);
+  void removeSkyTogetherListener(void Function(Object? event) listener) => _skyTogetherListeners.remove(listener);
 
   String? _storedKnownPartnerId() {
     final id = settings.getItem(knownPartnerKey);
@@ -1041,6 +1048,8 @@ class PeerSyncEngine {
         _onSyncError(message);
       case 'LIVE_RECORD_BROADCAST':
         await _applySingleLiveRecord(message['record']);
+      case skyTogetherMessageType:
+        _emitSkyTogether(message['event']);
       default:
         break;
     }
@@ -1816,6 +1825,27 @@ class PeerSyncEngine {
       return true;
     } catch (_) {
       return false;
+    }
+  }
+
+  Future<bool> sendSkyTogether(Map<String, Object?> event) async {
+    final conn = activeConnection;
+    if (!isConnected || !isAuthorized || conn == null || !conn.open || cryptoKey == null) return false;
+    try {
+      if (jsonStringify(event).length > maxSkyTogetherChars) return false;
+      await _send({'type': skyTogetherMessageType, 'event': event});
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  void _emitSkyTogether(Object? event) {
+    if (event is! Map) return;
+    for (final listener in [..._skyTogetherListeners]) {
+      try {
+        listener(event);
+      } catch (_) {}
     }
   }
 
