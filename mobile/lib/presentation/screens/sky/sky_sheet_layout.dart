@@ -163,6 +163,7 @@ class SkyPageFrame extends StatelessWidget {
     this.minSheetTop,
     required this.maxSheetTop,
     this.controller,
+    this.skyOverlay,
   });
 
   static const double designWidth = 390;
@@ -174,6 +175,7 @@ class SkyPageFrame extends StatelessWidget {
   final double? minSheetTop;
   final double maxSheetTop;
   final ScrollController? controller;
+  final Widget? skyOverlay;
 
   static double scaleOf(double width) => math.min(width, SkySizes.maxContentWidth) / designWidth;
 
@@ -197,6 +199,7 @@ class SkyPageFrame extends StatelessWidget {
                 child: sheet,
               ),
               if (top != null) Positioned(top: 0, left: 0, right: 0, child: top!),
+              if (skyOverlay != null) Positioned(top: 0, left: 0, right: 0, height: skyHeight * k, child: skyOverlay!),
             ],
           ),
         );

@@ -350,7 +350,6 @@ class _SkyTogetherLayerState extends State<SkyTogetherLayer> with SingleTickerPr
   @override
   Widget build(BuildContext context) {
     final t = context.sky;
-    final home = widget.home;
     final stage = _stage;
     final night = t.isNight;
     final motion = skyMotionAllowed(context);
@@ -372,7 +371,6 @@ class _SkyTogetherLayerState extends State<SkyTogetherLayer> with SingleTickerPr
                 ),
                 child: Text(text, style: SkyTogetherLine.style(t), maxLines: 1, softWrap: false),
               );
-        final hitSize = SkyTogetherSpot.hit * 2 * k;
         return Stack(
           key: SkyTogetherKeys.layer,
           fit: StackFit.expand,
@@ -395,32 +393,61 @@ class _SkyTogetherLayerState extends State<SkyTogetherLayer> with SingleTickerPr
                 ),
               ),
             ),
-            if (stage != SkyTogetherStage.off)
-              Positioned(
-                left: body.dx * k - hitSize / 2,
-                top: body.dy * k - hitSize / 2,
-                width: hitSize,
-                height: hitSize,
-                child: Semantics(
-                  key: SkyTogetherKeys.target,
-                  container: true,
-                  button: true,
-                  label: SkyTogetherCopy.holdLabel(night, widget.partner),
-                  hint: SkyTogetherCopy.holdHint(widget.partner),
-                  value: home.holding ? SkyTogetherCopy.holdingOn : null,
-                  onTap: home.toggle,
-                  child: _CircleHit(
-                    child: Listener(
-                      behavior: HitTestBehavior.opaque,
-                      onPointerDown: (_) => home.press(),
-                      onPointerUp: (_) => home.release(),
-                      onPointerCancel: (_) => home.release(),
-                      child: const SizedBox.expand(),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class SkyTogetherTarget extends StatelessWidget {
+  const SkyTogetherTarget({super.key, required this.home, required this.partner, this.designWidth = 390});
+
+  final SkyTogetherHome home;
+  final String partner;
+  final double designWidth;
+
+  @override
+  Widget build(BuildContext context) {
+    final night = context.sky.isNight;
+    return ListenableBuilder(
+      listenable: home,
+      builder: (context, _) {
+        if (home.stage == SkyTogetherStage.off) return const SizedBox.shrink();
+        final body = SkyTogetherSpot.body(night);
+        return LayoutBuilder(
+          builder: (context, box) {
+            final k = box.maxWidth.isFinite && box.maxWidth > 0 ? box.maxWidth / designWidth : 1.0;
+            final size = SkyTogetherSpot.hit * 2 * k;
+            return Stack(
+              children: [
+                Positioned(
+                  left: body.dx * k - size / 2,
+                  top: body.dy * k - size / 2,
+                  width: size,
+                  height: size,
+                  child: Semantics(
+                    key: SkyTogetherKeys.target,
+                    container: true,
+                    button: true,
+                    label: SkyTogetherCopy.holdLabel(night, partner),
+                    hint: SkyTogetherCopy.holdHint(partner),
+                    value: home.holding ? SkyTogetherCopy.holdingOn : null,
+                    onTap: home.toggle,
+                    child: _CircleHit(
+                      child: Listener(
+                        behavior: HitTestBehavior.opaque,
+                        onPointerDown: (_) => home.press(),
+                        onPointerUp: (_) => home.release(),
+                        onPointerCancel: (_) => home.release(),
+                        child: const SizedBox.expand(),
+                      ),
                     ),
                   ),
                 ),
-              ),
-          ],
+              ],
+            );
+          },
         );
       },
     );
