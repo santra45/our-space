@@ -41,6 +41,35 @@ class SkyPartnerFinger {
   Offset get unit => Offset(x, y);
 }
 
+class SkyFingerNotifier extends ValueNotifier<SkyPartnerFinger?> {
+  SkyFingerNotifier() : super(null);
+
+  bool _gone = false;
+
+  @override
+  set value(SkyPartnerFinger? next) {
+    if (_gone) return;
+    super.value = next;
+  }
+
+  @override
+  void addListener(VoidCallback listener) {
+    if (!_gone) super.addListener(listener);
+  }
+
+  @override
+  void removeListener(VoidCallback listener) {
+    if (!_gone) super.removeListener(listener);
+  }
+
+  @override
+  void dispose() {
+    if (_gone) return;
+    _gone = true;
+    super.dispose();
+  }
+}
+
 class SkyPatchSession extends ChangeNotifier {
   SkyPatchSession({
     required this.link,
@@ -69,7 +98,7 @@ class SkyPatchSession extends ChangeNotifier {
   final Duration nameEvery;
 
   final StreamController<SkyPatchNotice> _notices = StreamController<SkyPatchNotice>.broadcast();
-  final ValueNotifier<SkyPartnerFinger?> finger = ValueNotifier<SkyPartnerFinger?>(null);
+  final SkyFingerNotifier finger = SkyFingerNotifier();
 
   late final StreamSubscription<SkyTogetherEvent> _events;
   StreamSubscription<void>? _watch;
@@ -135,7 +164,7 @@ class SkyPatchSession extends ChangeNotifier {
   Future<void> _reload() async {
     final service = drawings;
     final key = _keyOf();
-    if (service == null || key == null || _disposed) return;
+    if (service == null || key == null || _disposed || (_closed && _loaded)) return;
     final record = await service.find(key, id);
     if (record == null || _disposed) return;
     _hadRecord = true;
@@ -159,7 +188,7 @@ class SkyPatchSession extends ChangeNotifier {
   void _changed() {
     if (_disposed) return;
     notifyListeners();
-    if (leader) _schedulePersist();
+    if (leader && !_closed) _schedulePersist();
   }
 
   SkyDrawnStar? placeStar(double x, double y) {
@@ -478,6 +507,18 @@ class SkyPatchSession extends ChangeNotifier {
     unawaited(link.hideCursor());
     if (!_disposed) notifyListeners();
     await flush();
+  }
+
+  bool get disposed => _disposed;
+
+  @override
+  void addListener(VoidCallback listener) {
+    if (!_disposed) super.addListener(listener);
+  }
+
+  @override
+  void removeListener(VoidCallback listener) {
+    if (!_disposed) super.removeListener(listener);
   }
 
   @override

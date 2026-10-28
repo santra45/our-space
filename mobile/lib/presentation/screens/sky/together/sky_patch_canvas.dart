@@ -573,6 +573,7 @@ class _SkyPatchCanvasState extends State<SkyPatchCanvas> with SingleTickerProvid
                     width: target,
                     height: target,
                     child: Semantics(
+                      container: true,
                       button: session.mine(star) && editable,
                       label: session.mine(star) ? SkyTogetherCopy.yourStar : SkyTogetherCopy.partnerStar(widget.partner),
                       onTap: session.mine(star) && editable
