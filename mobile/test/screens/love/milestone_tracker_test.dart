@@ -191,6 +191,7 @@ void main() {
     final gold = tester.widget<Text>(find.text('${duration.totalDays}')).style!;
     expect(gold.color, SkyTokens.night.gold);
     expect(gold.fontStyle, FontStyle.italic);
+    expect(gold.fontFeatures, contains(const FontFeature.tabularFigures()));
     expect(labelled(MilestoneCopy.clock(duration.totalDays, duration.hours, duration.minutes)), findsOneWidget);
 
     final upcoming = upcomingMilestones(usStartDate, DateTime.fromMillisecondsSinceEpoch(now));

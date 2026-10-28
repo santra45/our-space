@@ -90,7 +90,7 @@ class LoveClockFace extends StatelessWidget {
       76,
       weight: FontWeight.w500,
       height: 1,
-    ).copyWith(color: t.gold, fontFeatures: const [FontFeature.liningFigures()]);
+    ).copyWith(color: t.gold, fontFeatures: _figures);
     final daysWord = SkyType.serif(28, height: 1).copyWith(color: t.title);
     final and = SkyType.serif(15, height: 1).copyWith(color: t.muted);
     final digits = SkyType.serif(
