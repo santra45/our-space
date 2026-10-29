@@ -54,8 +54,25 @@ String skyLineKey(String one, String two) => one.compareTo(two) <= 0 ? '$one~$tw
 bool isSkyRemovalKey(Object? value) =>
     value is String && (skyIdPattern.hasMatch(value) || _skyLinePattern.hasMatch(value));
 
+bool skyHasLoneSurrogate(String text) {
+  for (var i = 0; i < text.length; i++) {
+    final unit = text.codeUnitAt(i);
+    if (unit < 0xD800 || unit > 0xDFFF) continue;
+    if (unit > 0xDBFF || i + 1 >= text.length) return true;
+    final next = text.codeUnitAt(i + 1);
+    if (next < 0xDC00 || next > 0xDFFF) return true;
+    i++;
+  }
+  return false;
+}
+
+String skyWholeText(String text) {
+  if (!skyHasLoneSurrogate(text)) return text;
+  return String.fromCharCodes(text.runes.where((rune) => rune < 0xD800 || rune > 0xDFFF));
+}
+
 String cleanSkyName(String raw) {
-  final collapsed = raw.replaceAll(_skyControl, ' ').replaceAll(_skySpaces, ' ').trim();
+  final collapsed = skyWholeText(raw).replaceAll(_skyControl, ' ').replaceAll(_skySpaces, ' ').trim();
   final runes = collapsed.runes.toList(growable: false);
   if (runes.length <= skyDrawingMaxName) return collapsed;
   return String.fromCharCodes(runes.take(skyDrawingMaxName)).trim();

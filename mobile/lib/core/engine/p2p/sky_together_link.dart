@@ -178,7 +178,8 @@ class SkyTogetherLink extends ChangeNotifier {
 
   Future<bool> sendName(String drawing, String text, {bool take = false}) {
     _nameRev = _nameRev >= maxSkyNameRev ? 1 : _nameRev + 1;
-    final cut = text.length > maxSkyTypedUnits ? text.substring(0, maxSkyTypedUnits) : text;
+    final whole = skyWholeText(text);
+    final cut = whole.length > maxSkyTypedUnits ? String.fromCharCodes(whole.runes.take(maxSkyTypedUnits ~/ 2)) : whole;
     return send(SkyNameEvent(drawing: drawing, text: cut, rev: _nameRev, take: take));
   }
 

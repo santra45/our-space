@@ -280,6 +280,17 @@ void main() {
       expect(cleanSkyName('\u0000\u0007'), '');
     });
 
+    test('half of a broken emoji is dropped, so a name always draws', () {
+      const lone = '\uD83D';
+      expect(skyHasLoneSurrogate('Kite$lone'), isTrue);
+      expect(skyHasLoneSurrogate('\uDC97Kite'), isTrue);
+      expect(skyHasLoneSurrogate('$lone x'), isTrue);
+      expect(skyHasLoneSurrogate('Kite \u{1F497} \u{1F468}‍\u{1F469}‍\u{1F467}'), isFalse);
+      expect(skyWholeText('Kite \u{1F497}'), 'Kite \u{1F497}');
+      expect(cleanSkyName('Our $lone kite\uDC97'), 'Our kite');
+      expect(skyHasLoneSurrogate(cleanSkyName('\u{1F497}' * 45)), isFalse);
+    });
+
     test('before five in the morning still belongs to the night before', () {
       expect(skyNightOf(DateTime(2026, 10, 28, 23, 40).millisecondsSinceEpoch), '2026-10-28');
       expect(skyNightOf(DateTime(2026, 10, 29, 1, 15).millisecondsSinceEpoch), '2026-10-28');
@@ -323,6 +334,7 @@ void main() {
       expect(record.createdAt, 25);
       expect(record.night, '2026-10-28');
       expect(SkyDrawingRecord.tryParse({...fields, 'name': '  '}), isNull);
+      expect(SkyDrawingRecord.tryParse({...fields, 'name': 'Our kite\uD83D'})!.name, 'Our kite');
       expect(SkyDrawingRecord.tryParse({...fields}..remove('createdAt')), isNull);
       expect(SkyDrawingRecord.tryParse({...fields}..remove('night')), isNull);
       expect(SkyDrawingRecord.tryParse({...fields, 'stars': <Object?>[], 'lines': <Object?>[]}), isNull);

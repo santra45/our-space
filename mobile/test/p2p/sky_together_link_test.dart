@@ -262,6 +262,24 @@ void main() {
     pair.dispose();
   });
 
+  test('a typed name is never cut through the middle of a character, however many emoji it holds', () async {
+    final pair = FakeSkyPair();
+    pair.settle();
+    final toB = heard(pair.b);
+    const family = '\u{1F468}‍\u{1F469}‍\u{1F467}‍\u{1F466}';
+    await pair.a.sendName('sky-one', family * 30);
+    await pair.a.sendName('sky-one', 'Kite\uD83D');
+    pair.flush();
+    await drain();
+    final names = [for (final e in toB) if (e is SkyNameEvent) e.text];
+    expect(names, hasLength(2));
+    expect(names.first.length, lessThanOrEqualTo(maxSkyTypedUnits));
+    expect(skyHasLoneSurrogate(names.first), isFalse);
+    expect(names.first.startsWith(family * 11), isTrue);
+    expect(names.last, 'Kite');
+    pair.dispose();
+  });
+
   test('drawing events wait until the partner has spoken this language, so the website never gets them', () async {
     final pair = FakeSkyPair(ownerB: null);
     pair.settle();
@@ -329,6 +347,9 @@ void main() {
       {'v': 1, 'k': 'name', 'drawing': 'sky-1', 'text': 'x' * (maxSkyTypedUnits + 1), 'rev': 1},
       {'v': 1, 'k': 'name', 'drawing': 'sky-1', 'text': 7, 'rev': 1},
       {'v': 1, 'k': 'name', 'drawing': 'sky-1', 'text': 'Kite', 'rev': 1, 'take': 'yes'},
+      {'v': 1, 'k': 'name', 'drawing': 'sky-1', 'text': 'Kite\uD83D', 'rev': 1},
+      {'v': 1, 'k': 'name', 'drawing': 'sky-1', 'text': '\uDC97Kite', 'rev': 1},
+      {'v': 1, 'k': 'agree', 'drawing': 'sky-1', 'text': 'Our kite\uD83D'},
       {'v': 1, 'k': 'agree', 'drawing': 'sky-1', 'text': '   '},
       {'v': 1, 'k': 'op', 'drawing': 'sky-1', 'op': {'o': 'clear', 'g': 0}},
       {'v': 1, 'k': 'op', 'drawing': 'sky-1', 'op': {'o': 'warp', 'g': 1}},

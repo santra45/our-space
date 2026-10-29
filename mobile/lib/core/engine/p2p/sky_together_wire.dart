@@ -262,6 +262,7 @@ final class SkyNameEvent extends SkyTogetherEvent {
     if (drawing == null || text is! String || text.length > maxSkyTypedUnits || rev == null || take is! bool) {
       return null;
     }
+    if (skyHasLoneSurrogate(text)) return null;
     return SkyNameEvent(drawing: drawing, text: text, rev: rev, take: take);
   }
 }
@@ -281,7 +282,7 @@ final class SkyAgreeEvent extends SkyTogetherEvent {
   static SkyAgreeEvent? _read(Map<Object?, Object?> raw) {
     final drawing = skyId(raw['drawing']);
     final text = raw['text'];
-    if (drawing == null || text is! String || text.length > maxSkyTypedUnits) return null;
+    if (drawing == null || text is! String || text.length > maxSkyTypedUnits || skyHasLoneSurrogate(text)) return null;
     final clean = cleanSkyName(text);
     if (clean.isEmpty) return null;
     return SkyAgreeEvent(drawing: drawing, text: clean);

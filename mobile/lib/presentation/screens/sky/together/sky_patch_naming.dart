@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../../../core/engine.dart';
 import '../../../sky/sky.dart';
@@ -11,6 +12,39 @@ import 'sky_patch_art.dart';
 import 'sky_patch_session.dart';
 import 'sky_together_copy.dart';
 import 'sky_together_layer.dart';
+
+class SkyNameLimit extends TextInputFormatter {
+  const SkyNameLimit();
+
+  static String fit(String text) {
+    if (text.runes.length <= skyDrawingMaxName) return text;
+    final out = StringBuffer();
+    var runes = 0;
+    for (final cluster in text.characters) {
+      final size = cluster.runes.length;
+      if (runes + size > skyDrawingMaxName) break;
+      out.write(cluster);
+      runes += size;
+    }
+    return out.toString();
+  }
+
+  @override
+  TextEditingValue formatEditUpdate(TextEditingValue oldValue, TextEditingValue newValue) {
+    final text = fit(newValue.text);
+    if (text == newValue.text) return newValue;
+    final selection = newValue.selection;
+    return TextEditingValue(
+      text: text,
+      selection: selection.isValid
+          ? selection.copyWith(
+              baseOffset: math.min(selection.baseOffset, text.length),
+              extentOffset: math.min(selection.extentOffset, text.length),
+            )
+          : TextSelection.collapsed(offset: text.length),
+    );
+  }
+}
 
 class SkyPatchStill extends StatelessWidget {
   const SkyPatchStill({super.key, required this.drawing, this.me, this.owners = false});
@@ -219,7 +253,7 @@ class _SkyPatchNamingState extends State<SkyPatchNaming> {
             focusNode: _focus,
             hint: SkyTogetherCopy.nameHint,
             style: SkyFieldStyle.underline,
-            maxLength: skyDrawingMaxName,
+            inputFormatters: const [SkyNameLimit()],
             autofocus: true,
             textInputAction: TextInputAction.done,
             onChanged: session.type,
