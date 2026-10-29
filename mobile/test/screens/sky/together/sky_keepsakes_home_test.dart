@@ -221,7 +221,7 @@ void main() {
   });
 
   group('the watch', () {
-    testWidgets('lists finished drawings newest first, skips the unfinished one, and empties when locked', (tester) async {
+    testWidgets('lists finished drawings newest first, skips the unfinished one, empties when locked and rests while hidden', (tester) async {
       final space = await coupleSpace(tester);
       final older = await drew(tester, space, 'Older', at: daysAgo(3));
       final newer = await drew(tester, space, 'Newer', at: daysAgo(1));
@@ -245,6 +245,16 @@ void main() {
       await until(tester, () => watch.finished.isEmpty);
       await real(tester, () => space.vault.unlock(passphrase));
       await until(tester, () => watch.finished.length == 2);
+
+      watch.paused = true;
+      final hidden = await drew(tester, space, 'Hidden', at: daysAgo(2));
+      for (var i = 0; i < 5; i++) {
+        await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 20)));
+      }
+      expect(watch.finished, hasLength(2));
+      watch.paused = false;
+      await until(tester, () => watch.finished.length == 3);
+      expect(watch.finished.map((r) => r.id), contains(hidden.id));
 
       watch.dispose();
       final none = SkyDrawnWatch(service: null, vault: space.vault);

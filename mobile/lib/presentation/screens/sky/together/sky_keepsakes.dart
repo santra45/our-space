@@ -372,6 +372,8 @@ class _SkyKeepsakesState extends State<SkyKeepsakes> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    final hidden = !TickerMode.valuesOf(context).enabled;
+    _watch?.paused = hidden;
     if (_watch != null || widget.records != null) return;
     VaultService? vault;
     try {
@@ -380,7 +382,9 @@ class _SkyKeepsakesState extends State<SkyKeepsakes> {
       vault = null;
     }
     if (vault == null) return;
-    _watch = SkyDrawnWatch(service: SkyTogetherScope.drawingsOf(context), vault: vault)..addListener(_changed);
+    _watch = SkyDrawnWatch(service: SkyTogetherScope.drawingsOf(context), vault: vault)
+      ..addListener(_changed)
+      ..paused = hidden;
   }
 
   void _changed() {

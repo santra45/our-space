@@ -26,6 +26,8 @@ class SkyDrawnWatch extends ChangeNotifier {
   bool _loaded = false;
   bool _loading = false;
   bool _again = false;
+  bool _paused = false;
+  bool _dirty = false;
   bool _disposed = false;
 
   SkyDrawnShelf get shelf => _shelf;
@@ -33,6 +35,16 @@ class SkyDrawnWatch extends ChangeNotifier {
   List<SkyDrawingRecord> get finished => _shelf.finished;
 
   bool get loaded => _loaded;
+
+  bool get paused => _paused;
+
+  set paused(bool value) {
+    if (value == _paused || _disposed) return;
+    _paused = value;
+    if (value || !_dirty) return;
+    _dirty = false;
+    _reload();
+  }
 
   void _onVault() {
     if (_disposed || identical(vault.key, _key)) return;
@@ -46,6 +58,10 @@ class SkyDrawnWatch extends ChangeNotifier {
 
   void _reload() {
     if (_disposed) return;
+    if (_paused && _loaded) {
+      _dirty = true;
+      return;
+    }
     if (_loading) {
       _again = true;
       return;

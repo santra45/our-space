@@ -22,7 +22,9 @@ class SkyTogetherHome extends ChangeNotifier {
   }) : _keyOf = keyOf ?? _noKey {
     link.addListener(_onLink);
     _events = link.events.listen(_hear);
-    _watch = drawings?.watch().listen((_) => unawaited(refreshUnfinished()));
+    _watch = drawings?.watch().listen((_) {
+      if (_session == null) unawaited(refreshUnfinished());
+    });
     unawaited(refreshUnfinished());
     _stage = _stageNow();
   }

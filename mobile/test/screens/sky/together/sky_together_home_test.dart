@@ -499,6 +499,25 @@ void main() {
       phones.dispose();
     });
 
+    test('home does not read every drawing again while the patch is open, only once it closes', () async {
+      final counting = _CountingDrawings(store);
+      final phones = TogetherPhones(drawingsA: counting, keyA: key);
+      await phones.meet();
+      final (a, _) = await drawKite(phones);
+      await phones.real(() => a.drawing.visibleLines.isNotEmpty);
+      final before = counting.lists;
+      for (var i = 0; i < 4; i++) {
+        a.placeStar(0.1 + i * 0.2, 0.9);
+        await phones.step();
+      }
+      await a.flush();
+      await phones.step();
+      expect(counting.lists, before);
+      await phones.a.endSession();
+      expect(counting.lists, greaterThan(before));
+      phones.dispose();
+    });
+
     test('a dropped link pauses the patch on both phones and keeps the drawing', () async {
       final phones = TogetherPhones(drawingsA: drawings, keyA: key);
       await phones.meet();
@@ -512,4 +531,16 @@ void main() {
       phones.dispose();
     });
   });
+}
+
+class _CountingDrawings extends SkyDrawingService {
+  _CountingDrawings(VaultStore store) : super(store: store);
+
+  int lists = 0;
+
+  @override
+  Future<List<SkyDrawingRecord>> list(VaultKey? key) {
+    lists++;
+    return super.list(key);
+  }
 }
