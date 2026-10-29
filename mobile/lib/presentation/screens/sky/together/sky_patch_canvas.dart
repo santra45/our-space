@@ -9,6 +9,7 @@ import '../../../../core/engine.dart';
 import '../../../sky/sky.dart';
 import '../../../widgets/app_haptics.dart';
 import '../sky_sheet_layout.dart';
+import 'sky_drawn.dart';
 import 'sky_patch_art.dart';
 import 'sky_patch_session.dart';
 import 'sky_together_copy.dart';
@@ -32,10 +33,7 @@ abstract final class SkyPatchFeel {
   static const double cometFade = 0.4;
   static const double outside = 0.07;
 
-  static Rect frameOf(Size size) {
-    final side = math.min(size.width, size.height);
-    return Rect.fromCenter(center: size.center(Offset.zero), width: side, height: side);
-  }
+  static Rect frameOf(Size size) => SkyDrawnArt.patchIn(Offset.zero & size);
 }
 
 class SkyPatchCanvas extends StatefulWidget {
@@ -490,9 +488,9 @@ class _SkyPatchCanvasState extends State<SkyPatchCanvas> with SingleTickerProvid
 
   bool _place(Offset unit) {
     final frame = _frame;
-    final edge = frame.width <= 0 ? skyPatchEdge : math.min(0.2, SkyPatchFeel.edge * _k / frame.width);
-    final x = unit.dx.clamp(edge, 1 - edge);
-    final y = unit.dy.clamp(edge, 1 - edge);
+    double edgeOf(double side) => side <= 0 ? skyPatchEdge : math.min(0.2, SkyPatchFeel.edge * _k / side);
+    final x = unit.dx.clamp(edgeOf(frame.width), 1 - edgeOf(frame.width));
+    final y = unit.dy.clamp(edgeOf(frame.height), 1 - edgeOf(frame.height));
     final placed = session.placeStar(x, y);
     if (placed == null) return false;
     session.haptic(HapticKind.tick);

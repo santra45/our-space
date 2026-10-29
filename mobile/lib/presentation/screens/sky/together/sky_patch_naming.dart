@@ -102,7 +102,7 @@ class _StillPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     if (sketch.isEmpty) return;
-    final frame = SkyDrawnArt.frameOf(Offset.zero & size, sketch);
+    final frame = SkyDrawnArt.unitFrame(SkyDrawnArt.frameOf(Offset.zero & size, sketch));
     SkyPatchArt.paint(canvas, frame, picture, k: k, sigma: sigma);
   }
 

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:our_space_mobile/core/engine.dart';
+import 'package:our_space_mobile/presentation/screens/sky/together/sky_drawn.dart';
 import 'package:our_space_mobile/presentation/screens/sky/together/sky_patch_canvas.dart';
 import 'package:our_space_mobile/presentation/screens/sky/together/sky_patch_session.dart';
 import 'package:our_space_mobile/presentation/screens/sky/together/sky_together_layer.dart';
@@ -68,6 +69,39 @@ void main() {
     await tester.tapAt(box.center + const Offset(21.5, 0));
     await tester.pump();
     expect(session.drawing.visibleStars, isEmpty);
+
+    await tester.pumpWidget(const SizedBox());
+    session.dispose();
+    pair.dispose();
+  });
+
+  testWidgets('the patch fills the tall open sky, so a tap near its top or bottom places a star right there', (tester) async {
+    final pair = FakeSkyPair();
+    pair.settle();
+    final session = SkyPatchSession(link: pair.a, id: 'sky-test', haptic: (_) {});
+    await pumpHost(
+      tester,
+      SizedBox(width: 354, height: 521, child: SkyPatchCanvas(session: session, partner: 'Alex')),
+    );
+    final canvas = tester.getRect(find.byType(SkyPatchCanvas));
+    final patch = SkyPatchFeel.frameOf(canvas.size).shift(canvas.topLeft);
+    expect(patch.width, closeTo(canvas.width, 0.5));
+    expect(patch.height / patch.width, closeTo(1 / SkyDrawnArt.aspect, 1e-6));
+    expect(canvas.height - patch.height, lessThan(20));
+
+    for (final at in [Offset(canvas.center.dx - 60, canvas.top + 20), Offset(canvas.center.dx + 60, canvas.bottom - 20)]) {
+      await tester.tapAt(at);
+      await tester.pump(const Duration(milliseconds: 400));
+    }
+    expect(session.drawing.visibleStars, hasLength(2));
+    for (final star in session.drawing.visibleStars) {
+      final px = Offset(patch.left + star.x * patch.width, patch.top + star.y * patch.height);
+      final nearest = [
+        Offset(canvas.center.dx - 60, canvas.top + 20),
+        Offset(canvas.center.dx + 60, canvas.bottom - 20),
+      ].map((p) => (p - px).distance).reduce((a, b) => a < b ? a : b);
+      expect(nearest, lessThan(24));
+    }
 
     await tester.pumpWidget(const SizedBox());
     session.dispose();

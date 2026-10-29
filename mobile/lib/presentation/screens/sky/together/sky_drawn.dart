@@ -25,7 +25,7 @@ class SkyDrawnSketch {
     final stars = drawing.visibleStars;
     final index = {for (var i = 0; i < stars.length; i++) stars[i].id: i};
     return SkyDrawnSketch(
-      points: [for (final s in stars) Offset(s.x, s.y)],
+      points: [for (final s in stars) Offset(s.x * SkyDrawnArt.aspect, s.y)],
       links: [
         for (final l in drawing.visibleLines)
           if (index.containsKey(l.a) && index.containsKey(l.b)) (index[l.a]!, index[l.b]!),
@@ -101,6 +101,7 @@ class SkyDrawnShelf {
 }
 
 abstract final class SkyDrawnArt {
+  static const double aspect = 0.7;
   static const double padding = 0.12;
   static const double minSpan = 0.18;
 
@@ -112,8 +113,8 @@ abstract final class SkyDrawnArt {
 
   static Rect frameOf(Rect box, SkyDrawnSketch sketch, {SkyDrawnFit fit = SkyDrawnFit.drawing}) {
     if (fit == SkyDrawnFit.patch) {
-      final side = math.min(box.width, box.height);
-      return Rect.fromCenter(center: box.center, width: side, height: side);
+      final area = patchIn(box);
+      return Rect.fromLTWH(area.left, area.top, area.height, area.height);
     }
     final b = sketch.bounds;
     final span = math.max(math.max(b.width, b.height), minSpan);
@@ -130,6 +131,13 @@ abstract final class SkyDrawnArt {
   }
 
   static Offset place(Rect frame, Offset unit) => Offset(frame.left + unit.dx * frame.width, frame.top + unit.dy * frame.height);
+
+  static Rect patchIn(Rect box) {
+    final height = math.max(0.0, math.min(box.height, box.width / aspect));
+    return Rect.fromCenter(center: box.center, width: height * aspect, height: height);
+  }
+
+  static Rect unitFrame(Rect frame) => Rect.fromLTWH(frame.left, frame.top, frame.width * aspect, frame.height);
 
   static Offset unitOf(Rect frame, Offset local) => Offset(
     frame.width <= 0 ? 0 : (local.dx - frame.left) / frame.width,

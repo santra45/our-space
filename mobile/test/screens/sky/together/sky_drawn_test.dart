@@ -61,9 +61,10 @@ void main() {
   group('sketch', () {
     test('a sketch keeps only what shows, in order, with lines as pairs of points', () {
       final sketch = SkyDrawnSketch.of(kite());
-      expect(sketch.points, const [Offset(0.2, 0.2), Offset(0.4, 0.6), Offset(0.3, 0.9)]);
+      const a = SkyDrawnArt.aspect;
+      expect(sketch.points, [const Offset(0.2 * a, 0.2), const Offset(0.4 * a, 0.6), const Offset(0.3 * a, 0.9)]);
       expect(sketch.links, [(0, 1), (1, 2)]);
-      expect(sketch.bounds, const Rect.fromLTRB(0.2, 0.2, 0.4, 0.9));
+      expect(sketch.bounds, const Rect.fromLTRB(0.2 * a, 0.2, 0.4 * a, 0.9));
       expect(sketch, SkyDrawnSketch.of(kite()));
       expect(SkyDrawnSketch.empty.isEmpty, isTrue);
       expect(SkyDrawnSketch.of(SkyDrawing.empty), SkyDrawnSketch.empty);
@@ -86,7 +87,7 @@ void main() {
       final left = placed.map((p) => p.dx).reduce((a, b) => a < b ? a : b);
       final right = placed.map((p) => p.dx).reduce((a, b) => a > b ? a : b);
       expect((left + right) / 2, closeTo(box.center.dx, 1e-6));
-      expect(SkyDrawnArt.unitOf(frame, placed[1]).dx, closeTo(0.4, 1e-9));
+      expect(SkyDrawnArt.unitOf(frame, placed[1]).dx, closeTo(0.4 * SkyDrawnArt.aspect, 1e-9));
       expect(SkyDrawnArt.unitOf(frame, placed[1]).dy, closeTo(0.6, 1e-9));
     });
 
@@ -100,13 +101,33 @@ void main() {
       expect(frame.width, lessThan(400));
     });
 
-    test('on the patch the whole square maps to the middle of the space', () {
+    test('on the patch the whole tall patch maps to the middle of the space, as tall as it fits', () {
       final sketch = SkyDrawnSketch.of(kite());
       const box = Rect.fromLTWH(0, 0, 390, 600);
       final frame = SkyDrawnArt.frameOf(box, sketch, fit: SkyDrawnFit.patch);
-      expect(frame, const Rect.fromLTWH(0, 105, 390, 390));
-      expect(SkyDrawnArt.place(frame, const Offset(0.5, 0.5)), const Offset(195, 300));
-      expect(SkyDrawnArt.unitOf(frame, const Offset(390, 495)), const Offset(1, 1));
+      final area = SkyDrawnArt.patchIn(box);
+      expect(area.width, closeTo(390, 1e-9));
+      expect(area.height, closeTo(390 / SkyDrawnArt.aspect, 1e-9));
+      expect(area.center.dx, closeTo(box.center.dx, 1e-9));
+      expect(area.center.dy, closeTo(box.center.dy, 1e-9));
+      final unitFrame = SkyDrawnArt.unitFrame(frame);
+      for (final (got, want) in [
+        (unitFrame.left, area.left),
+        (unitFrame.top, area.top),
+        (unitFrame.width, area.width),
+        (unitFrame.height, area.height),
+      ]) {
+        expect(got, closeTo(want, 1e-9));
+      }
+      final middle = SkyDrawnArt.place(frame, const Offset(0.5 * SkyDrawnArt.aspect, 0.5));
+      expect(middle.dx, closeTo(195, 1e-9));
+      expect(middle.dy, closeTo(300, 1e-9));
+      final corner = SkyDrawnArt.unitOf(SkyDrawnArt.unitFrame(frame), area.bottomRight);
+      expect(corner.dx, closeTo(1, 1e-9));
+      expect(corner.dy, closeTo(1, 1e-9));
+      final wide = SkyDrawnArt.patchIn(const Rect.fromLTWH(0, 0, 600, 400));
+      expect(wide.height, 400);
+      expect(wide.width, closeTo(400 * SkyDrawnArt.aspect, 1e-9));
     });
   });
 

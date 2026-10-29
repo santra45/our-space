@@ -5,6 +5,7 @@ import 'package:our_space_mobile/core/engine.dart';
 import 'package:our_space_mobile/presentation/home_shell.dart';
 import 'package:our_space_mobile/presentation/screens/daily/daily_question_card.dart';
 import 'package:our_space_mobile/presentation/screens/sky/sky_page.dart';
+import 'package:our_space_mobile/presentation/screens/sky/together/sky_drawn.dart';
 import 'package:our_space_mobile/presentation/screens/sky/together/sky_patch_page.dart';
 import 'package:our_space_mobile/presentation/screens/sky/together/sky_patch_session.dart';
 import 'package:our_space_mobile/presentation/screens/sky/together/sky_together_copy.dart';
@@ -76,11 +77,7 @@ class Phones {
     return openedB.last;
   }
 
-  Rect frame() {
-    final box = tester.getRect(find.byKey(SkyTogetherKeys.frame));
-    final side = box.width < box.height ? box.width : box.height;
-    return Rect.fromCenter(center: box.center, width: side, height: side);
-  }
+  Rect frame() => SkyDrawnArt.patchIn(tester.getRect(find.byKey(SkyTogetherKeys.frame)));
 
   Offset at(Offset unit) {
     final f = frame();
