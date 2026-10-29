@@ -95,6 +95,7 @@ void main() {
 
       expect(find.text('ONES WE DREW'), findsOneWidget);
       expect(tester.widget<Text>(find.byKey(SkyDrawnKeys.count)).data, '3');
+      expect(tester.widget<Text>(find.byKey(SkyDrawnKeys.count)).semanticsLabel, '3 drawn together');
       expect(find.byKey(SkyDrawnKeys.empty), findsNothing);
       expect(shownTiles(tester).map((t) => t.record.id), [boat.id, chai.id, kite.id]);
 

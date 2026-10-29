@@ -40,6 +40,8 @@ abstract final class SkyDrawnCopy {
 
   static String count(int count) => '$count';
 
+  static String countLabel(int count) => '$count drawn together';
+
   static String? lead({required bool night, int? number}) =>
       number == null ? null : '${night ? 'Night' : 'Day'} $number';
 
@@ -260,6 +262,7 @@ class SkyDrawnMapRow extends StatelessWidget {
                 Text(
                   SkyDrawnCopy.count(drawings.length),
                   key: SkyDrawnKeys.count,
+                  semanticsLabel: SkyDrawnCopy.countLabel(drawings.length),
                   style: SkyType.sans(11, weight: FontWeight.w600).copyWith(color: t.muted),
                 ),
             ],
