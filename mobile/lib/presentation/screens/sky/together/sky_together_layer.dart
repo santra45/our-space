@@ -474,6 +474,13 @@ class SkyTogetherTarget extends StatelessWidget {
   final String partner;
   final double designWidth;
 
+  static String? valueFor(SkyTogetherStage stage, String partner) => switch (stage) {
+    SkyTogetherStage.off || SkyTogetherStage.invite => null,
+    SkyTogetherStage.alone => SkyTogetherCopy.waiting(partner),
+    SkyTogetherStage.partnerHolding => SkyTogetherCopy.partnerHoldingOn(partner),
+    SkyTogetherStage.together || SkyTogetherStage.opening => SkyTogetherCopy.bothHolding,
+  };
+
   @override
   Widget build(BuildContext context) {
     final night = context.sky.isNight;
@@ -499,7 +506,7 @@ class SkyTogetherTarget extends StatelessWidget {
                     button: true,
                     label: SkyTogetherCopy.holdLabel(night, partner),
                     hint: SkyTogetherCopy.holdHint(partner),
-                    value: home.holding ? SkyTogetherCopy.holdingOn : null,
+                    value: SkyTogetherTarget.valueFor(home.stage, partner),
                     onTap: home.toggle,
                     child: _CircleHit(
                       child: Listener(

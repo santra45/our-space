@@ -11,9 +11,9 @@ abstract final class SkyTogetherCopy {
 
   static String holdLabel(bool night, String partner) => '${hold(night)} with $partner';
 
-  static String holdHint(String partner) => 'Press and hold with $partner';
+  static String holdHint(String partner) => 'Tap once to hold on with $partner, and again to let go';
 
-  static const String holdingOn = 'Holding on';
+  static String partnerHoldingOn(String partner) => '$partner is holding on';
 
   static String _lead({required bool night, int? dayNumber}) =>
       dayNumber == null ? (night ? 'Tonight' : 'Today') : '${night ? 'Night' : 'Day'} $dayNumber';

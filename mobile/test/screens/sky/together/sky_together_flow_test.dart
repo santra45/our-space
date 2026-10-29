@@ -142,7 +142,8 @@ void main() {
     expect(find.text(SkyTogetherCopy.hold(true)), findsOneWidget);
     final target = tester.widget<Semantics>(semanticsTarget());
     expect(target.properties.label, 'Hold the moon together with Alex');
-    expect(target.properties.hint, 'Press and hold with Alex');
+    expect(target.properties.hint, 'Tap once to hold on with Alex, and again to let go');
+    expect(target.properties.value, isNull);
     expect(phones.pair.a.night, isTrue);
     expect(phones.pair.b.partnerNight, isTrue);
 
@@ -232,11 +233,20 @@ void main() {
 
   testWidgets('a screen reader can start and stop the hold without pressing', (tester) async {
     final phones = await meetOnHome(tester);
+    String? value() => tester.widget<Semantics>(semanticsTarget()).properties.value;
+    phones.b.press();
+    await phones.run(beat * 2);
+    expect(value(), 'Alex is holding on');
+    phones.b.release();
+    await phones.run(beat * 2);
+    expect(value(), isNull);
     tester.widget<Semantics>(semanticsTarget()).properties.onTap!();
     await phones.run(beat);
     expect(phones.a.holding, isTrue);
-    expect(tester.widget<Semantics>(semanticsTarget()).properties.value, SkyTogetherCopy.holdingOn);
+    expect(value(), 'Waiting for Alex to hold on too');
     phones.b.press();
+    await phones.run(beat * 2);
+    expect(value(), "You're both holding on");
     await phones.run(const Duration(seconds: 11));
     expect(find.byType(SkyPatchPage), findsOneWidget);
     await phones.close();

@@ -89,7 +89,7 @@ void main() {
       SkyTogetherCopy.intoPatch,
       SkyTogetherCopy.holdLabel(true, 'Alex'),
       SkyTogetherCopy.holdHint('Alex'),
-      SkyTogetherCopy.holdingOn,
+      SkyTogetherCopy.partnerHoldingOn('Alex'),
       SkyTogetherCopy.patchKicker(night: true, dayNumber: 28),
       SkyTogetherCopy.patchKicker(night: false),
       SkyTogetherCopy.drawingWith('Alex'),
