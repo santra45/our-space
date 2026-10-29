@@ -90,6 +90,9 @@ class _SkyPatchCanvasState extends State<SkyPatchCanvas> with SingleTickerProvid
 
   SkyPatchSession get session => widget.session;
 
+  @visibleForTesting
+  int get remembered => _born.length + _linesBorn.length;
+
   @override
   void initState() {
     super.initState();
@@ -168,12 +171,16 @@ class _SkyPatchCanvasState extends State<SkyPatchCanvas> with SingleTickerProvid
     }
     _gen = drawing.gen;
     final stamp = _seeded && _motion ? _now : -100.0;
-    for (final star in drawing.visibleStars) {
-      _born.putIfAbsent(star.id, () => stamp);
+    final stars = {for (final star in drawing.visibleStars) star.id};
+    final lines = {for (final line in drawing.visibleLines) line.key};
+    for (final id in stars) {
+      _born.putIfAbsent(id, () => stamp);
     }
-    for (final line in drawing.visibleLines) {
-      _linesBorn.putIfAbsent(line.key, () => stamp);
+    for (final key in lines) {
+      _linesBorn.putIfAbsent(key, () => stamp);
     }
+    _born.removeWhere((id, _) => !stars.contains(id));
+    _linesBorn.removeWhere((key, _) => !lines.contains(key));
     _seeded = true;
     final from = _from;
     if (from != null && drawing.visibleStar(from) == null) {
