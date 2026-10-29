@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:our_space_mobile/core/engine.dart';
 import 'package:our_space_mobile/presentation/screens/sky/together/sky_patch_canvas.dart';
 import 'package:our_space_mobile/presentation/screens/sky/together/sky_patch_session.dart';
+import 'package:our_space_mobile/presentation/screens/sky/together/sky_together_layer.dart';
 
 import '../../../support/fake_sky_together.dart';
 import '../../../widgets/harness.dart';
@@ -43,6 +44,30 @@ void main() {
     await tester.pump();
     expect(session.drawing.isBlank, isTrue);
     expect(remembered(), 0);
+
+    await tester.pumpWidget(const SizedBox());
+    session.dispose();
+    pair.dispose();
+  });
+
+  testWidgets('on a narrow phone a tap a finger width off your own star still takes it away', (tester) async {
+    tester.view.physicalSize = const Size(1080, 2220);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+    final pair = FakeSkyPair();
+    pair.settle();
+    final session = SkyPatchSession(link: pair.a, id: 'sky-test', haptic: (_) {});
+    await pumpHost(
+      tester,
+      SizedBox(width: 360, height: 600, child: SkyPatchCanvas(session: session, partner: 'Alex')),
+    );
+    final star = session.placeStar(0.5, 0.5)!;
+    await tester.pump();
+    final box = tester.getRect(find.byKey(SkyTogetherKeys.star(star.id)));
+    expect(box.width, greaterThanOrEqualTo(44));
+    await tester.tapAt(box.center + const Offset(21.5, 0));
+    await tester.pump();
+    expect(session.drawing.visibleStars, isEmpty);
 
     await tester.pumpWidget(const SizedBox());
     session.dispose();

@@ -195,6 +195,8 @@ class _SkyPatchCanvasState extends State<SkyPatchCanvas> with SingleTickerProvid
 
   Rect get _frame => SkyPatchFeel.frameOf(_size);
 
+  double get _hitRadius => math.max(SkySizes.minTap / 2, SkyPatchFeel.hit * _k);
+
   Offset _px(Offset unit) => SkyPatchArt.place(_frame, unit);
 
   Offset _unit(Offset local) {
@@ -406,7 +408,7 @@ class _SkyPatchCanvasState extends State<SkyPatchCanvas> with SingleTickerProvid
     _downStamp = event.timeStamp;
     _finger = event.localPosition;
     _dragging = false;
-    _from = _starAt(event.localPosition, SkyPatchFeel.hit * _k)?.id;
+    _from = _starAt(event.localPosition, _hitRadius)?.id;
     _snapped = null;
     _retractAt = null;
     _sendFinger(event.localPosition);
@@ -468,7 +470,7 @@ class _SkyPatchCanvasState extends State<SkyPatchCanvas> with SingleTickerProvid
   }
 
   void _tap(Offset local) {
-    final hit = _starAt(local, SkyPatchFeel.hit * _k);
+    final hit = _starAt(local, _hitRadius);
     if (hit != null) {
       if (session.mine(hit)) {
         if (session.takeAway(hit.id)) session.haptic(HapticKind.tap);
@@ -537,7 +539,7 @@ class _SkyPatchCanvasState extends State<SkyPatchCanvas> with SingleTickerProvid
           });
         }
         final frame = SkyPatchFeel.frameOf(size);
-        final target = math.max(SkySizes.minTap, SkyPatchFeel.hit * 2 * _k);
+        final target = _hitRadius * 2;
         final stars = drawing.visibleStars;
         return Semantics(
           key: SkyTogetherKeys.frame,
