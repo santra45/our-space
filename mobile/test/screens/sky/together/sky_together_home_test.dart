@@ -194,6 +194,74 @@ void main() {
       phones.dispose();
     });
 
+    test('a door called off on one phone is called off on the other, and nobody opens alone', () async {
+      final phones = TogetherPhones();
+      await phones.meet();
+      phones.a.press();
+      phones.b.press();
+      await phones.run(const Duration(seconds: 11), until: () => phones.b.gate.decided);
+      expect(phones.a.gate.decided, isTrue);
+      expect(phones.b.gate.decided, isTrue);
+      expect(phones.openedA, isEmpty);
+
+      phones.b.present(visible: false, night: false);
+      await phones.step();
+      expect(phones.a.gate.decided, isFalse);
+      expect(phones.b.gate.decided, isFalse);
+      expect(phones.pair.transportB.sentOf('close'), isNotEmpty);
+      await phones.run(const Duration(seconds: 2));
+      phones.b.present(visible: true, night: false);
+      await phones.run(const Duration(seconds: 3));
+      expect(phones.openedA, isEmpty);
+      expect(phones.openedB, isEmpty);
+      expect(phones.a.stage, SkyTogetherStage.invite);
+      expect(phones.b.stage, SkyTogetherStage.invite);
+      phones.dispose();
+    });
+
+    test('the phone that sees the other leave in the last moment tells it, so it does not open alone', () async {
+      final phones = TogetherPhones();
+      await phones.meet();
+      phones.a.press();
+      phones.b.press();
+      await phones.run(const Duration(seconds: 11), until: () => phones.b.gate.decided);
+      phones.pair.injectEvent(
+        phones.pair.a,
+        SkyPresenceEvent(here: false, night: false, owner: phones.pair.ownerB!, tag: 'tag-phone-b', t: 1),
+      );
+      await phones.step();
+      expect(phones.a.gate.decided, isFalse);
+      expect(phones.pair.transportA.sentOf('close').single['drawing'], isNotNull);
+      expect(phones.b.gate.decided, isFalse);
+      await phones.run(const Duration(seconds: 3));
+      expect(phones.openedA, isEmpty);
+      expect(phones.openedB, isEmpty);
+      phones.dispose();
+    });
+
+    test('a phone that wakes long after its moment lets the door go instead of opening alone', () async {
+      final phones = TogetherPhones();
+      await phones.meet();
+      phones.a.press();
+      phones.b.press();
+      await phones.run(const Duration(seconds: 11), until: () => phones.b.gate.decided);
+      for (var i = 0; i < 25; i++) {
+        phones.pair.advance(const Duration(milliseconds: 100));
+        await pumpEventQueue();
+        phones.a.tick();
+      }
+      expect(phones.openedA, hasLength(1));
+      expect(phones.b.gate.phaseAt(phones.pair.b.sharedNow()), SkyGatePhase.open);
+
+      phones.b.tick();
+      await phones.step();
+      expect(phones.openedB, isEmpty);
+      expect(phones.b.gate.decided, isFalse);
+      expect(phones.b.holding, isFalse);
+      expect(phones.openedA.single.partnerAway, isTrue);
+      phones.dispose();
+    });
+
     test('the follower refuses a door it was never holding for', () async {
       final phones = TogetherPhones();
       await phones.meet();

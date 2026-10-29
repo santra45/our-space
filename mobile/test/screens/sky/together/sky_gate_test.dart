@@ -168,6 +168,30 @@ void main() {
       expect(gate.phaseAt(t0 + 10000), SkyGatePhase.idle);
       expect(gate.holding || gate.partnerHolding, isFalse);
     });
+
+    test('letting go after the door is decided still opens it, but a door called off keeps no stale hold', () {
+      final gate = SkyGate()
+        ..press(t0)
+        ..partnerPress(t0, 1)
+        ..commit('sky-one', t0 + 10000);
+      gate.release(t0 + 9800);
+      gate.partnerRelease(t0 + 9850, 1);
+      expect(gate.holding, isFalse);
+      expect(gate.partnerHolding, isFalse);
+      expect(gate.phaseAt(t0 + 9900), SkyGatePhase.opening);
+      expect(gate.phaseAt(t0 + 10000), SkyGatePhase.open);
+
+      gate.cancel('sky-one');
+      expect(gate.phaseAt(t0 + 10000), SkyGatePhase.idle);
+      expect(gate.due(t0 + 10000, leader: true), isNull);
+
+      gate
+        ..commit('sky-two', t0 + 20000)
+        ..partnerPress(t0 + 19800, 2);
+      expect(gate.partnerHolding, isTrue);
+      gate.cancel('sky-two');
+      expect(gate.phaseAt(t0 + 20000), SkyGatePhase.partnerHolding);
+    });
   });
 
   group('the heartbeat', () {

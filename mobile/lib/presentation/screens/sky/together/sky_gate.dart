@@ -110,19 +110,18 @@ class SkyGate {
   }
 
   void release(int at) {
-    if (_openAt != null || _mine == null) return;
+    if (_mine == null) return;
     _mine = null;
     _myReleasedAt = at;
   }
 
   void partnerPress(int at, int seq) {
-    if (_openAt != null) return;
     _theirs = at;
     _theirSeq = seq;
   }
 
   void partnerRelease(int at, int seq) {
-    if (_openAt != null || _theirs == null) return;
+    if (_theirs == null) return;
     if (seq != _theirSeq) return;
     _theirs = null;
   }

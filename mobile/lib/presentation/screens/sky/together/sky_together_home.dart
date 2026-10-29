@@ -62,7 +62,10 @@ class SkyTogetherHome extends ChangeNotifier {
 
   void present({required bool visible, required bool night}) {
     if (_disposed) return;
-    if (!visible) release();
+    if (!visible) {
+      release();
+      _callOff();
+    }
     _visible = visible;
     link.setPresence(here: visible || _session != null, night: night);
     _sync();
@@ -96,7 +99,7 @@ class SkyTogetherHome extends ChangeNotifier {
   }
 
   bool press() {
-    if (_disposed || gate.holding) return false;
+    if (_disposed || gate.holding || gate.decided) return false;
     if (_stage == SkyTogetherStage.off || _stage == SkyTogetherStage.opening) return false;
     final event = link.sendHold(down: true);
     gate.press(event.at);
@@ -128,7 +131,7 @@ class SkyTogetherHome extends ChangeNotifier {
     final now = link.sharedNow();
     final last = _lastTick ?? now;
     _lastTick = now;
-    if (!link.linked || !link.partnerHere) gate.partnerLost(now);
+    if (!link.linked || !link.partnerHere) _lose(now);
     if (gate.beatsBetween(last, now).isNotEmpty) haptic(HapticKind.heartbeat);
     final due = gate.due(now, leader: link.isLeader);
     if (due != null) {
@@ -136,11 +139,31 @@ class SkyTogetherHome extends ChangeNotifier {
       gate.commit(id, due.at);
       unawaited(link.sendOpen(id, at: due.at));
     }
-    if (gate.phaseAt(now) == SkyGatePhase.open && gate.drawing != null) {
-      _open(gate.drawing!);
+    final drawing = gate.drawing;
+    if (gate.phaseAt(now) == SkyGatePhase.open && drawing != null) {
+      if (now - gate.openAt! > gate.graceMs) {
+        _callOff();
+        release();
+        _sync();
+        return;
+      }
+      _open(drawing);
       return;
     }
     _sync();
+  }
+
+  void _lose(int now) {
+    final drawing = gate.drawing;
+    gate.partnerLost(now);
+    if (drawing != null && !gate.decided) unawaited(link.sendClose(drawing));
+  }
+
+  void _callOff() {
+    final drawing = gate.drawing;
+    if (drawing == null) return;
+    gate.cancel(drawing);
+    unawaited(link.sendClose(drawing));
   }
 
   String _idToOpen() => _unfinished ?? drawings?.newId() ?? 'sky-${generateUrlSafeNonce(12)}';
@@ -218,7 +241,8 @@ class SkyTogetherHome extends ChangeNotifier {
 
   void _onLink() {
     if (_disposed) return;
-    if (!link.linked || !link.partnerHere) gate.partnerLost(link.sharedNow());
+    if (!link.linked || !link.partnerHere) _lose(link.sharedNow());
+    if (!link.here) _callOff();
     if (!link.together && gate.holding) release();
     _sync();
   }
