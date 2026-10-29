@@ -1,5 +1,3 @@
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
@@ -10,6 +8,7 @@ import '../sky_days.dart';
 import '../sky_map_detail.dart';
 import '../sky_map_plan.dart';
 import 'sky_drawn.dart';
+import 'sky_patch_naming.dart';
 
 abstract final class SkyDrawnKeys {
   static const Key row = ValueKey<String>('sky-drawn-row');
@@ -304,11 +303,8 @@ class SkyDrawnPage extends StatefulWidget {
   const SkyDrawnPage({super.key, required this.record});
 
   static const String routeName = '/sky/map/drawn';
-  static const double patchSide = 280;
 
   final SkyDrawingRecord record;
-
-  static double fitScale(Rect room) => (math.min(room.width, room.height) / patchSide).clamp(0.9, 1.4);
 
   @override
   State<SkyDrawnPage> createState() => _SkyDrawnPageState();
@@ -347,8 +343,6 @@ class _SkyDrawnPageState extends State<SkyDrawnPage> {
     final motion = skyMotionAllowed(context);
     final record = widget.record;
     final when = SkyDrawnWhen.of(record, start: start);
-    final sketch = SkyDrawnSketch.of(record.drawing);
-
     final sky = LayoutBuilder(
       builder: (context, box) {
         final size = box.biggest;
@@ -384,13 +378,7 @@ class _SkyDrawnPageState extends State<SkyDrawnPage> {
                   top: room.top * k,
                   width: room.width * k,
                   height: room.height * k,
-                  child: SkyDrawnView(
-                    key: SkyDrawnKeys.drawing,
-                    sketch: sketch,
-                    style: SkyDrawnStyle.of(t),
-                    opacity: dim,
-                    scale: k * SkyDrawnPage.fitScale(room),
-                  ),
+                  child: SkyPatchStill(key: SkyDrawnKeys.drawing, drawing: record.drawing, night: night, faint: dim),
                 ),
               ],
             ),

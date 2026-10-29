@@ -5,6 +5,7 @@ import 'package:our_space_mobile/presentation/screens/sky/sky_days.dart';
 import 'package:our_space_mobile/presentation/screens/sky/sky_map_plan.dart';
 import 'package:our_space_mobile/presentation/screens/sky/together/sky_drawn.dart';
 import 'package:our_space_mobile/presentation/screens/sky/together/sky_drawn_map.dart';
+import 'package:our_space_mobile/presentation/screens/sky/together/sky_patch_naming.dart';
 import 'package:our_space_mobile/presentation/sky/sky.dart';
 
 import '../../../widgets/harness.dart' show recordHaptics, usePhoneSize;
@@ -179,10 +180,11 @@ void main() {
       expect(scene.constellation, isNull);
       expect(scene.stars, 90);
       expect(scene.seed, 11);
-      final view = tester.widget<SkyDrawnView>(find.byKey(SkyDrawnKeys.drawing));
-      expect(view.sketch, SkyDrawnSketch.of(record.drawing));
-      expect(view.style, SkyDrawnStyle.night);
-      expect(view.opacity, 1);
+      final view = tester.widget<SkyPatchStill>(find.byKey(SkyDrawnKeys.drawing));
+      expect(view.drawing, record.drawing);
+      expect(view.night, isTrue);
+      expect(view.faint, 1);
+      expect(view.owners, isFalse);
       final drawing = tester.getRect(find.byKey(SkyDrawnKeys.drawing));
       final status = tester.getRect(find.byKey(SkyDrawnKeys.status));
       final title = tester.getRect(find.text('Our kite'));
@@ -206,7 +208,7 @@ void main() {
       await press(tester, find.byKey(SkyDrawnKeys.tile(record.id)));
       await settleRoute(tester);
       await untilFound(tester, find.byKey(SkyDrawnKeys.detail));
-      expect(tester.widget<SkyDrawnView>(find.byKey(SkyDrawnKeys.drawing)).style, SkyDrawnStyle.day);
+      expect(tester.widget<SkyPatchStill>(find.byKey(SkyDrawnKeys.drawing)).night, isFalse);
       expect(find.text(SkyDrawnWhen.of(record, start: start).note(night: false)), findsOneWidget);
       expect(find.text('Hold the sun together to draw another'), findsOneWidget);
       await settle(tester, space);
@@ -225,11 +227,11 @@ void main() {
       await tester.tap(find.byKey(SkyDrawnKeys.tile(record.id)));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 60));
-      expect(tester.widget<SkyDrawnView>(find.byKey(SkyDrawnKeys.drawing)).opacity, lessThan(1));
+      expect(tester.widget<SkyPatchStill>(find.byKey(SkyDrawnKeys.drawing)).faint, lessThan(1));
       for (var i = 0; i < 16; i++) {
         await tester.pump(const Duration(milliseconds: 50));
       }
-      expect(tester.widget<SkyDrawnView>(find.byKey(SkyDrawnKeys.drawing)).opacity, 1);
+      expect(tester.widget<SkyPatchStill>(find.byKey(SkyDrawnKeys.drawing)).faint, 1);
       expect(tester.takeException(), isNull);
       await settle(tester, space);
       await tester.pumpWidget(const SizedBox());

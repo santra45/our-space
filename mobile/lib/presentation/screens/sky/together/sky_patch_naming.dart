@@ -47,18 +47,27 @@ class SkyNameLimit extends TextInputFormatter {
 }
 
 class SkyPatchStill extends StatelessWidget {
-  const SkyPatchStill({super.key, required this.drawing, this.me, this.owners = false});
+  const SkyPatchStill({super.key, required this.drawing, this.me, this.owners = false, this.night, this.faint = 1});
 
   final SkyDrawing drawing;
   final String? me;
   final bool owners;
+  final bool? night;
+  final double faint;
 
-  static SkyPatchPicture pictureOf(SkyDrawing drawing, {required bool night, String? me, bool owners = false}) {
+  static SkyPatchPicture pictureOf(
+    SkyDrawing drawing, {
+    required bool night,
+    String? me,
+    bool owners = false,
+    double faint = 1,
+  }) {
     final stars = drawing.visibleStars;
     final units = {for (final s in stars) s.id: Offset(s.x, s.y)};
     return SkyPatchPicture(
       night: night,
       owners: owners,
+      faint: faint,
       stars: [
         for (var i = 0; i < stars.length; i++)
           SkyPatchStar(id: stars[i].id, unit: units[stars[i].id]!, index: i, mine: stars[i].by == me),
@@ -79,7 +88,7 @@ class SkyPatchStill extends StatelessWidget {
       child: RepaintBoundary(
         child: CustomPaint(
           painter: _StillPainter(
-            picture: pictureOf(drawing, night: t.isNight, me: me, owners: owners),
+            picture: pictureOf(drawing, night: night ?? t.isNight, me: me, owners: owners, faint: faint),
             sketch: sketch,
             k: k,
             sigma: t.glowSigma,
