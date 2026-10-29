@@ -176,10 +176,10 @@ class SkyTogetherLink extends ChangeNotifier {
 
   Future<bool> sendState(String drawing, SkyDrawing state) => send(SkyStateEvent(drawing: drawing, state: state));
 
-  Future<bool> sendName(String drawing, String text) {
+  Future<bool> sendName(String drawing, String text, {bool take = false}) {
     _nameRev = _nameRev >= maxSkyNameRev ? 1 : _nameRev + 1;
     final cut = text.length > maxSkyTypedUnits ? text.substring(0, maxSkyTypedUnits) : text;
-    return send(SkyNameEvent(drawing: drawing, text: cut, rev: _nameRev));
+    return send(SkyNameEvent(drawing: drawing, text: cut, rev: _nameRev, take: take));
   }
 
   Future<bool> sendAgree(String drawing, String text) {

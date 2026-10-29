@@ -235,6 +235,7 @@ void main() {
     await pair.a.sendOp('sky-one', op);
     await pair.a.sendState('sky-one', drawing.apply(op));
     await pair.a.sendName('sky-one', 'Our kite ');
+    await pair.a.sendName('sky-one', '', take: true);
     await pair.a.sendAgree('sky-one', '  Our   kite ');
     await pair.a.sendSaved('sky-one');
     await pair.a.sendClose('sky-one');
@@ -242,7 +243,7 @@ void main() {
     await drain();
 
     final kinds = [for (final e in toB) if (e is! SkyPresenceEvent) e.kind];
-    expect(kinds, ['hold', 'hold', 'hold', 'open', 'op', 'state', 'name', 'agree', 'saved', 'close']);
+    expect(kinds, ['hold', 'hold', 'hold', 'open', 'op', 'state', 'name', 'name', 'agree', 'saved', 'close']);
     final events = [for (final e in toB) if (e is! SkyPresenceEvent) e];
     expect(events[0], hold);
     expect(events[1], release);
@@ -252,8 +253,12 @@ void main() {
     expect((events[6] as SkyNameEvent).text, 'Our kite ');
     expect((events[6] as SkyNameEvent).clean, 'Our kite');
     expect((events[6] as SkyNameEvent).rev, 1);
-    expect((events[7] as SkyAgreeEvent).text, 'Our kite');
-    expect((events[8] as SkySavedEvent).drawing, 'sky-one');
+    expect((events[6] as SkyNameEvent).take, isFalse);
+    expect(pair.transportA.sentOf('name').first.containsKey('take'), isFalse);
+    expect((events[7] as SkyNameEvent).take, isTrue);
+    expect((events[7] as SkyNameEvent).rev, 2);
+    expect((events[8] as SkyAgreeEvent).text, 'Our kite');
+    expect((events[9] as SkySavedEvent).drawing, 'sky-one');
     pair.dispose();
   });
 
@@ -323,6 +328,7 @@ void main() {
       {'v': 1, 'k': 'close'},
       {'v': 1, 'k': 'name', 'drawing': 'sky-1', 'text': 'x' * (maxSkyTypedUnits + 1), 'rev': 1},
       {'v': 1, 'k': 'name', 'drawing': 'sky-1', 'text': 7, 'rev': 1},
+      {'v': 1, 'k': 'name', 'drawing': 'sky-1', 'text': 'Kite', 'rev': 1, 'take': 'yes'},
       {'v': 1, 'k': 'agree', 'drawing': 'sky-1', 'text': '   '},
       {'v': 1, 'k': 'op', 'drawing': 'sky-1', 'op': {'o': 'clear', 'g': 0}},
       {'v': 1, 'k': 'op', 'drawing': 'sky-1', 'op': {'o': 'warp', 'g': 1}},

@@ -275,13 +275,13 @@ class SkyPatchSession extends ChangeNotifier {
     _sendName();
   }
 
-  void _sendName() {
+  void _sendName({bool take = false}) {
     _nameTimer?.cancel();
     _nameTimer = null;
     if (!_namePending) return;
     _namePending = false;
     _lastNameSent = link.now();
-    unawaited(link.sendName(id, _name));
+    unawaited(link.sendName(id, _name, take: take));
   }
 
   void changeIt() {
@@ -291,7 +291,7 @@ class SkyPatchSession extends ChangeNotifier {
     _namePending = true;
     _lastNameSent = null;
     notifyListeners();
-    _sendName();
+    _sendName(take: true);
   }
 
   Future<bool> agree() async {
@@ -411,7 +411,7 @@ class SkyPatchSession extends ChangeNotifier {
     final wasTyper = _typer && _step == SkyPatchStep.naming;
     _step = SkyPatchStep.naming;
     finger.value = null;
-    if (wasTyper && event.text.trim().isEmpty && _name.trim().isEmpty && leader) {
+    if (!event.take && wasTyper && event.text.trim().isEmpty && _name.trim().isEmpty && leader) {
       _namePending = true;
       _lastNameSent = null;
       _sendName();

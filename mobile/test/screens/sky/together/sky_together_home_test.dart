@@ -525,6 +525,29 @@ void main() {
       phones.dispose();
     });
 
+    test('change it hands the typing over even before the leader has typed a letter', () async {
+      final phones = TogetherPhones(drawingsA: drawings, keyA: key);
+      await phones.meet();
+      final (a, b) = await drawKite(phones);
+      expect(a.finishDrawing(), isTrue);
+      await phones.step();
+      expect(a.typer, isTrue);
+      expect(b.typer, isFalse);
+      expect(a.name, isEmpty);
+
+      b.changeIt();
+      for (var i = 0; i < 4; i++) {
+        await phones.step();
+      }
+      expect(b.typer, isTrue);
+      expect(a.typer, isFalse);
+      b.type('Our kite');
+      await phones.step();
+      expect(a.name, 'Our kite');
+      expect(b.typer, isTrue);
+      phones.dispose();
+    });
+
     test('leaving keeps the half-finished drawing, and holding together again opens the same one', () async {
       final phones = TogetherPhones(drawingsA: drawings, keyA: key);
       await phones.meet();

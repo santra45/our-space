@@ -239,11 +239,12 @@ final class SkyCursorEvent extends SkyTogetherEvent {
 }
 
 final class SkyNameEvent extends SkyTogetherEvent {
-  const SkyNameEvent({required this.drawing, required this.text, required this.rev});
+  const SkyNameEvent({required this.drawing, required this.text, required this.rev, this.take = false});
 
   final String drawing;
   final String text;
   final int rev;
+  final bool take;
 
   String get clean => cleanSkyName(text);
 
@@ -251,14 +252,17 @@ final class SkyNameEvent extends SkyTogetherEvent {
   String get kind => 'name';
 
   @override
-  Map<String, Object?> get body => {'drawing': drawing, 'text': text, 'rev': rev};
+  Map<String, Object?> get body => {'drawing': drawing, 'text': text, 'rev': rev, if (take) 'take': true};
 
   static SkyNameEvent? _read(Map<Object?, Object?> raw) {
     final drawing = skyId(raw['drawing']);
     final text = raw['text'];
     final rev = skyInt(raw['rev'], max: maxSkyNameRev);
-    if (drawing == null || text is! String || text.length > maxSkyTypedUnits || rev == null) return null;
-    return SkyNameEvent(drawing: drawing, text: text, rev: rev);
+    final take = raw['take'] ?? false;
+    if (drawing == null || text is! String || text.length > maxSkyTypedUnits || rev == null || take is! bool) {
+      return null;
+    }
+    return SkyNameEvent(drawing: drawing, text: text, rev: rev, take: take);
   }
 }
 
