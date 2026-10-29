@@ -130,6 +130,7 @@ class SkyPatchNaming extends StatefulWidget {
   });
 
   static const Duration idle = Duration(milliseconds: 1200);
+  static const double stillRoom = 120;
 
   final SkyPatchSession session;
   final String partner;
@@ -203,44 +204,72 @@ class _SkyPatchNamingState extends State<SkyPatchNaming> {
         : session.typer
         ? _typerSheet(context)
         : _viewerSheet(context, saving: saving);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
+    return CustomMultiChildLayout(
+      delegate: _NamingLayout(),
       children: [
-        SkyTopBar(
-          compact: true,
-          leading: SkyBackButton(
-            semanticLabel: SkyTogetherCopy.backToDrawing,
-            onPressed: saved || saving ? () {} : session.backToDrawing,
-          ),
-          kicker: SkyTogetherCopy.nameKicker(night: t.isNight, dayNumber: widget.dayNumber),
-          title: SkyTogetherCopy.nameTitle,
-          trailing: SkyAvatar(initial: SkyAvatar.initialOf(widget.me, fallback: 'O')),
-        ),
-        Expanded(
-          child: Column(
-            children: [
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(56, 20, 56, 0),
-                  child: SkyPatchStill(drawing: session.drawing, me: session.me),
-                ),
-              ),
-              const SizedBox(height: 16),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: SkySpace.gutter),
-                child: _SkyName(
-                  key: SkyTogetherKeys.skyName,
-                  text: name,
-                  caret: !saved && !saving && (session.typer || _fresh),
-                  motion: motion,
-                ),
-              ),
-              if (saved) _SavedNote(motion: motion) else const SizedBox(height: 28),
-              const SizedBox(height: 16),
-            ],
+        LayoutId(
+          id: _NamingSlot.top,
+          child: SkyTopBar(
+            compact: true,
+            leading: SkyBackButton(
+              semanticLabel: SkyTogetherCopy.backToDrawing,
+              onPressed: saved || saving ? () {} : session.backToDrawing,
+            ),
+            kicker: SkyTogetherCopy.nameKicker(night: t.isNight, dayNumber: widget.dayNumber),
+            title: SkyTogetherCopy.nameTitle,
+            trailing: SkyAvatar(initial: SkyAvatar.initialOf(widget.me, fallback: 'O')),
           ),
         ),
-        sheet,
+        LayoutId(
+          id: _NamingSlot.middle,
+          child: LayoutBuilder(
+            builder: (context, box) {
+              final caret = !saved && !saving && (session.typer || _fresh);
+              final line = MediaQuery.textScalerOf(context).scale(_SkyName.size) * _SkyName.height;
+              final roomy = box.maxHeight >= SkyPatchNaming.stillRoom + 16 + line * 2 + 28 + 16;
+              if (!roomy) {
+                return ClipRect(
+                  child: Center(
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: SizedBox(
+                        width: box.maxWidth,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: SkySpace.gutter, vertical: 8),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              _SkyName(key: SkyTogetherKeys.skyName, text: name, caret: caret, motion: motion, maxLines: 1),
+                              if (saved) _SavedNote(motion: motion),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              }
+              return Column(
+                children: [
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(56, 20, 56, 0),
+                      child: SkyPatchStill(drawing: session.drawing, me: session.me),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: SkySpace.gutter),
+                    child: _SkyName(key: SkyTogetherKeys.skyName, text: name, caret: caret, motion: motion),
+                  ),
+                  if (saved) _SavedNote(motion: motion) else const SizedBox(height: 28),
+                  const SizedBox(height: 16),
+                ],
+              );
+            },
+          ),
+        ),
+        LayoutId(id: _NamingSlot.sheet, child: sheet),
       ],
     );
   }
@@ -363,12 +392,37 @@ class _SkyPatchNamingState extends State<SkyPatchNaming> {
   }
 }
 
+enum _NamingSlot { top, middle, sheet }
+
+class _NamingLayout extends MultiChildLayoutDelegate {
+  _NamingLayout();
+
+  @override
+  void performLayout(Size size) {
+    final wide = BoxConstraints(minWidth: size.width, maxWidth: size.width, maxHeight: size.height);
+    final top = layoutChild(_NamingSlot.top, wide);
+    final sheet = layoutChild(_NamingSlot.sheet, wide);
+    final room = math.max(0.0, size.height - top.height - sheet.height);
+    layoutChild(_NamingSlot.middle, BoxConstraints.tight(Size(size.width, room)));
+    positionChild(_NamingSlot.top, Offset.zero);
+    positionChild(_NamingSlot.middle, Offset(0, top.height));
+    positionChild(_NamingSlot.sheet, Offset(0, size.height - sheet.height));
+  }
+
+  @override
+  bool shouldRelayout(_NamingLayout oldDelegate) => false;
+}
+
 class _SkyName extends StatefulWidget {
-  const _SkyName({super.key, required this.text, required this.caret, required this.motion});
+  const _SkyName({super.key, required this.text, required this.caret, required this.motion, this.maxLines = 2});
+
+  static const double size = 24;
+  static const double height = 1.25;
 
   final String text;
   final bool caret;
   final bool motion;
+  final int maxLines;
 
   @override
   State<_SkyName> createState() => _SkyNameState();
@@ -408,7 +462,7 @@ class _SkyNameState extends State<_SkyName> with SingleTickerProviderStateMixin 
   @override
   Widget build(BuildContext context) {
     final t = context.sky;
-    final style = SkyType.serif(24, weight: FontWeight.w500, height: 1.25).copyWith(
+    final style = SkyType.serif(_SkyName.size, weight: FontWeight.w500, height: _SkyName.height).copyWith(
       color: t.label,
       shadows: [Shadow(color: t.nameShadow, blurRadius: 8)],
     );
@@ -435,7 +489,7 @@ class _SkyNameState extends State<_SkyName> with SingleTickerProviderStateMixin 
             child: Text(
               widget.text,
               textAlign: TextAlign.center,
-              maxLines: 2,
+              maxLines: widget.maxLines,
               overflow: TextOverflow.ellipsis,
               style: style,
             ),
