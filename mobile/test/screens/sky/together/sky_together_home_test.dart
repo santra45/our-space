@@ -143,6 +143,57 @@ void main() {
       phones.dispose();
     });
 
+    test('a hold made while the other phone is still in the patch still counts when it comes back', () async {
+      final phones = TogetherPhones();
+      await phones.meet();
+      await phones.openTogether();
+      expect(phones.pair.a.isLeader, isTrue);
+
+      await phones.b.endSession();
+      await phones.step();
+      expect(phones.b.stage, SkyTogetherStage.invite);
+      expect(phones.b.press(), isTrue);
+      await phones.step();
+      expect(phones.a.gate.partnerHolding, isTrue);
+
+      await phones.a.endSession();
+      await phones.step();
+      expect(phones.a.stage, SkyTogetherStage.partnerHolding);
+      expect(phones.a.press(), isTrue);
+      await phones.run(const Duration(seconds: 12), until: () => phones.openedA.length > 1 && phones.openedB.length > 1);
+      expect(phones.openedA, hasLength(2));
+      expect(phones.openedB, hasLength(2));
+      expect(phones.openedA.last.id, phones.openedB.last.id);
+      phones.dispose();
+    });
+
+    test('a hold the other phone forgot while it lost sight of us is sent again when it presses', () async {
+      final phones = TogetherPhones();
+      await phones.meet();
+      expect(phones.b.press(), isTrue);
+      await phones.step();
+      expect(phones.a.stage, SkyTogetherStage.partnerHolding);
+
+      phones.pair.injectEvent(
+        phones.pair.a,
+        SkyPresenceEvent(here: false, night: false, owner: phones.pair.ownerB!, tag: 'tag-phone-b', t: 1),
+      );
+      await phones.step();
+      expect(phones.a.gate.partnerHolding, isFalse);
+      await phones.run(const Duration(seconds: 4), until: () => phones.pair.a.partnerHere);
+      expect(phones.a.stage, SkyTogetherStage.invite);
+      expect(phones.b.holding, isTrue);
+
+      expect(phones.a.press(), isTrue);
+      await phones.step();
+      await phones.step();
+      expect(phones.a.stage, SkyTogetherStage.together);
+      await phones.run(const Duration(seconds: 12), until: () => phones.openedA.isNotEmpty && phones.openedB.isNotEmpty);
+      expect(phones.openedA, hasLength(1));
+      expect(phones.openedB, hasLength(1));
+      phones.dispose();
+    });
+
     test('the follower refuses a door it was never holding for', () async {
       final phones = TogetherPhones();
       await phones.meet();

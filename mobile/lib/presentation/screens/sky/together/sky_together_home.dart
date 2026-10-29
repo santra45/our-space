@@ -193,8 +193,8 @@ class SkyTogetherHome extends ChangeNotifier {
     final active = _session?.id;
     switch (event) {
       case final SkyHoldEvent hold:
-        if (active != null) return;
         gate.hear(hold);
+        _answer(hold);
       case SkyOpenEvent(:final drawing, :final at):
         if (drawing == active) return;
         if (active != null || !gate.accept(drawing, at, link.sharedNow())) {
@@ -208,6 +208,12 @@ class SkyTogetherHome extends ChangeNotifier {
         return;
     }
     tick();
+  }
+
+  void _answer(SkyHoldEvent hold) {
+    final mine = gate.myPressAt;
+    if (_session != null || !hold.down || mine == null || hold.at <= mine) return;
+    link.sendHold(down: true, at: mine);
   }
 
   void _onLink() {
