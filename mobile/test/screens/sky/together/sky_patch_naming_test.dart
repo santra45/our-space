@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:our_space_mobile/core/engine.dart';
 import 'package:our_space_mobile/presentation/screens/sky/together/sky_patch_naming.dart';
 import 'package:our_space_mobile/presentation/screens/sky/together/sky_patch_page.dart';
 import 'package:our_space_mobile/presentation/screens/sky/together/sky_patch_session.dart';
+import 'package:our_space_mobile/presentation/screens/sky/together/sky_together_copy.dart';
+import 'package:our_space_mobile/presentation/sky/sky.dart';
 
 import '../../../support/fake_sky_together.dart';
 import '../../../widgets/harness.dart';
@@ -101,6 +102,29 @@ void main() {
       await pumpNaming(tester, size: const Size(393, 851), keyboard: 300);
       expect(find.byType(SkyPatchStill), findsOneWidget);
       expect(tester.getSize(find.byType(SkyPatchStill)).height, greaterThan(80));
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('while it is being kept, back to drawing is neither read out nor pressable', (tester) async {
+      final handle = tester.ensureSemantics();
+      pair.ownerA = 'owner-cccc3333';
+      expect(session.leader, isFalse);
+      session.finishDrawing();
+      session.changeIt();
+      await pumpNaming(tester, size: const Size(393, 851));
+      expect(find.semantics.byLabel(SkyTogetherCopy.backToDrawing), findsOne);
+
+      pair.injectEvent(pair.a, SkyNameEvent(drawing: session.id, text: 'Kite', rev: 99));
+      await tester.pump();
+      expect(session.typer, isFalse);
+      expect(await session.agree(), isTrue);
+      expect(session.step, SkyPatchStep.saving);
+      await tester.pump();
+      expect(find.semantics.byLabel(SkyTogetherCopy.backToDrawing), findsNothing);
+      await tester.tap(find.byType(SkyBackButton), warnIfMissed: false);
+      await tester.pump();
+      expect(session.step, SkyPatchStep.saving);
+      handle.dispose();
       await tester.pumpWidget(const SizedBox());
     });
   });

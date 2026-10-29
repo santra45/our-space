@@ -211,9 +211,15 @@ class _SkyPatchNamingState extends State<SkyPatchNaming> {
           id: _NamingSlot.top,
           child: SkyTopBar(
             compact: true,
-            leading: SkyBackButton(
-              semanticLabel: SkyTogetherCopy.backToDrawing,
-              onPressed: saved || saving ? () {} : session.backToDrawing,
+            leading: ExcludeSemantics(
+              excluding: saved || saving,
+              child: IgnorePointer(
+                ignoring: saved || saving,
+                child: Opacity(
+                  opacity: saved || saving ? 0.45 : 1,
+                  child: SkyBackButton(semanticLabel: SkyTogetherCopy.backToDrawing, onPressed: session.backToDrawing),
+                ),
+              ),
             ),
             kicker: SkyTogetherCopy.nameKicker(night: t.isNight, dayNumber: widget.dayNumber),
             title: SkyTogetherCopy.nameTitle,
