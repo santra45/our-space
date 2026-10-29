@@ -434,12 +434,17 @@ class _SkyName extends StatefulWidget {
   State<_SkyName> createState() => _SkyNameState();
 }
 
-class _SkyNameState extends State<_SkyName> with SingleTickerProviderStateMixin {
-  late final AnimationController _blink = AnimationController(vsync: this, duration: const Duration(seconds: 1));
+class _SkyNameState extends State<_SkyName> {
+  static const Duration _period = Duration(milliseconds: 500);
+
+  Timer? _blink;
+  bool _on = true;
+  bool _ticking = true;
 
   @override
-  void initState() {
-    super.initState();
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _ticking = TickerMode.valuesOf(context).enabled;
     _sync();
   }
 
@@ -450,18 +455,21 @@ class _SkyNameState extends State<_SkyName> with SingleTickerProviderStateMixin 
   }
 
   void _sync() {
-    final run = widget.caret && widget.motion;
-    if (run && !_blink.isAnimating) {
-      _blink.repeat();
-    } else if (!run && _blink.isAnimating) {
-      _blink.stop();
-      _blink.value = 0;
+    final run = widget.caret && widget.motion && _ticking;
+    if (run && _blink == null) {
+      _blink = Timer.periodic(_period, (_) {
+        if (mounted) setState(() => _on = !_on);
+      });
+    } else if (!run && _blink != null) {
+      _blink!.cancel();
+      _blink = null;
+      _on = true;
     }
   }
 
   @override
   void dispose() {
-    _blink.dispose();
+    _blink?.cancel();
     super.dispose();
   }
 
@@ -472,9 +480,8 @@ class _SkyNameState extends State<_SkyName> with SingleTickerProviderStateMixin 
       color: t.label,
       shadows: [Shadow(color: t.nameShadow, blurRadius: 8)],
     );
-    final caret = AnimatedBuilder(
-      animation: _blink,
-      builder: (context, child) => Opacity(opacity: _blink.value < 0.5 ? 1 : 0, child: child),
+    final caret = Opacity(
+      opacity: _on ? 1 : 0,
       child: Container(
         width: 2,
         height: 22,

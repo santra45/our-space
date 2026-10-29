@@ -5,6 +5,7 @@ import 'package:our_space_mobile/presentation/screens/sky/together/sky_patch_nam
 import 'package:our_space_mobile/presentation/screens/sky/together/sky_patch_page.dart';
 import 'package:our_space_mobile/presentation/screens/sky/together/sky_patch_session.dart';
 import 'package:our_space_mobile/presentation/screens/sky/together/sky_together_copy.dart';
+import 'package:our_space_mobile/presentation/screens/sky/together/sky_together_layer.dart';
 import 'package:our_space_mobile/presentation/sky/sky.dart';
 
 import '../../../support/fake_sky_together.dart';
@@ -125,6 +126,26 @@ void main() {
       await tester.pump();
       expect(session.step, SkyPatchStep.saving);
       handle.dispose();
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('the caret blinks twice a second without keeping the phone drawing every frame', (tester) async {
+      session.finishDrawing();
+      tester.view.physicalSize = const Size(393, 851) * 3;
+      tester.view.devicePixelRatio = 3;
+      addTearDown(tester.view.reset);
+      await pumpHost(tester, SkyPatchNaming(session: session, partner: 'Alex'), animations: true, scaffold: false);
+      await tester.pump(const Duration(seconds: 2));
+      double caret() => tester
+          .widget<Opacity>(find.descendant(of: find.byKey(SkyTogetherKeys.skyName), matching: find.byType(Opacity)))
+          .opacity;
+      expect(tester.binding.transientCallbackCount, 0);
+      final before = caret();
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(caret(), isNot(before));
+      expect(tester.binding.transientCallbackCount, 0);
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(caret(), before);
       await tester.pumpWidget(const SizedBox());
     });
   });
