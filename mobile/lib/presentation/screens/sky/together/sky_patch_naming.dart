@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart';
 
 import '../../../../core/engine.dart';
@@ -145,15 +146,18 @@ class _SkyPatchNamingState extends State<SkyPatchNaming> {
   late final TextEditingController _field = TextEditingController(text: widget.session.name);
   final FocusNode _focus = FocusNode();
   Timer? _idle;
+  String? _announced;
   bool _fresh = false;
-  late bool _typer = widget.session.typer;
-  late int _changedAt = widget.session.nameChangedAt;
+  late bool _typer;
+  late int _changedAt;
 
   SkyPatchSession get session => widget.session;
 
   @override
   void initState() {
     super.initState();
+    _typer = session.typer;
+    _changedAt = session.nameChangedAt;
     session.addListener(_onSession);
   }
 
@@ -186,9 +190,18 @@ class _SkyPatchNamingState extends State<SkyPatchNaming> {
       _idle = Timer(SkyPatchNaming.idle, () {
         if (!mounted) return;
         setState(() => _fresh = false);
+        _announce();
       });
     }
     setState(() {});
+  }
+
+  void _announce() {
+    if (session.typer || session.step != SkyPatchStep.naming) return;
+    final name = cleanSkyName(session.name);
+    if (name.isEmpty || name == _announced) return;
+    _announced = name;
+    unawaited(SemanticsService.sendAnnouncement(View.of(context), name, TextDirection.ltr));
   }
 
   @override
@@ -493,23 +506,20 @@ class _SkyNameState extends State<_SkyName> {
         ),
       ),
     );
-    return Semantics(
-      liveRegion: true,
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Flexible(
-            child: Text(
-              widget.text,
-              textAlign: TextAlign.center,
-              maxLines: widget.maxLines,
-              overflow: TextOverflow.ellipsis,
-              style: style,
-            ),
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Flexible(
+          child: Text(
+            widget.text,
+            textAlign: TextAlign.center,
+            maxLines: widget.maxLines,
+            overflow: TextOverflow.ellipsis,
+            style: style,
           ),
-          if (widget.caret) caret,
-        ],
-      ),
+        ),
+        if (widget.caret) caret,
+      ],
     );
   }
 }

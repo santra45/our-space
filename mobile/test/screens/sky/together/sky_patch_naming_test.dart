@@ -148,5 +148,34 @@ void main() {
       expect(caret(), before);
       await tester.pumpWidget(const SizedBox());
     });
+
+    testWidgets('the one watching hears the name once when their partner pauses, not every letter', (tester) async {
+      tester.view.physicalSize = const Size(393, 851) * 3;
+      tester.view.devicePixelRatio = 3;
+      addTearDown(tester.view.reset);
+      final pair = FakeSkyPair();
+      pair.settle();
+      final session = SkyPatchSession(link: pair.a, id: 'sky-heard', haptic: (_) {});
+      addTearDown(pair.dispose);
+      addTearDown(session.dispose);
+      await pumpHost(tester, SkyPatchNaming(session: session, partner: 'Alex'), scaffold: false);
+      var rev = 0;
+      for (final text in ['O', 'Ou', 'Our', 'Our k', 'Our ki', 'Our kite']) {
+        pair.injectEvent(pair.a, SkyNameEvent(drawing: session.id, text: text, rev: ++rev));
+        pair.advance(const Duration(milliseconds: 150));
+        await tester.pump(const Duration(milliseconds: 150));
+      }
+      expect(session.typer, isFalse);
+      expect(session.name, 'Our kite');
+      expect(tester.takeAnnouncements(), isEmpty);
+      await tester.pump(SkyPatchNaming.idle);
+      await tester.pump();
+      final heard = tester.takeAnnouncements();
+      expect(heard, hasLength(1));
+      expect(heard.single.message, 'Our kite');
+      await tester.pump(const Duration(seconds: 3));
+      expect(tester.takeAnnouncements(), isEmpty);
+      await tester.pumpWidget(const SizedBox());
+    });
   });
 }
