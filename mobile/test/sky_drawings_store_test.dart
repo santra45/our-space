@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -48,7 +49,7 @@ void main() {
       expect(webSyncedTables, tablesBefore);
       expect(importableTables, {...tablesBefore, skyDrawingsTable});
       expect(exportedTables, [vaultMetaTable, ...tablesBefore, skyDrawingsTable]);
-      expect(mailboxTextTables, [...tablesBefore.where((t) => t != memoriesTable), skyDrawingsTable]);
+      expect(mailboxTextTables, tablesBefore.where((t) => t != memoriesTable).toList());
       expect(allowedPeerTables, {...tablesBefore, skyDrawingsTable});
       expect(binaryFieldsByTable.containsKey(skyDrawingsTable), isFalse);
       expect(wireFieldsFor(skyDrawingsTable), {'id', 'updatedAt', 'deleted', 'v', 'ciphertext', 'iv'});
@@ -251,7 +252,7 @@ void main() {
       await other.close();
     });
 
-    test('the mailbox carries drawings like any other words, and the old text tables still go first', () async {
+    test('drawings stay out of the shared mailbox list, so the website writing it back changes nothing', () async {
       final worker = FakeMailboxWorker(token: 'test-token-for-the-mailbox');
       Mailbox box(VaultStore s, http.Client client) => Mailbox(
         store: s,
@@ -262,34 +263,36 @@ void main() {
         ),
         client: client,
       );
+      final slot = '${deriveMailboxId(key)}/his-person-mailbox/manifest';
       Future<Map<String, Object?>> sealedManifest() async {
-        final raw = worker.kvDump()['${deriveMailboxId(key)}/his-person-mailbox/manifest']!;
-        final sealed = jsonDecode(raw) as Map<String, Object?>;
+        final sealed = jsonDecode(worker.kvDump()[slot]!) as Map<String, Object?>;
         return (decryptJson(sealed['ciphertext'] as String, sealed['iv'] as String, key) as Map).cast<String, Object?>();
       }
 
+      final webTables = webSyncedTables.where((t) => t != memoriesTable).toList();
       await store.putEncrypted(lettersTable, {'id': 'let-1', 'title': 'Hi', 'updatedAt': 10}, key);
-      final before = await box(store, worker).publish(key: key, ownerId: 'his-person-mailbox', includePhotos: false);
-      expect(before.uploaded, 1);
-      expect((await sealedManifest()).keys.toList(), webSyncedTables.where((t) => t != memoriesTable).toList());
-
       await drawings.finish(key, id: 'sky-1', drawing: kite(), name: 'Our kite', at: clock);
+      final first = await box(store, worker).publish(key: key, ownerId: 'his-person-mailbox', includePhotos: false);
+      expect(first.ok, isTrue);
+      expect(first.uploaded, 1);
+      expect((await sealedManifest()).keys.toList(), webTables);
+      expect(worker.kvDump().keys.where((k) => k.contains('/rec/$skyDrawingsTable/')), isEmpty);
+
+      final local = await store.getManifest();
+      final website = <String, Object?>{for (final t in webTables) t: local[t] ?? const <Object?>[]};
+      worker.objects[slot] = Uint8List.fromList(utf8.encode(jsonEncode(encryptJson(website, key).toJson())));
       worker.calls.clear();
-      final published = await box(store, worker).publish(key: key, ownerId: 'his-person-mailbox', includePhotos: false);
-      expect(published.ok, isTrue);
-      expect(published.uploaded, 1);
-      expect((await sealedManifest()).keys.toList(), mailboxTextTables);
-      final puts = [for (final c in worker.calls) if (c.startsWith('PUT') && c.contains('/rec/')) c];
-      expect(puts.single, contains('/rec/skyDrawings/'));
-      final body = worker.kvDump().entries.firstWhere((e) => e.key.contains('/rec/skyDrawings/')).value;
-      expect(body.contains('Our kite'), isFalse);
-      expect((jsonDecode(body) as Map).keys.toSet(), {'id', 'updatedAt', 'deleted', 'v', 'ciphertext', 'iv'});
+      final again = await box(store, worker).publish(key: key, ownerId: 'his-person-mailbox', includePhotos: false);
+      expect(again.ok, isTrue);
+      expect(again.uploaded, 0);
+      expect(again.unchanged, isTrue);
+      expect([for (final c in worker.calls) if (c.startsWith('PUT')) c], isEmpty);
 
       final other = await openTestStore(now: () => clock);
       final got = await box(other, worker).collect(key: key, partnerId: 'his-person-mailbox');
       expect(got.ok, isTrue);
-      expect(got.applied, 2);
-      expect((await SkyDrawingService(store: other).list(key)).single.name, 'Our kite');
+      expect(got.applied, 1);
+      expect(await SkyDrawingService(store: other).list(key), isEmpty);
       await other.close();
     });
   });

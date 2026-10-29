@@ -15,7 +15,9 @@ import 'manifest_diff.dart';
 
 const List<String> mailboxWireFields = ['id', 'updatedAt', 'deleted', 'v', 'ciphertext', 'iv'];
 
-final List<String> mailboxTextTables = syncedTables.where((name) => name != memoriesTable).toList();
+final List<String> mailboxTextTables = syncedTables
+    .where((name) => name != memoriesTable && !appOnlyTables.contains(name))
+    .toList();
 
 class MailboxConfig {
   const MailboxConfig({required this.url, required this.token, this.origin});
@@ -245,7 +247,6 @@ class Mailbox {
       final entries = local[table] ?? const <Map<String, Object?>>[];
       final already = <Object?, (Object?, bool)>{};
       final publishedEntries = published?[table];
-      if (entries.isEmpty && publishedEntries == null && appOnlyTables.contains(table)) continue;
       if (publishedEntries is List) {
         for (final e in publishedEntries) {
           if (e is Map) already[e['id']] = (e['updatedAt'], e['deleted'] == true);
