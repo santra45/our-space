@@ -2,12 +2,22 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:our_space_mobile/core/engine.dart';
 import 'package:our_space_mobile/presentation/screens/sky/together/sky_drawn.dart';
+import 'package:our_space_mobile/presentation/screens/sky/together/sky_patch_art.dart';
 import 'package:our_space_mobile/presentation/screens/sky/together/sky_patch_canvas.dart';
 import 'package:our_space_mobile/presentation/screens/sky/together/sky_patch_session.dart';
 import 'package:our_space_mobile/presentation/screens/sky/together/sky_together_layer.dart';
+import 'package:our_space_mobile/presentation/sky/sky.dart';
 
 import '../../../support/fake_sky_together.dart';
 import '../../../widgets/harness.dart';
+import 'sky_drawn_test.dart' show CountingCanvas;
+
+class LayerCanvas extends CountingCanvas {
+  final List<Rect?> layers = [];
+
+  @override
+  void saveLayer(Rect? bounds, Paint paint) => layers.add(bounds);
+}
 
 void main() {
   testWidgets('the patch only remembers the stars and lines on show, however many the partner sends', (tester) async {
@@ -102,6 +112,67 @@ void main() {
       ].map((p) => (p - px).distance).reduce((a, b) => a < b ? a : b);
       expect(nearest, lessThan(24));
     }
+
+    await tester.pumpWidget(const SizedBox());
+    session.dispose();
+    pair.dispose();
+  });
+
+  testWidgets('the partner name on the comet follows text size, is laid out once, and only fades in its own small layer', (
+    tester,
+  ) async {
+    final small = SkyPatchLivePainter.tagFor('Alex', night: true, tokens: SkyTokens.night, scaler: TextScaler.noScaling);
+    final large = SkyPatchLivePainter.tagFor(
+      'Alex',
+      night: true,
+      tokens: SkyTokens.night,
+      scaler: const TextScaler.linear(1.5),
+    );
+    expect(large.height, greaterThan(small.height));
+    large.dispose();
+
+    SkyPatchLive live(double alpha) => SkyPatchLive(
+      night: true,
+      k: 1,
+      motion: false,
+      head: const Offset(100, 200),
+      cometAlpha: alpha,
+      name: 'Alex',
+      tag: small,
+    );
+    final full = LayerCanvas();
+    SkyPatchLivePainter(live: ValueNotifier(live(1)), tokens: SkyTokens.night).paint(full, const Size(360, 600));
+    expect(full.layers, isEmpty);
+    final fading = LayerCanvas();
+    SkyPatchLivePainter(live: ValueNotifier(live(0.5)), tokens: SkyTokens.night).paint(fading, const Size(360, 600));
+    expect(fading.layers, hasLength(1));
+    final bounds = fading.layers.single!;
+    expect(bounds.contains(const Offset(112, 178) + Offset(small.width / 2, small.height / 2)), isTrue);
+    expect(bounds.width, lessThan(small.width + 2 * SkyPatchLivePainter.tagBleed + 1));
+    small.dispose();
+
+    final pair = FakeSkyPair();
+    pair.settle();
+    final session = SkyPatchSession(link: pair.a, id: 'sky-test', haptic: (_) {});
+    await pumpHost(
+      tester,
+      SizedBox(width: 360, height: 600, child: SkyPatchCanvas(session: session, partner: 'Alex')),
+    );
+    TextPainter? shown() {
+      final paints = tester.widgetList<CustomPaint>(
+        find.descendant(of: find.byType(SkyPatchCanvas), matching: find.byType(CustomPaint)),
+      );
+      final painter = paints.map((p) => p.painter).whereType<SkyPatchLivePainter>().single;
+      return painter.live.value.tag;
+    }
+
+    final first = shown();
+    expect(first, isNotNull);
+    session.placeStar(0.4, 0.4);
+    await tester.pump();
+    session.placeStar(0.6, 0.6);
+    await tester.pump();
+    expect(shown(), same(first));
 
     await tester.pumpWidget(const SizedBox());
     session.dispose();

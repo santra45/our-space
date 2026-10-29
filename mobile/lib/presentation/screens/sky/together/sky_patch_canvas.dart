@@ -85,6 +85,8 @@ class _SkyPatchCanvasState extends State<SkyPatchCanvas> with SingleTickerProvid
   final List<SkyCometPoint> _tail = [];
   Offset? _head;
   double _comet = 0;
+  TextPainter? _tag;
+  Object? _tagOf;
 
   SkyPatchSession get session => widget.session;
 
@@ -115,7 +117,19 @@ class _SkyPatchCanvasState extends State<SkyPatchCanvas> with SingleTickerProvid
     super.didChangeDependencies();
     _motion = skyMotionAllowed(context);
     _night = context.sky.isNight;
+    _syncTag();
     _sync();
+  }
+
+  void _syncTag() {
+    final tokens = context.sky;
+    final scaler = MediaQuery.textScalerOf(context);
+    final name = widget.partner;
+    final of = (name, _night, scaler, tokens.hereText, tokens.nameShadow);
+    if (of == _tagOf) return;
+    _tagOf = of;
+    _tag?.dispose();
+    _tag = name.isEmpty ? null : SkyPatchLivePainter.tagFor(name, night: _night, tokens: tokens, scaler: scaler);
   }
 
   @override
@@ -127,6 +141,7 @@ class _SkyPatchCanvasState extends State<SkyPatchCanvas> with SingleTickerProvid
       _seeded = false;
       _gen = null;
     }
+    _syncTag();
     _sync();
   }
 
@@ -136,6 +151,7 @@ class _SkyPatchCanvasState extends State<SkyPatchCanvas> with SingleTickerProvid
     _ticker.dispose();
     _picture.dispose();
     _live.dispose();
+    _tag?.dispose();
     super.dispose();
   }
 
@@ -386,6 +402,7 @@ class _SkyPatchCanvasState extends State<SkyPatchCanvas> with SingleTickerProvid
       head: _head,
       cometAlpha: _comet,
       name: widget.partner,
+      tag: _tag,
       finger: _pointer == null ? null : finger,
       lineFrom: lineFrom,
       lineTo: lineTo,

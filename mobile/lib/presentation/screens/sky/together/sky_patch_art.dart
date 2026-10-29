@@ -325,6 +325,7 @@ class SkyPatchLive {
     this.head,
     this.cometAlpha = 0,
     this.name,
+    this.tag,
     this.finger,
     this.lineFrom,
     this.lineTo,
@@ -341,6 +342,7 @@ class SkyPatchLive {
   final Offset? head;
   final double cometAlpha;
   final String? name;
+  final TextPainter? tag;
   final Offset? finger;
   final Offset? lineFrom;
   final Offset? lineTo;
@@ -353,10 +355,6 @@ class SkyPatchLivePainter extends CustomPainter {
 
   final ValueListenable<SkyPatchLive> live;
   final SkyTokens tokens;
-
-  TextPainter? _tag;
-  String? _tagText;
-  bool? _tagNight;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -487,31 +485,35 @@ class SkyPatchLivePainter extends CustomPainter {
         ]),
     );
     SkyTogetherInk.glowDot(canvas, head, 3.4 * k, SkyPatchArt.white.withValues(alpha: alpha), tokens.glowSigma);
+    final tag = f.tag;
     final name = f.name;
-    if (name == null || name.isEmpty) return;
-    if (_tag == null || _tagText != name || _tagNight != f.night) {
-      _tag?.dispose();
-      _tag = TextPainter(
+    if (tag == null || name == null || name.isEmpty) return;
+    final flip = head.dx > size.width - 70 * k;
+    final at = head + (flip ? Offset(-12 * k - tag.width, -22 * k) : Offset(12 * k, -22 * k));
+    if (alpha >= 1) {
+      tag.paint(canvas, at);
+      return;
+    }
+    canvas.saveLayer((at & tag.size).inflate(tagBleed * k), Paint()..color = Color.fromRGBO(0, 0, 0, alpha.clamp(0.0, 1.0)));
+    tag.paint(canvas, at);
+    canvas.restore();
+  }
+
+  static const double tagBleed = 10;
+
+  static TextPainter tagFor(String name, {required bool night, required SkyTokens tokens, required TextScaler scaler}) =>
+      TextPainter(
         text: TextSpan(
           text: name,
           style: SkyType.serif(13, weight: FontWeight.w500, height: 1.2).copyWith(
             color: tokens.hereText,
-            shadows: [Shadow(color: tokens.nameShadow, offset: const Offset(0, 1), blurRadius: f.night ? 6 : 8)],
+            shadows: [Shadow(color: tokens.nameShadow, offset: const Offset(0, 1), blurRadius: night ? 6 : 8)],
           ),
         ),
         textDirection: TextDirection.ltr,
+        textScaler: scaler,
         maxLines: 1,
       )..layout();
-      _tagText = name;
-      _tagNight = f.night;
-    }
-    final tag = _tag!;
-    final flip = head.dx > size.width - 70 * k;
-    final offset = flip ? Offset(-12 * k - tag.width, -22 * k) : Offset(12 * k, -22 * k);
-    canvas.saveLayer(null, Paint()..color = Color.fromRGBO(0, 0, 0, alpha.clamp(0.0, 1.0)));
-    tag.paint(canvas, head + offset);
-    canvas.restore();
-  }
 
   @override
   bool shouldRepaint(SkyPatchLivePainter oldDelegate) => oldDelegate.live != live || oldDelegate.tokens != tokens;
