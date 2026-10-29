@@ -50,12 +50,18 @@ abstract final class SkyTogetherLine {
               ],
       );
 
-  static Size measure(String text, TextStyle style, TextScaler scaler) {
+  static const int maxLines = 2;
+
+  static Size measure(String text, TextStyle style, TextScaler scaler, {double maxWidth = double.infinity}) {
     final painter = TextPainter(
       text: TextSpan(text: text, style: style),
       textDirection: TextDirection.ltr,
+      textAlign: TextAlign.center,
       textScaler: scaler,
-    )..layout();
+      maxLines: maxLines,
+      ellipsis: '…',
+      textWidthBasis: TextWidthBasis.longestLine,
+    )..layout(maxWidth: maxWidth);
     final size = painter.size;
     painter.dispose();
     return size;
@@ -71,7 +77,8 @@ abstract final class SkyTogetherLine {
   }) {
     final text = textFor(stage, night: night, partner: partner);
     if (text == null) return null;
-    final size = measure(text, style(tokens), scaler) / scale;
+    final room = (SkyTogetherSpot.lineMax - SkyTogetherSpot.lineMin) * scale;
+    final size = measure(text, style(tokens), scaler, maxWidth: room) / scale;
     return SkyTogetherSpot.lineRect(size, night: night);
   }
 }
@@ -394,7 +401,14 @@ class _SkyTogetherLayerState extends State<SkyTogetherLayer> with SingleTickerPr
                   min: SkyTogetherSpot.lineMin * k,
                   max: SkyTogetherSpot.lineMax * k,
                 ),
-                child: Text(text, style: SkyTogetherLine.style(t), maxLines: 1, softWrap: false),
+                child: Text(
+                  text,
+                  style: SkyTogetherLine.style(t),
+                  maxLines: SkyTogetherLine.maxLines,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  textWidthBasis: TextWidthBasis.longestLine,
+                ),
               );
         return Stack(
           key: SkyTogetherKeys.layer,

@@ -13,6 +13,7 @@ import 'sky_drawn_placement.dart';
 import 'sky_drawn_watch.dart';
 import 'sky_together_copy.dart';
 import 'sky_together_fx.dart';
+import 'sky_together_layer.dart';
 import 'sky_together_scope.dart';
 
 @immutable
@@ -74,18 +75,14 @@ abstract final class SkyKeepsakePlan {
     if (partner != null && partner.trim().isNotEmpty) SkyTogetherCopy.waiting(partner.trim()),
   ];
 
-  static Size measureLine(String? partner, {TextScaler textScaler = TextScaler.noScaling}) {
+  static Size measureLine(String? partner, {TextScaler textScaler = TextScaler.noScaling, double scale = 1}) {
     var width = 0.0;
     var height = 0.0;
+    final room = (SkyTogetherSpot.lineMax - SkyTogetherSpot.lineMin) * scale;
     for (final text in lines(partner)) {
-      final painter = TextPainter(
-        text: TextSpan(text: text, style: lineStyle),
-        textDirection: TextDirection.ltr,
-        textScaler: textScaler,
-      )..layout();
-      width = math.max(width, painter.width);
-      height = math.max(height, painter.height);
-      painter.dispose();
+      final size = SkyTogetherLine.measure(text, lineStyle, textScaler, maxWidth: room);
+      width = math.max(width, size.width);
+      height = math.max(height, size.height);
     }
     return Size(width, height);
   }
@@ -366,7 +363,7 @@ class _SkyKeepsakesState extends State<SkyKeepsakes> {
   List<SkyKeepsakeSpot> _last = const [];
   final Map<String, SkyKeepsakeSpot> _leaving = {};
   final Map<String, (int, SkyDrawnSketch)> _sketches = {};
-  (String?, TextScaler, Size)? _line;
+  (String?, TextScaler, double, Size)? _line;
   (List<Rect>, Size, List<Rect>)? _slots;
 
   @override
@@ -421,11 +418,11 @@ class _SkyKeepsakesState extends State<SkyKeepsakes> {
     });
   }
 
-  Size _measured(String? partner, TextScaler scaler) {
+  Size _measured(String? partner, TextScaler scaler, double k) {
     final cached = _line;
-    if (cached != null && cached.$1 == partner && cached.$2 == scaler) return cached.$3;
-    final size = SkyKeepsakePlan.measureLine(partner, textScaler: scaler);
-    _line = (partner, scaler, size);
+    if (cached != null && cached.$1 == partner && cached.$2 == scaler && cached.$3 == k) return cached.$4;
+    final size = SkyKeepsakePlan.measureLine(partner, textScaler: scaler, scale: k);
+    _line = (partner, scaler, k, size);
     return size;
   }
 
@@ -443,7 +440,7 @@ class _SkyKeepsakesState extends State<SkyKeepsakes> {
     required double k,
     required bool night,
   }) {
-    final line = _measured(widget.partner, MediaQuery.textScalerOf(context));
+    final line = _measured(widget.partner, MediaQuery.textScalerOf(context), k);
     final avoid = SkyKeepsakePlan.avoid(
       sky: widget.sky,
       constellation: widget.constellation,

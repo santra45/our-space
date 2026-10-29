@@ -192,11 +192,11 @@ void main() {
       expect(wide.left, SkyKeepsakePlan.lineEdge);
       expect(SkyKeepsakePlan.lineArea(Size.zero, night: true), isNull);
       final measured = SkyKeepsakePlan.measureLine('Alex');
-      expect(measured.width, greaterThan(SkyKeepsakePlan.measureLine(null).width));
-      expect(
-        SkyKeepsakePlan.measureLine('Alex', textScaler: const TextScaler.linear(1.5)).width,
-        greaterThan(measured.width),
-      );
+      final none = SkyKeepsakePlan.measureLine(null);
+      expect(measured.width * measured.height, greaterThan(none.width * none.height));
+      final bigger = SkyKeepsakePlan.measureLine('Alex', textScaler: const TextScaler.linear(1.5));
+      expect(bigger.width * bigger.height, greaterThan(measured.width * measured.height));
+      expect(bigger.width, lessThanOrEqualTo(SkyTogetherSpot.lineMax - SkyTogetherSpot.lineMin));
     });
 
     test('the room kept for the invitation covers the line home really shows at every step', () {
