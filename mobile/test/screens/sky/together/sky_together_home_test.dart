@@ -262,6 +262,26 @@ void main() {
       phones.dispose();
     });
 
+    test('a door set far from now is refused, and the hold lets go so it is not asked again and again', () async {
+      final phones = TogetherPhones();
+      await phones.meet();
+      phones.a.press();
+      phones.b.press();
+      await phones.step();
+      final now = phones.pair.b.sharedNow();
+      phones.pair.injectEvent(phones.pair.b, SkyOpenEvent(drawing: 'sky-far', at: now + 3600000));
+      await phones.step();
+      expect(phones.b.gate.decided, isFalse);
+      expect(phones.b.stage, isNot(SkyTogetherStage.opening));
+      expect(phones.b.holding, isFalse);
+      expect(phones.pair.transportB.sentOf('close').single['drawing'], 'sky-far');
+      await phones.run(const Duration(seconds: 12));
+      expect(phones.openedA, isEmpty);
+      expect(phones.openedB, isEmpty);
+      expect(phones.pair.transportA.sentOf('open'), isEmpty);
+      phones.dispose();
+    });
+
     test('the follower refuses a door it was never holding for', () async {
       final phones = TogetherPhones();
       await phones.meet();

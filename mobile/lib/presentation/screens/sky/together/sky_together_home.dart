@@ -221,6 +221,7 @@ class SkyTogetherHome extends ChangeNotifier {
       case SkyOpenEvent(:final drawing, :final at):
         if (drawing == active) return;
         if (active != null || !gate.accept(drawing, at, link.sharedNow())) {
+          release();
           unawaited(link.sendClose(drawing));
           return;
         }

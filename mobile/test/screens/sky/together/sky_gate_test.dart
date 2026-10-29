@@ -137,6 +137,26 @@ void main() {
       expect(SkyGate().accept('sky-one', t0, t0), isFalse);
     });
 
+    test('an open time far from now is refused, so the door never hangs or skips the hold', () {
+      SkyGate holding() => SkyGate()
+        ..press(t0)
+        ..partnerPress(t0, 1);
+      final future = holding();
+      expect(future.accept('sky-one', t0 + 10000 + 60000, t0 + 10000), isFalse);
+      expect(future.decided, isFalse);
+      expect(future.accept('sky-one', t0 + 10000 + 1900, t0 + 10000), isTrue);
+
+      final past = holding();
+      expect(past.accept('sky-one', t0 + 1000, t0 + 10000), isFalse);
+      expect(past.decided, isFalse);
+      expect(past.accept('sky-one', t0 + 8500, t0 + 10000), isTrue);
+
+      final decided = holding()..commit('sky-b', t0 + 10000);
+      expect(decided.accept('sky-a', t0 + 999999, t0 + 9700), isFalse);
+      expect(decided.drawing, 'sky-b');
+      expect(decided.openAt, t0 + 10000);
+    });
+
     test('if both phones ever decide, both settle on the same drawing and its moment', () {
       final a = SkyGate()
         ..press(t0)

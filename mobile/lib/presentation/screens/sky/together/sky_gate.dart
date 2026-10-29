@@ -159,6 +159,7 @@ class SkyGate {
   }
 
   bool accept(String drawing, int at, int now) {
+    if (at < now - graceMs || at > now + leadMs + graceMs) return false;
     final current = _drawing;
     if (current != null && _openAt != null) {
       if (current == drawing) return true;
