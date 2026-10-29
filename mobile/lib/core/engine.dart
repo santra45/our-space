@@ -32,6 +32,7 @@ export 'engine/p2p/peer_status.dart';
 export 'engine/p2p/sky_together_link.dart';
 export 'engine/p2p/sky_together_wire.dart';
 export 'engine/repositories/bucket_list_repository.dart';
+export 'engine/repositories/date_ideas_repository.dart';
 export 'engine/repositories/letters_repository.dart';
 export 'engine/repositories/memories_repository.dart';
 export 'engine/repositories/milestones_repository.dart';

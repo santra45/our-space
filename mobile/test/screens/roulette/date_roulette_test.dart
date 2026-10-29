@@ -247,4 +247,148 @@ void main() {
     expect(gradient.colors.first, SkyTokens.indigo);
     await rest(tester, space);
   });
+
+  testWidgets('adds our own date idea, changes it and takes it out only after asking', (tester) async {
+    calm(tester);
+    final space = await usSpace(tester);
+    await openDateNight(tester, space);
+    await untilFound(tester, find.text(RouletteCopy.ideasCount(10)));
+    expect(labelled(RouletteCopy.ideasEntryLabel(10)), findsOneWidget);
+
+    await pressAndSettle(tester, find.byKey(UsKeys.ideasEntry));
+    expect(inSheet(find.text(RouletteCopy.ideasTitle)), findsOneWidget);
+    await untilFound(tester, inSheet(find.text('Living Room Pillow Fort Movie Night')));
+    expect(inSheet(find.text('AT HOME')), findsOneWidget);
+    expect(inSheet(find.text('FOODIE')), findsOneWidget);
+
+    await pressAndSettle(tester, find.byKey(UsKeys.addIdea));
+    expect(find.text(RouletteCopy.newTitle), findsOneWidget);
+    expect(buttonEnabled(tester, UsKeys.ideaSave), isFalse);
+    await typeInto(tester, fieldIn(UsKeys.ideaTitle), '  Cook the same dinner on a call  ');
+    await typeInto(tester, fieldIn(UsKeys.ideaDesc), 'Same recipe, two kitchens');
+    await press(tester, find.widgetWithText(SkyChip, 'Foodie'));
+    expect(tester.widget<SkyChip>(find.widgetWithText(SkyChip, 'Foodie')).tone, SkyChipTone.on);
+    expect(buttonEnabled(tester, UsKeys.ideaSave), isTrue);
+
+    recordedHaptics.clear();
+    await press(tester, find.byKey(UsKeys.ideaSave));
+    await untilFound(tester, inSheet(find.text('Cook the same dinner on a call')));
+    await settleRoutes(tester);
+    expect(find.text(RouletteCopy.newTitle), findsNothing);
+    expect(recordedHaptics, contains(HapticKind.celebration));
+    final added = (await drive(tester, space.dateIdeas.list)).last;
+    expect(added.id, startsWith('date-'));
+    expect(added.title, 'Cook the same dinner on a call');
+    expect(added.desc, 'Same recipe, two kitchens');
+    expect(added.category, 'food');
+
+    await pressAndSettle(tester, find.byKey(UsKeys.idea(added.id)));
+    expect(find.text(RouletteCopy.editTitle), findsOneWidget);
+    expect(fieldText(tester, UsKeys.ideaTitle), 'Cook the same dinner on a call');
+    expect(fieldText(tester, UsKeys.ideaDesc), 'Same recipe, two kitchens');
+    await typeInto(tester, fieldIn(UsKeys.ideaTitle), 'Dinner on a call, same playlist');
+    await press(tester, find.byKey(UsKeys.ideaSave));
+    await untilFound(tester, inSheet(find.text('Dinner on a call, same playlist')));
+    await settleRoutes(tester);
+    expect(find.text(RouletteCopy.editTitle), findsNothing);
+
+    await pressAndSettle(tester, find.byKey(UsKeys.idea(added.id)));
+    await pressAndSettle(tester, find.byKey(UsKeys.ideaRemove));
+    expect(find.text(RouletteCopy.confirmRemove), findsOneWidget);
+    expect(find.text(RouletteCopy.confirmRemoveNote), findsOneWidget);
+    await pressAndSettle(tester, find.text(RouletteCopy.keep));
+    expect(find.text(RouletteCopy.editTitle), findsOneWidget);
+
+    await pressAndSettle(tester, find.byKey(UsKeys.ideaRemove));
+    await pressAndSettle(tester, find.text(RouletteCopy.confirmRemoveYes));
+    await untilGone(tester, find.byKey(UsKeys.idea(added.id)));
+    expect(find.text(RouletteCopy.editTitle), findsNothing);
+    expect((await drive(tester, space.dateIdeas.list)).map((idea) => idea.id), isNot(contains(added.id)));
+    await rest(tester, space);
+  });
+
+  testWidgets('a built in idea can be changed and the card shows the new words', (tester) async {
+    calm(tester);
+    final space = await usSpace(tester);
+    await openDateNight(tester, space);
+    await pressAndSettle(tester, find.byKey(UsKeys.ideasEntry));
+    await untilFound(tester, find.byKey(UsKeys.idea('d1')));
+    await pressAndSettle(tester, find.byKey(UsKeys.idea('d1')));
+    expect(fieldText(tester, UsKeys.ideaTitle), 'Living Room Pillow Fort Movie Night');
+    expect(tester.widget<SkyChip>(find.widgetWithText(SkyChip, 'At home')).tone, SkyChipTone.on);
+    await typeInto(tester, fieldIn(UsKeys.ideaTitle), 'Pillow fort on a video call');
+    await press(tester, find.byKey(UsKeys.ideaSave));
+    await untilFound(tester, inSheet(find.text('Pillow fort on a video call')));
+    await settleRoutes(tester);
+    await until(tester, () => shownIdea(tester).title == 'Pillow fort on a video call');
+    expect(shownIdea(tester).id, 'd1');
+    expect((await drive(tester, space.dateIdeas.list)).first.title, 'Pillow fort on a video call');
+    await rest(tester, space);
+  });
+
+  testWidgets('when the idea on the card is taken out the card moves on to the next one', (tester) async {
+    calm(tester);
+    final space = await usSpace(tester);
+    await openDateNight(tester, space);
+    expect(shownIdea(tester).id, 'd1');
+    await drive(tester, () => space.dateIdeas.remove('d1'));
+    await until(tester, () => shownIdea(tester).id == 'd2');
+    expect(scratchCard(tester).revealed, isFalse);
+    expect(find.text(RouletteCopy.ideasCount(9)), findsOneWidget);
+    await rest(tester, space);
+  });
+
+  testWidgets('a kind with no ideas left shows a gentle card instead of the gold', (tester) async {
+    calm(tester);
+    final space = await usSpace(tester);
+    await openDateNight(tester, space);
+    await drive(tester, () async {
+      for (final id in ['d3', 'd5', 'd9']) {
+        await space.dateIdeas.remove(id);
+      }
+    });
+    await untilFound(tester, find.text(RouletteCopy.ideasCount(7)));
+
+    await press(tester, ideaChip('Foodie'));
+    await untilFound(tester, find.byKey(UsKeys.ideasEmpty));
+    expect(find.byType(ScratchCard), findsNothing);
+    expect(find.text(RouletteCopy.emptyKind), findsOneWidget);
+    expect(find.text(RouletteCopy.emptyNote), findsOneWidget);
+    expect(find.text(RouletteCopy.emptyHint), findsOneWidget);
+
+    await press(tester, find.text(RouletteCopy.anotherIdea));
+    expect(find.byKey(UsKeys.ideasEmpty), findsOneWidget);
+
+    await press(tester, ideaChip('Outdoor'));
+    expect(find.byType(ScratchCard), findsOneWidget);
+    expect(shownIdea(tester).category, 'outdoor');
+    await idle(tester);
+    await rest(tester, space);
+  });
+
+  testWidgets('a card saved on the other phone for our own idea shows once that idea arrives', (tester) async {
+    calm(tester);
+    final space = await usSpace(tester);
+    await openDateNight(tester, space);
+    await drive(tester, () => space.roulette.persist(ideaId: 'date-later', category: 'outdoor', revealed: false));
+    await idle(tester);
+    expect(shownIdea(tester).id, 'd1');
+
+    await drive(
+      tester,
+      () => space.store.putEncrypted(dateIdeasTable, {
+        'id': 'date-later',
+        'title': 'Watch the rain together',
+        'desc': '',
+        'category': 'outdoor',
+        'createdAt': 5,
+        'updatedAt': space.store.clock.next(),
+        'deleted': false,
+      }, space.vault.key),
+    );
+    await untilFound(tester, find.text('Watch the rain together'));
+    expect(shownIdea(tester).id, 'date-later');
+    expect(chipSelected(tester, 'Outdoor'), isTrue);
+    await rest(tester, space);
+  });
 }

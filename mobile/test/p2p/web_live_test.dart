@@ -254,6 +254,28 @@ Future<void> live(String phoneRole) async {
   expect(link.sentFrames.where((f) => f.length > 16000).length, greaterThanOrEqualTo(5));
   expect(webWarnings(), quiet);
 
+  final idea = await phone.store.putEncrypted(
+    dateIdeasTable,
+    {
+      'id': 'date-from-$phoneRole',
+      'title': 'Cook the same dinner on a call',
+      'desc': 'Same recipe, two kitchens',
+      'category': 'food',
+      'createdAt': 1,
+      'updatedAt': clock.now(),
+      'deleted': false,
+    },
+    key,
+  );
+  expect(await phone.engine.broadcastLiveRecord(dateIdeasTable, idea), isTrue);
+  await waitFor(
+    () => web.events.where((e) => e['event'] == 'data-updated' && e['single'] == true).length >= 2,
+    reason: 'the web side to keep our own date idea',
+  );
+  expect(webWarnings(), quiet);
+  final webIdeas = ((await web.dump())[dateIdeasTable] as List).cast<Map>();
+  expect(webIdeas.where((row) => row['id'] == 'date-from-$phoneRole'), hasLength(1));
+
   final letter = encryptRecord(
     {'id': 'let-from-web', 'title': 'From the website', 'content': 'Hi love', 'updatedAt': clock.now()},
     key,

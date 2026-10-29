@@ -29,8 +29,17 @@ abstract final class UsKeys {
 
   static const Key scratchPanel = ValueKey<String>('us-scratch-panel');
   static const Key ideaCategories = ValueKey<String>('us-idea-categories');
+  static const Key ideasEntry = ValueKey<String>('us-ideas-entry');
+  static const Key ideasEmpty = ValueKey<String>('us-ideas-empty');
+  static const Key addIdea = ValueKey<String>('us-add-idea');
+  static const Key ideaTitle = ValueKey<String>('us-idea-title');
+  static const Key ideaDesc = ValueKey<String>('us-idea-desc');
+  static const Key ideaSave = ValueKey<String>('us-idea-save');
+  static const Key ideaRemove = ValueKey<String>('us-idea-remove');
 
   static Key moment(String id) => ValueKey<String>('us-moment-$id');
 
   static Key dream(String id) => ValueKey<String>('us-dream-$id');
+
+  static Key idea(String id) => ValueKey<String>('us-date-idea-$id');
 }

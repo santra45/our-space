@@ -58,7 +58,11 @@ void main() {
       final nothing = await space.vault.unlock(passphrase);
       expect(nothing.error, 'There is nothing here yet. Start your space, or join your partner’s.');
 
-      final created = await space.vault.create(passphrase: passphrase, coupleNames: '  Sam & Alex  ', startDate: '2021-06-14');
+      final created = await space.vault.create(
+        passphrase: passphrase,
+        coupleNames: '  Sam & Alex  ',
+        startDate: '2021-06-14',
+      );
       expect(created.ok, isTrue);
       expect(space.vault.isUnlocked, isTrue);
       expect(space.vault.config!.coupleNames, 'Sam & Alex');
@@ -104,7 +108,10 @@ void main() {
       expect(withProof.canary, isNotNull);
 
       final space = await openSpace();
-      final mismatch = await space.vault.joinFromInvite(passphrase: 'definitely the wrong passphrase', invite: withProof);
+      final mismatch = await space.vault.joinFromInvite(
+        passphrase: 'definitely the wrong passphrase',
+        invite: withProof,
+      );
       expect(mismatch.ok, isFalse);
       expect(
         mismatch.error,
@@ -121,7 +128,10 @@ void main() {
       expect(meta['updatedAt'], 0);
 
       final second = await openSpace();
-      final unverified = await second.vault.joinFromInvite(passphrase: fixture['passphrase'] as String, invite: withoutProof);
+      final unverified = await second.vault.joinFromInvite(
+        passphrase: fixture['passphrase'] as String,
+        invite: withoutProof,
+      );
       expect(unverified.ok, isTrue);
       expect(
         unverified.warning,
@@ -254,11 +264,70 @@ void main() {
       await space.roulette.persist(ideaId: 'd5', category: 'food', revealed: true);
       final state = (await space.roulette.current())!;
       expect(state.ideaId, 'd5');
-      expect(findDateIdea(state.ideaId)!.title, 'Homemade Pasta Cooking Battle');
-      expect(dateIdeasIn('food').length, 3);
+      expect(findDateIdea(defaultDateIdeas, state.ideaId)!.title, 'Homemade Pasta Cooking Battle');
+      expect(dateIdeasIn(defaultDateIdeas, 'food').length, 3);
 
       expect(await space.sync.sendLoveBurst(), isTrue);
       expect(space.sync.lastNotice, 'Saved 💕 your partner will see it the moment you two connect.');
+    });
+
+    test('date ideas start with the ten built in ones and take our own', () async {
+      await space.roulette.persist(ideaId: 'd5', category: 'food', revealed: true);
+      var snapshot = await space.dateIdeas.load();
+      expect(snapshot.items.map((idea) => idea.id), defaultDateIdeas.map((idea) => idea.id));
+      expect(snapshot.unreadable, 0);
+      expect(await space.store.countLive(dateIdeasTable), 1);
+
+      await space.dateIdeas.add(title: '  Cook the same dinner on a call  ', desc: ' Two kitchens ', category: 'food');
+      snapshot = await space.dateIdeas.load();
+      final ours = snapshot.items.last;
+      expect(snapshot.items, hasLength(11));
+      expect(ours.id, startsWith('date-'));
+      expect(ours.title, 'Cook the same dinner on a call');
+      expect(ours.desc, 'Two kitchens');
+      expect(ours.category, 'food');
+      expect(dateIdeasIn([for (final idea in snapshot.items) idea.idea], 'food'), hasLength(4));
+
+      final third = snapshot.items[2];
+      await space.dateIdeas.edit(third, title: 'Blind taste test, chai edition', desc: '', category: 'budget');
+      snapshot = await space.dateIdeas.load();
+      expect(snapshot.items[2].id, 'd3');
+      expect(snapshot.items[2].title, 'Blind taste test, chai edition');
+      expect(snapshot.items[2].category, 'budget');
+      expect(snapshot.items, hasLength(11));
+
+      expect(await space.dateIdeas.edit(ours, title: '   ', desc: 'x', category: 'food'), isNull);
+      expect(await space.dateIdeas.remove(rouletteStateId), isNull);
+      expect((await space.roulette.current())?.ideaId, 'd5');
+    });
+
+    test('removing a date idea keeps it gone, built in or our own', () async {
+      await space.dateIdeas.add(title: 'Paint each other badly', desc: '', category: 'athome');
+      var items = await space.dateIdeas.list();
+      final ours = items.last;
+      final before = items.length;
+
+      await space.dateIdeas.remove('d1');
+      await space.dateIdeas.remove('d3');
+      await space.dateIdeas.remove(ours.id);
+      items = await space.dateIdeas.list();
+      expect(items.map((idea) => idea.id), isNot(contains('d1')));
+      expect(items.map((idea) => idea.id), isNot(contains('d3')));
+      expect(items.map((idea) => idea.id), isNot(contains(ours.id)));
+      expect(items, hasLength(before - 3));
+      expect(items.first.id, 'd2');
+
+      final tombstone = await space.store.getRow(dateIdeasTable, 'd1');
+      expect(tombstone?['deleted'], isTrue);
+      expect((await space.store.getRow(dateIdeasTable, ours.id))?['deleted'], isTrue);
+    });
+
+    test('date idea text is trimmed and kept to a sane length', () async {
+      await space.dateIdeas.add(title: 'a' * 500, desc: 'b' * 2000, category: 'outdoor');
+      final ours = (await space.dateIdeas.list()).last;
+      expect(ours.title.length, dateIdeaTitleLimit * 4);
+      expect(ours.desc.length, dateIdeaDescLimit * 4);
+      expect(await space.dateIdeas.add(title: '  ', desc: 'nothing', category: 'outdoor'), isNull);
     });
 
     test('backups export and re-import cleanly', () async {
@@ -354,7 +423,11 @@ void main() {
       final config = asStringMap(box['config'])!;
       final worker = FakeMailboxWorker.fromKvDump(asStringMap(box['kv'])!, token: config['token'] as String);
       final space = await openSpace(
-        mailbox: MailboxConfig.resolve(url: config['url'] as String, token: config['token'] as String, origin: box['origin'] as String),
+        mailbox: MailboxConfig.resolve(
+          url: config['url'] as String,
+          token: config['token'] as String,
+          origin: box['origin'] as String,
+        ),
         worker: worker,
       );
       final built = (asStringMap(fixture['invites'])!['built'] as List).cast<Map>();
@@ -384,7 +457,10 @@ void main() {
       expect(memories.length, 2);
       expect(await space.memories.loadPhoto('mem-interop-1'), base64ToBuffer(asStringMap(fixture['blob'])!['plain']));
       final letters = await space.letters.list();
-      expect(space.letters.open(letters.firstWhere((l) => l.id == 'let-interop-past')).content, 'This one was sealed until 2020.');
+      expect(
+        space.letters.open(letters.firstWhere((l) => l.id == 'let-interop-past')).content,
+        'This one was sealed until 2020.',
+      );
       final question = space.dailyQuestion.questionForDay(space.vault.requireKey(), 1760000000000);
       expect(question.question.id, isNotEmpty);
 

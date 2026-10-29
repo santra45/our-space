@@ -18,6 +18,23 @@ class DateIdeaCategory {
   final String label;
 }
 
+class DateIdeaRecord extends PlainRecord {
+  DateIdeaRecord(super.fields);
+
+  factory DateIdeaRecord.builtIn(DateIdea idea) =>
+      DateIdeaRecord({...idea.toJson(), 'createdAt': 0, 'updatedAt': 0, 'deleted': false});
+
+  String get title => readString(fields['title']) ?? '';
+
+  String get desc => readString(fields['desc']) ?? '';
+
+  String get category => readString(fields['category']) ?? '';
+
+  int get createdAt => readInt(fields['createdAt']) ?? 0;
+
+  DateIdea get idea => DateIdea(id: id, title: title, category: category, desc: desc);
+}
+
 class RouletteStateRecord extends PlainRecord {
   RouletteStateRecord(super.fields);
 

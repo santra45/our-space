@@ -6,17 +6,19 @@ import '../storage/tables.dart';
 import '../storage/vault_store.dart';
 import '../vault/vault_service.dart';
 
-DateIdea? findDateIdea(Object? id) {
-  for (final idea in defaultDateIdeas) {
+DateIdea? findDateIdea(Iterable<DateIdea> ideas, Object? id) {
+  for (final idea in ideas) {
     if (idea.id == id) return idea;
   }
   return null;
 }
 
-List<DateIdea> dateIdeasIn(String categoryId) =>
-    categoryId == 'all' ? defaultDateIdeas : defaultDateIdeas.where((idea) => idea.category == categoryId).toList();
+List<DateIdea> dateIdeasIn(List<DateIdea> ideas, String categoryId) =>
+    categoryId == 'all' ? ideas : ideas.where((idea) => idea.category == categoryId).toList();
 
 bool isDateIdeaCategory(Object? id) => dateIdeaCategories.any((category) => category.id == id);
+
+bool isDateIdeaKind(Object? id) => id != 'all' && isDateIdeaCategory(id);
 
 class RouletteRepository {
   RouletteRepository({required this.store, required this.vault});
@@ -39,7 +41,7 @@ class RouletteRepository {
     final record = RouletteStateRecord(Map<String, Object?>.fromEntries(
       plain.entries.where((entry) => !entry.key.startsWith('_')),
     ));
-    if (findDateIdea(record.ideaId) == null) return null;
+    if (record.ideaId == null) return null;
     return record;
   }
 

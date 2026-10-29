@@ -9,6 +9,7 @@ import '../../space_scope.dart';
 import '../../widgets/app_haptics.dart';
 import '../../widgets/confetti_burst.dart';
 import '../us/us_keys.dart';
+import 'date_ideas_sheet.dart';
 import 'roulette_copy.dart';
 import 'scratch_card.dart';
 
@@ -23,8 +24,10 @@ class DateRoulette extends StatefulWidget {
 
 class _DateRouletteState extends State<DateRoulette> {
   StreamSubscription<RouletteStateRecord?>? _subscription;
+  StreamSubscription<TableSnapshot<DateIdeaRecord>>? _ideasSubscription;
+  List<DateIdea> _ideas = defaultDateIdeas;
   String _category = 'all';
-  DateIdea _idea = defaultDateIdeas.first;
+  String? _ideaId = defaultDateIdeas.first.id;
   bool _revealed = false;
   bool _revealedLatch = false;
   int _cardKey = 0;
@@ -32,17 +35,45 @@ class _DateRouletteState extends State<DateRoulette> {
   int _persisting = 0;
   bool _hasDeferred = false;
   RouletteStateRecord? _deferred;
+  RouletteStateRecord? _pending;
+
+  DateIdea? get _idea => findDateIdea(_ideas, _ideaId);
 
   @override
   void initState() {
     super.initState();
     _subscription = context.space.roulette.watch().listen(_onStored);
+    _ideasSubscription = context.space.dateIdeas.watch().listen(_onIdeas, onError: (Object error) {});
   }
 
   @override
   void dispose() {
     _subscription?.cancel();
+    _ideasSubscription?.cancel();
     super.dispose();
+  }
+
+  void _onIdeas(TableSnapshot<DateIdeaRecord> snapshot) {
+    if (!mounted || !snapshot.unlocked) return;
+    setState(() => _ideas = [for (final record in snapshot.items) record.idea]);
+    final pending = _pending;
+    if (pending != null && findDateIdea(_ideas, pending.ideaId) != null) {
+      _pending = null;
+      _show(pending);
+    }
+    if (_idea == null) _settle();
+  }
+
+  void _settle() {
+    final pool = dateIdeasIn(_ideas, _category);
+    final next = pool.isEmpty ? null : pool.first.id;
+    if (next == _ideaId) return;
+    _revealedLatch = false;
+    setState(() {
+      _ideaId = next;
+      _revealed = false;
+      _cardKey++;
+    });
   }
 
   void _onStored(RouletteStateRecord? record) {
@@ -59,12 +90,19 @@ class _DateRouletteState extends State<DateRoulette> {
     if (record == null || record.deleted) return;
     if (record.updatedAt <= _appliedAt) return;
     _appliedAt = record.updatedAt;
-    final idea = findDateIdea(record.ideaId);
-    if (idea == null) return;
+    if (findDateIdea(_ideas, record.ideaId) == null) {
+      _pending = record;
+      return;
+    }
+    _pending = null;
+    _show(record);
+  }
+
+  void _show(RouletteStateRecord record) {
     final revealed = record.revealed;
     _revealedLatch = revealed;
     setState(() {
-      _idea = idea;
+      _ideaId = record.ideaId;
       final category = record.category;
       if (category != null && isDateIdeaCategory(category)) _category = category;
       _revealed = revealed;
@@ -93,13 +131,17 @@ class _DateRouletteState extends State<DateRoulette> {
   void _pick([String? categoryId]) {
     final category = categoryId ?? _category;
     AppHaptics.tap();
-    final pool = dateIdeasIn(category);
-    if (pool.isEmpty) return;
-    final available = pool.length > 1 ? pool.where((idea) => idea.id != _idea.id).toList() : pool;
+    _pending = null;
+    final pool = dateIdeasIn(_ideas, category);
+    if (pool.isEmpty) {
+      _settle();
+      return;
+    }
+    final available = pool.length > 1 ? pool.where((idea) => idea.id != _ideaId).toList() : pool;
     final picked = available.isEmpty ? pool.first : available[DateRoulette.random.nextInt(available.length)];
     _revealedLatch = false;
     setState(() {
-      _idea = picked;
+      _ideaId = picked.id;
       _revealed = false;
       _cardKey++;
     });
@@ -112,17 +154,24 @@ class _DateRouletteState extends State<DateRoulette> {
   }
 
   void _onRevealed() {
-    if (_revealedLatch) return;
+    final id = _ideaId;
+    if (_revealedLatch || id == null) return;
     _revealedLatch = true;
     setState(() => _revealed = true);
     AppHaptics.celebration();
     fireHeartConfetti(context);
-    unawaited(_persist(ideaId: _idea.id, category: _category, revealed: true));
+    unawaited(_persist(ideaId: id, category: _category, revealed: true));
+  }
+
+  void _openIdeas() {
+    AppHaptics.tap();
+    unawaited(showDateIdeasSheet(context, ideas: context.space.dateIdeas, category: _category));
   }
 
   @override
   Widget build(BuildContext context) {
     final night = context.sky.isNight;
+    final idea = _idea;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       mainAxisSize: MainAxisSize.min,
@@ -132,22 +181,28 @@ class _DateRouletteState extends State<DateRoulette> {
         ScratchPanel(
           key: UsKeys.scratchPanel,
           title: night ? RouletteCopy.tonight : RouletteCopy.weekend,
-          subtitle: _revealed ? RouletteCopy.revealed : RouletteCopy.hint,
+          subtitle: idea == null ? RouletteCopy.emptyHint : (_revealed ? RouletteCopy.revealed : RouletteCopy.hint),
           foil: ClipRRect(
             borderRadius: SkyRadii.all(SkyRadii.button),
-            child: Stack(
-              children: [
-                ConstrainedBox(
-                  constraints: const BoxConstraints(minHeight: 132),
-                  child: DateIdeaReveal(key: ValueKey<String>(_idea.id), idea: _idea),
-                ),
-                Positioned.fill(
-                  child: ScratchCard(key: ValueKey<int>(_cardKey), revealed: _revealed, onRevealed: _onRevealed),
-                ),
-              ],
-            ),
+            child: idea == null
+                ? ConstrainedBox(
+                    constraints: const BoxConstraints(minHeight: 132),
+                    child: DateIdeasEmpty(all: _category == 'all' || _ideas.isEmpty),
+                  )
+                : Stack(
+                    children: [
+                      ConstrainedBox(
+                        constraints: const BoxConstraints(minHeight: 132),
+                        child: DateIdeaReveal(key: ValueKey<String>(idea.id), idea: idea),
+                      ),
+                      Positioned.fill(
+                        child: ScratchCard(key: ValueKey<int>(_cardKey), revealed: _revealed, onRevealed: _onRevealed),
+                      ),
+                    ],
+                  ),
           ),
           categories: DateIdeaChips(selected: _category, onSelect: _selectCategory),
+          footer: DateIdeasEntry(count: _ideas.length, onTap: _openIdeas),
         ),
       ],
     );
@@ -155,7 +210,14 @@ class _DateRouletteState extends State<DateRoulette> {
 }
 
 class ScratchPanel extends StatelessWidget {
-  const ScratchPanel({super.key, required this.title, required this.subtitle, required this.foil, this.categories});
+  const ScratchPanel({
+    super.key,
+    required this.title,
+    required this.subtitle,
+    required this.foil,
+    this.categories,
+    this.footer,
+  });
 
   static const List<Color> night = [Color(0xFF2E2870), Color(0xFF1A1650)];
   static const List<Color> day = [SkyTokens.indigo, Color(0xFF4B4AA0)];
@@ -164,6 +226,7 @@ class ScratchPanel extends StatelessWidget {
   final String subtitle;
   final Widget foil;
   final Widget? categories;
+  final Widget? footer;
 
   @override
   Widget build(BuildContext context) {
@@ -174,11 +237,7 @@ class ScratchPanel extends StatelessWidget {
       decoration: BoxDecoration(
         borderRadius: SkyRadii.all(24),
         border: Border.all(color: t.cardBorder),
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: t.isNight ? night : day,
-        ),
+        gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: t.isNight ? night : day),
         boxShadow: t.isDay ? t.softShadow : const [],
       ),
       child: Column(
@@ -192,10 +251,8 @@ class ScratchPanel extends StatelessWidget {
           const SizedBox(height: 3),
           AnimatedSwitcher(
             duration: motion ? SkyMotion.base : Duration.zero,
-            layoutBuilder: (current, previous) => Stack(
-              alignment: Alignment.topLeft,
-              children: [...previous, ?current],
-            ),
+            layoutBuilder: (current, previous) =>
+                Stack(alignment: Alignment.topLeft, children: [...previous, ?current]),
             child: Text(
               subtitle,
               key: ValueKey<String>(subtitle),
@@ -205,6 +262,7 @@ class ScratchPanel extends StatelessWidget {
           const SizedBox(height: SkySpace.md),
           foil,
           if (categories != null) ...[const SizedBox(height: 6), categories!],
+          if (footer != null) ...[const SizedBox(height: 4), footer!],
         ],
       ),
     );
@@ -273,6 +331,79 @@ class DateIdeaChip extends StatelessWidget {
             label,
             style: SkyType.chip.copyWith(color: selected ? ink : SkyTokens.white.withValues(alpha: 0.86)),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class DateIdeasEntry extends StatelessWidget {
+  const DateIdeasEntry({super.key = UsKeys.ideasEntry, required this.count, required this.onTap});
+
+  final int count;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final soft = SkyTokens.white.withValues(alpha: 0.62);
+    return SkyPressable(
+      onTap: onTap,
+      pressedScale: 0.98,
+      semanticLabel: RouletteCopy.ideasEntryLabel(count),
+      excludeSemantics: true,
+      child: SkyTapTarget(
+        child: Row(
+          children: [
+            SkyIcon(SkyIcons.pen, size: 14, color: DateIdeaChip.gold),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                RouletteCopy.ideasEntry,
+                style: SkyType.sans(
+                  12.5,
+                  weight: FontWeight.w600,
+                ).copyWith(color: SkyTokens.white.withValues(alpha: 0.9)),
+              ),
+            ),
+            Text(RouletteCopy.ideasCount(count), style: SkyType.sans(12).copyWith(color: soft)),
+            const SizedBox(width: 2),
+            SkyIcon(SkyIcons.chevron, size: 14, color: soft),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class DateIdeasEmpty extends StatelessWidget {
+  const DateIdeasEmpty({super.key = UsKeys.ideasEmpty, required this.all});
+
+  final bool all;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.sky;
+    return DecoratedBox(
+      decoration: const BoxDecoration(color: DateIdeaReveal.paper),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(18, 22, 18, 22),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              all ? RouletteCopy.emptyAll : RouletteCopy.emptyKind,
+              textAlign: TextAlign.center,
+              style: SkyType.serif(18, weight: FontWeight.w500, height: 1.25).copyWith(color: t.paperInk),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              RouletteCopy.emptyNote,
+              textAlign: TextAlign.center,
+              style: SkyType.sans(12.5, height: 1.45).copyWith(color: t.paperMuted),
+            ),
+          ],
         ),
       ),
     );

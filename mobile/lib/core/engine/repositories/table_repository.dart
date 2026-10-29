@@ -36,6 +36,8 @@ abstract class TableRepository<T> {
 
   bool get readsBlobsLazily => false;
 
+  bool keeps(Row row) => true;
+
   VaultKey requireKey() {
     final key = vault.key;
     if (key == null) throw RepositoryError('Our Space is locked.');
@@ -62,7 +64,7 @@ abstract class TableRepository<T> {
     var unreadable = 0;
 
     for (final row in rows) {
-      if (row['deleted'] == true) continue;
+      if (row['deleted'] == true || !keeps(row)) continue;
       final cacheKey = '${row['id']}::${row['updatedAt']}::${row['iv'] ?? ''}';
       seen.add(cacheKey);
 
