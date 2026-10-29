@@ -295,7 +295,7 @@ class SkyPatchSession extends ChangeNotifier {
   }
 
   Future<bool> agree() async {
-    if (!canAgree || _closed || _partnerAway) return false;
+    if (!canAgree || !canFinish || _closed || _partnerAway) return false;
     final clean = cleanSkyName(_name);
     _savedName = clean;
     unawaited(link.sendAgree(id, clean));
@@ -315,7 +315,7 @@ class SkyPatchSession extends ChangeNotifier {
   }
 
   Future<bool> _finish(String name) async {
-    if (_finishing || _step == SkyPatchStep.saved) return false;
+    if (_finishing || _step == SkyPatchStep.saved || !canFinish) return false;
     final service = drawings;
     final key = _keyOf();
     if (service == null || key == null) return false;
@@ -365,7 +365,7 @@ class SkyPatchSession extends ChangeNotifier {
         _heardName(named);
       case SkyAgreeEvent(:final drawing, :final text) when drawing == id:
         _heardAgree(text);
-      case SkySavedEvent(:final drawing) when drawing == id:
+      case SkySavedEvent(:final drawing) when drawing == id && !leader:
         _savedName ??= cleanSkyName(_name);
         _saved();
       case SkyCloseEvent(:final drawing) when drawing == id:
@@ -428,7 +428,11 @@ class SkyPatchSession extends ChangeNotifier {
   }
 
   void _heardAgree(String text) {
-    if (_step == SkyPatchStep.saved) return;
+    if (_step != SkyPatchStep.naming || !_typer || _partnerAway) return;
+    if (!canFinish) {
+      if (leader) backToDrawing();
+      return;
+    }
     _savedName = text;
     if (leader) {
       unawaited(_finish(text));
@@ -439,7 +443,8 @@ class SkyPatchSession extends ChangeNotifier {
   }
 
   void _heardBack() {
-    if (_step != SkyPatchStep.naming) return;
+    final waiting = _step == SkyPatchStep.saving && !leader;
+    if (_step != SkyPatchStep.naming && !waiting) return;
     _step = SkyPatchStep.drawing;
     _typer = false;
     notifyListeners();

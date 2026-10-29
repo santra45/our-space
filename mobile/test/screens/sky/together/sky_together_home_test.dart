@@ -467,6 +467,64 @@ void main() {
       phones.dispose();
     });
 
+    test('the leader only finishes on a yes it can take, and never on a saved it did not send', () async {
+      final phones = TogetherPhones(drawingsA: drawings, keyA: key);
+      await phones.meet();
+      final (a, b) = await drawKite(phones);
+
+      phones.pair.injectEvent(phones.pair.a, SkyAgreeEvent(drawing: a.id, text: 'Kite'));
+      await phones.step();
+      expect(a.step, SkyPatchStep.drawing);
+      phones.pair.injectEvent(phones.pair.a, SkySavedEvent(drawing: a.id));
+      await phones.step();
+      expect(a.step, SkyPatchStep.drawing);
+      a.placeStar(0.5, 0.9);
+      await phones.step();
+      await a.flush();
+      final draft = (await drawings.list(key)).single;
+      expect(draft.finished, isFalse);
+      expect(draft.drawing.visibleStars, hasLength(3));
+
+      expect(a.finishDrawing(), isTrue);
+      await phones.step();
+      expect(b.step, SkyPatchStep.naming);
+      final theirs = a.drawing.visibleStars.firstWhere((star) => star.by == phones.pair.ownerB);
+      phones.pair.injectEvent(phones.pair.a, SkyOpEvent(drawing: a.id, op: SkyRemove([theirs.id], gen: 0)));
+      await phones.step();
+      expect(a.canFinish, isFalse);
+      phones.pair.injectEvent(phones.pair.a, SkyAgreeEvent(drawing: a.id, text: 'Kite'));
+      await phones.step();
+      await phones.step();
+      expect(a.step, SkyPatchStep.drawing);
+      expect(b.step, SkyPatchStep.drawing);
+      await a.flush();
+      expect((await drawings.list(key)).single.finished, isFalse);
+      phones.dispose();
+    });
+
+    test('a yes that crosses the typer going back to drawing leaves both drawing and nothing finished', () async {
+      final phones = TogetherPhones(drawingsA: drawings, keyA: key);
+      await phones.meet();
+      final (a, b) = await drawKite(phones);
+      expect(a.finishDrawing(), isTrue);
+      await phones.step();
+      a.type('Kite');
+      await phones.step();
+      expect(b.canAgree, isTrue);
+
+      a.backToDrawing();
+      expect(await b.agree(), isTrue);
+      expect(b.step, SkyPatchStep.saving);
+      await phones.step();
+      await phones.step();
+      expect(a.step, SkyPatchStep.drawing);
+      expect(b.step, SkyPatchStep.drawing);
+      expect(b.canEdit, isTrue);
+      await a.flush();
+      expect((await drawings.list(key)).single.finished, isFalse);
+      phones.dispose();
+    });
+
     test('leaving keeps the half-finished drawing, and holding together again opens the same one', () async {
       final phones = TogetherPhones(drawingsA: drawings, keyA: key);
       await phones.meet();
