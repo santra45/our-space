@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart';
@@ -52,13 +53,19 @@ abstract final class SkyTogetherLine {
 
   static const int maxLines = 2;
 
-  static Size measure(String text, TextStyle style, TextScaler scaler, {double maxWidth = double.infinity}) {
+  static Size measure(
+    String text,
+    TextStyle style,
+    TextScaler scaler, {
+    double maxWidth = double.infinity,
+    int lines = maxLines,
+  }) {
     final painter = TextPainter(
       text: TextSpan(text: text, style: style),
       textDirection: TextDirection.ltr,
       textAlign: TextAlign.center,
       textScaler: scaler,
-      maxLines: maxLines,
+      maxLines: lines,
       ellipsis: '…',
       textWidthBasis: TextWidthBasis.longestLine,
     )..layout(maxWidth: maxWidth);
@@ -74,12 +81,14 @@ abstract final class SkyTogetherLine {
     required SkyTokens tokens,
     required TextScaler scaler,
     required double scale,
+    double start = SkyTogetherSpot.lineMin,
   }) {
     final text = textFor(stage, night: night, partner: partner);
     if (text == null) return null;
-    final room = (SkyTogetherSpot.lineMax - SkyTogetherSpot.lineMin) * scale;
-    final size = measure(text, style(tokens), scaler, maxWidth: room) / scale;
-    return SkyTogetherSpot.lineRect(size, night: night);
+    final room = SkyTogetherSpot.lineRoom(start) * scale;
+    final lines = SkyTogetherSpot.lineLines(start);
+    final size = measure(text, style(tokens), scaler, maxWidth: room, lines: lines) / scale;
+    return SkyTogetherSpot.lineRect(size, night: night, start: start);
   }
 }
 
@@ -90,6 +99,8 @@ class SkyTogetherLayer extends StatefulWidget {
     required this.constellation,
     required this.partner,
     this.moonPhase,
+    this.topBar,
+    this.titleEdge,
     this.designWidth = 390,
   });
 
@@ -97,6 +108,8 @@ class SkyTogetherLayer extends StatefulWidget {
   final SkyConstellation constellation;
   final String partner;
   final MoonPhase? moonPhase;
+  final ValueListenable<double?>? topBar;
+  final ValueListenable<double?>? titleEdge;
   final double designWidth;
 
   @override
@@ -381,6 +394,15 @@ class _SkyTogetherLayerState extends State<SkyTogetherLayer> with SingleTickerPr
 
   @override
   Widget build(BuildContext context) {
+    final topBar = widget.topBar;
+    if (topBar == null) return _build(context, null);
+    return ValueListenableBuilder<double?>(
+      valueListenable: topBar,
+      builder: (context, height, _) => _build(context, height),
+    );
+  }
+
+  Widget _build(BuildContext context, double? topBar) {
     final t = context.sky;
     final stage = _stage;
     final night = t.isNight;
@@ -390,6 +412,12 @@ class _SkyTogetherLayerState extends State<SkyTogetherLayer> with SingleTickerPr
     return LayoutBuilder(
       builder: (context, box) {
         final k = box.maxWidth.isFinite && box.maxWidth > 0 ? box.maxWidth / widget.designWidth : 1.0;
+        final edge = widget.titleEdge?.value;
+        final start = SkyTogetherSpot.lineStart(
+          topBarBottom: topBar == null ? null : topBar / k,
+          titleEdge: edge == null ? null : edge / k,
+          night: night,
+        );
         final top = SkyTogetherSpot.lineTop(night) * k;
         final line = text == null
             ? const SizedBox.shrink(key: ValueKey<String>('sky-together-no-line'))
@@ -398,13 +426,13 @@ class _SkyTogetherLayerState extends State<SkyTogetherLayer> with SingleTickerPr
                 delegate: _LineLayout(
                   centre: body.dx * k,
                   top: top,
-                  min: SkyTogetherSpot.lineMin * k,
+                  min: start * k,
                   max: SkyTogetherSpot.lineMax * k,
                 ),
                 child: Text(
                   text,
                   style: SkyTogetherLine.style(t),
-                  maxLines: SkyTogetherLine.maxLines,
+                  maxLines: SkyTogetherSpot.lineLines(start),
                   overflow: TextOverflow.ellipsis,
                   textAlign: TextAlign.center,
                   textWidthBasis: TextWidthBasis.longestLine,

@@ -201,19 +201,31 @@ void main() {
 
     test('the room kept for the invitation covers the line home really shows at every step', () {
       for (final night in [true, false]) {
-        for (final scale in [1.0, 1.3]) {
+        for (final (scale, start, partner) in [
+          (1.0, SkyTogetherSpot.lineMin, 'Alex'),
+          (1.3, SkyTogetherSpot.lineMin, 'Alex'),
+          (1.3, 219.0, 'Alex'),
+          (1.3, 219.0, 'Alexandria'),
+          (1.0, SkyTogetherSpot.lineColumn, 'Christopher'),
+        ]) {
           final scaler = TextScaler.linear(scale);
-          final room = SkyKeepsakePlan.lineArea(SkyKeepsakePlan.measureLine('Alex', textScaler: scaler), night: night)!;
+          final room = SkyKeepsakePlan.lineArea(
+            SkyKeepsakePlan.measureLine(partner, textScaler: scaler, start: start),
+            night: night,
+            start: start,
+          )!;
+          expect(room.left, greaterThanOrEqualTo(start));
           for (final stage in SkyTogetherStage.values.where((stage) => stage != SkyTogetherStage.off)) {
             final shown = SkyTogetherLine.rectFor(
               stage,
               night: night,
-              partner: 'Alex',
+              partner: partner,
               tokens: night ? SkyTokens.night : SkyTokens.day,
               scaler: scaler,
               scale: 1,
+              start: start,
             )!;
-            final why = '$stage, night $night, text $scale';
+            final why = '$stage, night $night, text $scale, from $start, $partner';
             expect(room.left, lessThanOrEqualTo(shown.left + 0.01), reason: why);
             expect(room.top, lessThanOrEqualTo(shown.top + 0.01), reason: why);
             expect(room.right, greaterThanOrEqualTo(shown.right - 0.01), reason: why);

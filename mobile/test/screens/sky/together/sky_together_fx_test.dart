@@ -51,6 +51,23 @@ void main() {
     expect(wide.left, 18);
   });
 
+  test('when big text brings the title down to the line, the line keeps to the moon side of the title', () {
+    expect(SkyTogetherSpot.lineStart(topBarBottom: null, night: true), SkyTogetherSpot.lineMin);
+    expect(SkyTogetherSpot.lineStart(topBarBottom: 118, titleEdge: 300, night: true), SkyTogetherSpot.lineMin);
+    expect(SkyTogetherSpot.lineStart(topBarBottom: 189, titleEdge: 207, night: true), 207 + SkyTogetherSpot.lineGap);
+    expect(SkyTogetherSpot.lineStart(topBarBottom: 189, night: true), SkyTogetherSpot.lineColumn);
+    expect(SkyTogetherSpot.lineStart(topBarBottom: 146, titleEdge: 150, night: false), 150 + SkyTogetherSpot.lineGap);
+    expect(
+      SkyTogetherSpot.lineStart(topBarBottom: 260, titleEdge: 305, night: true),
+      SkyTogetherSpot.lineMax - SkyTogetherSpot.lineNarrowest,
+    );
+    expect(SkyTogetherSpot.lineLines(SkyTogetherSpot.lineMin), 2);
+    expect(SkyTogetherSpot.lineLines(219), 3);
+    final kept = SkyTogetherSpot.lineRect(const Size(300, 54), night: true, start: 219);
+    expect(kept.left, 219);
+    expect(SkyTogetherSpot.lineRect(const Size(120, 18), night: true, start: 219).center.dx, closeTo(306, 0.01));
+  });
+
   test('each stage of the gate says the right gentle line', () {
     String? line(SkyTogetherStage stage, {bool night = true}) =>
         SkyTogetherLine.textFor(stage, night: night, partner: 'Alex');

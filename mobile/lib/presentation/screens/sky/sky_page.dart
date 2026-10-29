@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
@@ -25,6 +26,7 @@ import 'sky_stats.dart';
 import 'together/sky_keepsakes.dart';
 import 'together/sky_patch_page.dart';
 import 'together/sky_patch_session.dart';
+import 'together/sky_together_fx.dart';
 import 'together/sky_together_home.dart';
 import 'together/sky_together_layer.dart';
 import 'together/sky_together_route.dart';
@@ -63,6 +65,8 @@ class _OurSkyPageState extends State<OurSkyPage> with WidgetsBindingObserver {
   late final SkyLettersWatch _letters;
   late final Listenable _changes = Listenable.merge([_daily, _letters]);
   final ValueNotifier<double?> _topBar = ValueNotifier<double?>(null);
+  final ValueNotifier<double?> _titleEdge = ValueNotifier<double?>(null);
+  final GlobalKey _title = GlobalKey();
   bool _sheetOpen = false;
   bool _revealOpen = false;
   bool _nightOpen = false;
@@ -148,11 +152,25 @@ class _OurSkyPageState extends State<OurSkyPage> with WidgetsBindingObserver {
     _daily.dispose();
     _letters.dispose();
     _topBar.dispose();
+    _titleEdge.dispose();
     super.dispose();
   }
 
   void _measureTopBar(double height) {
-    if (mounted) _topBar.value = height;
+    if (!mounted) return;
+    _titleEdge.value = _titleRight();
+    _topBar.value = height;
+  }
+
+  double? _titleRight() {
+    final paragraph = _title.currentContext?.findRenderObject();
+    if (paragraph is! RenderParagraph || !paragraph.hasSize || !paragraph.attached) return null;
+    final length = paragraph.text.toPlainText().length;
+    var right = 0.0;
+    for (final box in paragraph.getBoxesForSelection(TextSelection(baseOffset: 0, extentOffset: length))) {
+      if (box.right > right) right = box.right;
+    }
+    return paragraph.localToGlobal(Offset(right, 0)).dx;
   }
 
   Future<void> _openSheet({bool archive = false}) async {
@@ -283,7 +301,19 @@ class _OurSkyPageState extends State<OurSkyPage> with WidgetsBindingObserver {
     final letterTip = SkyTip.measure(SkyHomeCopy.letterFell, textScaler: scaler) / k;
     final lineRect = partner == null
         ? null
-        : SkyTogetherLine.rectFor(stage, night: night, partner: partner, tokens: t, scaler: scaler, scale: k);
+        : SkyTogetherLine.rectFor(
+            stage,
+            night: night,
+            partner: partner,
+            tokens: t,
+            scaler: scaler,
+            scale: k,
+            start: SkyTogetherSpot.lineStart(
+              topBarBottom: _topBar.value == null ? null : _topBar.value! / k,
+              titleEdge: _titleEdge.value == null ? null : _titleEdge.value! / k,
+              night: night,
+            ),
+          );
     final letterYields = waiting > 0 && lineRect != null && lineRect.overlaps(OurSkyPage.letterTipAt & letterTip);
     _present(visible: TickerMode.valuesOf(context).enabled, night: night);
     _panHome = SkyPanHome(constellation: constellation.copyWith(presence: false), moonPhase: moonPhase);
@@ -438,6 +468,7 @@ class _OurSkyPageState extends State<OurSkyPage> with WidgetsBindingObserver {
     final keepsakes = SkyKeepsakes(
       constellation: constellation,
       topBar: _topBar,
+      titleEdge: _titleEdge,
       sky: const Size(SkyPageFrame.designWidth, OurSkyPage.skyHeight),
       sheetTop: OurSkyPage.sheetTopMin,
       avoid: [
@@ -472,7 +503,14 @@ class _OurSkyPageState extends State<OurSkyPage> with WidgetsBindingObserver {
           children: [
             touch,
             if (togetherReady)
-              SkyTogetherLayer(home: together, constellation: constellation, partner: partner, moonPhase: moonPhase),
+              SkyTogetherLayer(
+                home: together,
+                constellation: constellation,
+                partner: partner,
+                moonPhase: moonPhase,
+                topBar: _topBar,
+                titleEdge: _titleEdge,
+              ),
           ],
         );
       },
@@ -552,6 +590,7 @@ class _OurSkyPageState extends State<OurSkyPage> with WidgetsBindingObserver {
               kicker: SkyHomeCopy.kicker(night: night, dayNumber: dayNumber, weekday: weekday),
               note: night ? SkyHomeCopy.moonLine(moonPhase) : null,
               title: SkyHomeCopy.title(night),
+              titleKey: _title,
               trailing: const ShellAvatar(),
             ),
           ),

@@ -22,11 +22,29 @@ abstract final class SkyTogetherSpot {
 
   static double ring(bool night) => night ? 22 : 25;
 
+  static const double lineColumn = 180;
+  static const double lineGap = 12;
+  static const double lineClear = 4;
+  static const double lineNarrowest = 140;
+
   static double lineTop(bool night) => night ? 162 : 148;
 
-  static Rect lineRect(Size text, {required bool night}) {
+  static bool crowded(double? topBarBottom, {required bool night}) =>
+      topBarBottom != null && topBarBottom + lineClear > lineTop(night);
+
+  static double lineStart({double? topBarBottom, double? titleEdge, required bool night}) {
+    if (!crowded(topBarBottom, night: night)) return lineMin;
+    final edge = titleEdge == null ? lineColumn : titleEdge + lineGap;
+    return edge.clamp(lineMin, lineMax - lineNarrowest).toDouble();
+  }
+
+  static int lineLines(double start) => start > lineMin ? 3 : 2;
+
+  static double lineRoom(double start) => lineMax - start;
+
+  static Rect lineRect(Size text, {required bool night, double start = lineMin}) {
     final b = body(night);
-    final left = (b.dx - text.width / 2).clamp(lineMin, math.max(lineMin, lineMax - text.width)).toDouble();
+    final left = (b.dx - text.width / 2).clamp(start, math.max(start, lineMax - text.width)).toDouble();
     return Rect.fromLTWH(left, lineTop(night), text.width, text.height);
   }
 }

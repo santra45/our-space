@@ -167,6 +167,7 @@ class SkyTopBar extends StatelessWidget {
     this.leading,
     this.trailing,
     this.compact = false,
+    this.titleKey,
   });
 
   final String title;
@@ -175,6 +176,7 @@ class SkyTopBar extends StatelessWidget {
   final Widget? leading;
   final Widget? trailing;
   final bool compact;
+  final Key? titleKey;
 
   @override
   Widget build(BuildContext context) {
@@ -200,7 +202,13 @@ class SkyTopBar extends StatelessWidget {
         ],
         Semantics(
           header: true,
-          child: Text(title, style: compact ? text.title : text.display, maxLines: 2, overflow: TextOverflow.ellipsis),
+          child: Text(
+            title,
+            key: titleKey,
+            style: compact ? text.title : text.display,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
         ),
       ],
     );
