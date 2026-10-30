@@ -25,6 +25,7 @@ abstract final class SkyTogetherKeys {
   static const Key agree = ValueKey<String>('sky-together-agree');
   static const Key changeIt = ValueKey<String>('sky-together-change-it');
   static const Key pill = ValueKey<String>('sky-together-pill');
+  static const Key touch = ValueKey<String>('sky-together-touch');
 
   static Key star(String id) => ValueKey<String>('sky-together-star-$id');
 }
@@ -144,10 +145,18 @@ class _SkyTogetherLayerState extends State<SkyTogetherLayer> with SingleTickerPr
   double _thread = 0;
   double? _retractAt;
   double _retractFrom = 0;
+  int _sentSeen = 0;
+  int _feltSeen = 0;
+  bool _sentPending = false;
+  bool _feltPending = false;
+  double? _sentAt;
+  double? _feltAt;
 
   @override
   void initState() {
     super.initState();
+    _sentSeen = widget.home.touchesSent;
+    _feltSeen = widget.home.touchesFelt;
     widget.home.addListener(_onHome);
   }
 
@@ -167,6 +176,8 @@ class _SkyTogetherLayerState extends State<SkyTogetherLayer> with SingleTickerPr
       oldWidget.home.removeListener(_onHome);
       widget.home.addListener(_onHome);
       _stage = widget.home.stage;
+      _sentSeen = widget.home.touchesSent;
+      _feltSeen = widget.home.touchesFelt;
     }
     _compute();
     _wake();
@@ -183,6 +194,19 @@ class _SkyTogetherLayerState extends State<SkyTogetherLayer> with SingleTickerPr
       }
       _stage = next;
       setState(() {});
+    }
+    final home = widget.home;
+    if (home.touchesSent != _sentSeen) {
+      _sentSeen = home.touchesSent;
+      _sentPending = true;
+    }
+    if (home.touchesFelt != _feltSeen) {
+      _feltSeen = home.touchesFelt;
+      _feltPending = true;
+      final view = View.maybeOf(context);
+      if (view != null) {
+        unawaited(SemanticsService.sendAnnouncement(view, SkyTogetherCopy.touched(widget.partner), TextDirection.ltr));
+      }
     }
     _compute();
     _wake();
@@ -203,7 +227,11 @@ class _SkyTogetherLayerState extends State<SkyTogetherLayer> with SingleTickerPr
         at(_finger, widget.home.holding) &&
         at(_mine, widget.home.holding) &&
         at(_theirs, widget.home.partnerHolding && stage != SkyTogetherStage.off) &&
-        _retractAt == null;
+        _retractAt == null &&
+        !_sentPending &&
+        !_feltPending &&
+        _sentAt == null &&
+        _feltAt == null;
   }
 
   bool get _wanted => widget.home.needsTicks || (_motion && _stage != SkyTogetherStage.off) || !_settled;
@@ -233,6 +261,14 @@ class _SkyTogetherLayerState extends State<SkyTogetherLayer> with SingleTickerPr
     if (_fresh) {
       _last = _now;
       _fresh = false;
+    }
+    if (_sentPending) {
+      _sentAt = _now;
+      _sentPending = false;
+    }
+    if (_feltPending) {
+      _feltAt = _now;
+      _feltPending = false;
     }
     widget.home.tick();
     if (!mounted) return;
@@ -355,6 +391,11 @@ class _SkyTogetherLayerState extends State<SkyTogetherLayer> with SingleTickerPr
     }
     if (!night && holding) bodyScale *= 1.08;
 
+    final sentFor = _since(_sentAt, SkyTogetherSpot.sentSeconds);
+    if (sentFor == null) _sentAt = null;
+    final feltFor = _since(_feltAt, SkyTogetherSpot.feltSeconds);
+    if (feltFor == null) _feltAt = null;
+
     _frame.value = SkyTogetherPaint(
       night: night,
       motion: motion,
@@ -380,7 +421,16 @@ class _SkyTogetherLayerState extends State<SkyTogetherLayer> with SingleTickerPr
       threadAlpha: threadAlpha,
       beat: beat,
       sinceLub: sinceLub,
+      sentAt: night ? partner : partner + SkyTogetherSpot.cloudRest + cloudShift,
+      sentFor: sentFor,
+      feltFor: feltFor,
     );
+  }
+
+  double? _since(double? at, double length) {
+    if (at == null) return null;
+    final since = _now - at;
+    return since >= 0 && since < length ? since : null;
   }
 
   @override
@@ -468,10 +518,17 @@ class _SkyTogetherLayerState extends State<SkyTogetherLayer> with SingleTickerPr
 }
 
 class SkyTogetherTarget extends StatelessWidget {
-  const SkyTogetherTarget({super.key, required this.home, required this.partner, this.designWidth = 390});
+  const SkyTogetherTarget({
+    super.key,
+    required this.home,
+    required this.partner,
+    this.constellation,
+    this.designWidth = 390,
+  });
 
   final SkyTogetherHome home;
   final String partner;
+  final SkyConstellation? constellation;
   final double designWidth;
 
   static String? valueFor(SkyTogetherStage stage, String partner) => switch (stage) {
@@ -493,8 +550,35 @@ class SkyTogetherTarget extends StatelessWidget {
           builder: (context, box) {
             final k = box.maxWidth.isFinite && box.maxWidth > 0 ? box.maxWidth / designWidth : 1.0;
             final size = SkyTogetherSpot.hit * 2 * k;
+            final figure = constellation;
+            final reach = figure == null || !home.canTouch
+                ? null
+                : SkyTogetherSpot.touchAt(figure.pointAt(figure.partner), night) * k;
+            final touchSize = SkyTogetherSpot.touchHit * 2 * k;
             return Stack(
               children: [
+                if (reach != null)
+                  Positioned(
+                    left: reach.dx - touchSize / 2,
+                    top: reach.dy - touchSize / 2,
+                    width: touchSize,
+                    height: touchSize,
+                    child: Semantics(
+                      key: SkyTogetherKeys.touch,
+                      container: true,
+                      button: true,
+                      label: SkyTogetherCopy.touchLabel(night, partner),
+                      hint: SkyTogetherCopy.touchHint(partner),
+                      onTap: home.touch,
+                      child: _CircleHit(
+                        child: GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: home.touch,
+                          child: const SizedBox.expand(),
+                        ),
+                      ),
+                    ),
+                  ),
                 Positioned(
                   left: body.dx * k - size / 2,
                   top: body.dy * k - size / 2,

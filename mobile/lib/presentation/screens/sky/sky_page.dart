@@ -596,7 +596,9 @@ class _OurSkyPageState extends State<OurSkyPage> with WidgetsBindingObserver {
           ),
         ),
         sheet: sheet,
-        skyOverlay: togetherReady ? SkyTogetherTarget(home: together, partner: partner) : null,
+        skyOverlay: togetherReady
+            ? SkyTogetherTarget(home: together, partner: partner, constellation: constellation)
+            : null,
       ),
     );
   }

@@ -303,6 +303,30 @@ void main() {
     pair.dispose();
   });
 
+  test('a touch carries nothing but itself, and a touch with anything more in it is dropped', () async {
+    final pair = FakeSkyPair();
+    pair.settle();
+    final toB = heard(pair.b);
+    expect(await pair.a.sendTouch(), isTrue);
+    pair.flush();
+    pair.inject(pair.b, {'v': 1, 'k': 'touch', 'x': 0.5});
+    pair.inject(pair.b, {'v': 1, 'k': 'touch', 'from': 'owner-aaaa1111'});
+    pair.inject(pair.b, {'v': 2, 'k': 'touch'});
+    await drain();
+    expect(pair.transportA.sentOf('touch').single, {'v': 1, 'k': 'touch'});
+    expect(toB.whereType<SkyTouchEvent>(), [const SkyTouchEvent()]);
+    pair.dispose();
+  });
+
+  test('a touch waits until the partner has spoken this language, so the website never gets one', () async {
+    final pair = FakeSkyPair(ownerB: null);
+    pair.settle();
+    expect(pair.a.partnerSpeaksSky, isFalse);
+    expect(await pair.a.sendTouch(), isFalse);
+    expect(pair.transportA.sentOf('touch'), isEmpty);
+    pair.dispose();
+  });
+
   test('the leader falls back to the random tag when both phones carry the same owner', () {
     final pair = FakeSkyPair(ownerA: 'owner-same0000', ownerB: 'owner-same0000');
     pair.settle();

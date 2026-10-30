@@ -37,12 +37,19 @@ class SkyTogetherHome extends ChangeNotifier {
   final Duration nameEvery;
   final SkyGate gate = SkyGate();
 
+  static const int touchGapMs = 350;
+  static const int feltGapMs = 250;
+
   late final StreamSubscription<SkyTogetherEvent> _events;
   StreamSubscription<void>? _watch;
   SkyTogetherStage _stage = SkyTogetherStage.off;
   SkyPatchSession? _session;
   String? _unfinished;
   int? _lastTick;
+  int? _lastTouch;
+  int? _lastFelt;
+  int _touchesSent = 0;
+  int _touchesFelt = 0;
   bool _visible = true;
   bool _disposed = false;
 
@@ -61,6 +68,36 @@ class SkyTogetherHome extends ChangeNotifier {
   bool get needsTicks => gate.holding || gate.partnerHolding || gate.decided;
 
   bool get visible => _visible;
+
+  int get touchesSent => _touchesSent;
+
+  int get touchesFelt => _touchesFelt;
+
+  bool get canTouch => _stage != SkyTogetherStage.off && _stage != SkyTogetherStage.opening;
+
+  bool touch() {
+    if (_disposed || !canTouch) return false;
+    final now = link.now();
+    final last = _lastTouch;
+    if (last != null && now - last >= 0 && now - last < touchGapMs) return false;
+    _lastTouch = now;
+    unawaited(link.sendTouch());
+    _touchesSent++;
+    haptic(HapticKind.tap);
+    notifyListeners();
+    return true;
+  }
+
+  void _felt() {
+    if (!_visible || _session != null || !link.here) return;
+    final now = link.now();
+    final last = _lastFelt;
+    if (last != null && now - last >= 0 && now - last < feltGapMs) return;
+    _lastFelt = now;
+    _touchesFelt++;
+    haptic(HapticKind.heartbeat);
+    notifyListeners();
+  }
 
   void present({required bool visible, required bool night}) {
     if (_disposed) return;
@@ -230,6 +267,9 @@ class SkyTogetherHome extends ChangeNotifier {
       case SkyCloseEvent(:final drawing):
         if (drawing == active) return;
         gate.cancel(drawing);
+      case SkyTouchEvent():
+        _felt();
+        return;
       default:
         return;
     }

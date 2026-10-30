@@ -9,6 +9,7 @@ import 'package:our_space_mobile/presentation/screens/sky/together/sky_drawn.dar
 import 'package:our_space_mobile/presentation/screens/sky/together/sky_patch_page.dart';
 import 'package:our_space_mobile/presentation/screens/sky/together/sky_patch_session.dart';
 import 'package:our_space_mobile/presentation/screens/sky/together/sky_together_copy.dart';
+import 'package:our_space_mobile/presentation/screens/sky/together/sky_together_fx.dart';
 import 'package:our_space_mobile/presentation/screens/sky/together/sky_together_home.dart';
 import 'package:our_space_mobile/presentation/screens/sky/together/sky_together_layer.dart';
 import 'package:our_space_mobile/presentation/screens/sky/together/sky_together_scope.dart';
@@ -16,7 +17,7 @@ import 'package:our_space_mobile/presentation/sky/sky.dart';
 import 'package:our_space_mobile/presentation/widgets/app_haptics.dart';
 
 import '../../../support/fake_sky_together.dart';
-import '../../../widgets/harness.dart' show recordHaptics, recordedHaptics, usePhoneSize;
+import '../../../widgets/harness.dart' show pumpHost, recordHaptics, recordedHaptics, usePhoneSize;
 import '../../love/love_harness.dart';
 
 const Duration beat = Duration(milliseconds: 100);
@@ -492,6 +493,122 @@ void main() {
       await tester.pump(const Duration(milliseconds: 50));
     }
     expect(find.byType(SkyPatchPage), findsNothing);
+    expect(tester.takeException(), isNull);
+    await phones.close();
+  });
+
+  testWidgets("tapping the partner's star reaches them, and their touch ripples here with a heartbeat", (tester) async {
+    final phones = await meetOnHome(tester);
+    final touch = find.byKey(SkyTogetherKeys.touch);
+    expect(touch, findsOneWidget);
+    final target = tester.widget<Semantics>(touch);
+    expect(target.properties.label, "Touch Alex's star");
+    expect(target.properties.hint, 'Alex will feel it');
+    final layer = tester.widget<SkyTogetherLayer>(find.byType(SkyTogetherLayer));
+    final figure = layer.constellation;
+    final sky = tester.getRect(find.byType(SkyTogetherLayer));
+    final star = sky.topLeft + figure.pointAt(figure.partner) * (sky.width / 390);
+    expect((tester.getCenter(touch) - star).distance, lessThan(1));
+
+    SkyTogetherPaint? painted() {
+      final paint = tester.widget<CustomPaint>(
+        find.descendant(of: find.byType(SkyTogetherLayer), matching: find.byType(CustomPaint)).first,
+      );
+      return (paint.painter! as SkyTogetherFxPainter).frame.value;
+    }
+
+    expect(painted()?.sentFor, isNull);
+    await tester.tapAt(star);
+    await phones.run(beat);
+    expect(phones.a.touchesSent, 1);
+    expect(phones.b.touchesFelt, 1);
+    expect(recordedHaptics, [HapticKind.tap]);
+    expect(phones.a.holding, isFalse);
+    expect(tester.takeAnnouncements(), isEmpty);
+    expect(painted()!.sentFor, isNotNull);
+    expect(painted()!.sentAt, figure.pointAt(figure.partner));
+    expect(painted()!.feltFor, isNull);
+
+    phones.b.touch();
+    await phones.run(beat);
+    expect(phones.a.touchesFelt, 1);
+    expect(recordedHaptics, [HapticKind.tap, HapticKind.heartbeat]);
+    expect(tester.takeAnnouncements().single.message, 'Alex touched your star');
+    expect(painted()!.feltFor, isNotNull);
+    await phones.run(const Duration(seconds: 2));
+    expect(painted()!.sentFor, isNull);
+    expect(painted()!.feltFor, isNull);
+
+    phones.pair.b.setForeground(false);
+    await phones.run(beat * 3);
+    expect(touch, findsNothing);
+    expect(tester.takeException(), isNull);
+    await phones.close();
+  });
+
+  testWidgets('a sky opened while they are already together still ripples on the very first touch', (tester) async {
+    final pair = FakeSkyPair();
+    final home = SkyTogetherHome(link: pair.a, haptic: (_) {});
+    final other = SkyTogetherHome(link: pair.b, haptic: (_) {});
+    for (var i = 0; i < 4; i++) {
+      pair.settle();
+      await tester.pump();
+    }
+    expect(home.stage, SkyTogetherStage.invite);
+    await pumpHost(
+      tester,
+      SizedBox(
+        width: 390,
+        height: OurSkyPage.skyHeight,
+        child: SkyTogetherLayer(home: home, constellation: const SkyConstellation(), partner: 'Alex'),
+      ),
+      scaffold: false,
+    );
+    expect(other.touch(), isTrue);
+    pair.advance(beat);
+    await tester.pump(beat);
+    await tester.pump(beat);
+    expect(home.touchesFelt, 1);
+    final paint = tester.widget<CustomPaint>(
+      find.descendant(of: find.byType(SkyTogetherLayer), matching: find.byType(CustomPaint)).first,
+    );
+    expect((paint.painter! as SkyTogetherFxPainter).frame.value!.feltFor, isNotNull);
+    await tester.pumpWidget(const SizedBox());
+    home.dispose();
+    other.dispose();
+    pair.dispose();
+  });
+
+  testWidgets('by day the touch lands on their little cloud', (tester) async {
+    final phones = await meetOnHome(tester, day: true);
+    final touch = find.byKey(SkyTogetherKeys.touch);
+    expect(tester.widget<Semantics>(touch).properties.label, "Touch Alex's cloud");
+    final layer = tester.widget<SkyTogetherLayer>(find.byType(SkyTogetherLayer));
+    final figure = layer.constellation;
+    final sky = tester.getRect(find.byType(SkyTogetherLayer));
+    final cloud = sky.topLeft + (figure.pointAt(figure.partner) + SkyTogetherSpot.cloudRest) * (sky.width / 390);
+    await tester.tapAt(cloud);
+    await phones.run(beat);
+    expect(phones.b.touchesFelt, 1);
+    expect(tester.takeException(), isNull);
+    await phones.close();
+  });
+
+  testWidgets('a reader can touch them without finding the star', (tester) async {
+    final phones = await meetOnHome(tester);
+    tester.widget<Semantics>(find.byKey(SkyTogetherKeys.touch)).properties.onTap!();
+    await phones.run(beat);
+    expect(phones.b.touchesFelt, 1);
+    await phones.close();
+  });
+
+  testWidgets('with motion on, both ripples play out without errors', (tester) async {
+    final phones = await meetOnHome(tester, motion: true);
+    await tester.tap(find.byKey(SkyTogetherKeys.touch));
+    phones.b.touch();
+    await phones.run(const Duration(seconds: 2), step: const Duration(milliseconds: 16));
+    expect(phones.a.touchesSent, 1);
+    expect(phones.a.touchesFelt, 1);
     expect(tester.takeException(), isNull);
     await phones.close();
   });

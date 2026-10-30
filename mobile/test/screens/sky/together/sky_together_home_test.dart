@@ -11,6 +11,83 @@ import '../../../support/harness.dart';
 import 'support/together_phones.dart';
 
 void main() {
+  group("a touch on the other one's star", () {
+    test('reaches the other phone as a heartbeat, and only while both are here', () async {
+      final phones = TogetherPhones(pair: FakeSkyPair(connected: false));
+      expect(phones.a.canTouch, isFalse);
+      expect(phones.a.touch(), isFalse);
+      phones.pair.connect();
+      await phones.meet();
+      expect(phones.a.canTouch, isTrue);
+      expect(phones.a.touch(), isTrue);
+      await phones.step();
+      expect(phones.a.touchesSent, 1);
+      expect(phones.b.touchesFelt, 1);
+      expect(phones.b.touchesSent, 0);
+      expect(phones.kindsA(), [HapticKind.tap]);
+      expect(phones.kindsB(), [HapticKind.heartbeat]);
+      expect(phones.pair.transportA.sentOf('touch'), hasLength(1));
+      phones.dispose();
+    });
+
+    test('taps faster than a breath count once, and the next one after goes through', () async {
+      final phones = TogetherPhones();
+      await phones.meet();
+      expect(phones.a.touch(), isTrue);
+      expect(phones.a.touch(), isFalse);
+      await phones.step();
+      expect(phones.a.touch(), isFalse);
+      await phones.step(const Duration(milliseconds: 300));
+      expect(phones.a.touch(), isTrue);
+      await phones.step();
+      expect(phones.a.touchesSent, 2);
+      expect(phones.b.touchesFelt, 2);
+      phones.dispose();
+    });
+
+    test('a flood from the other phone buzzes at most every quarter of a second', () async {
+      final phones = TogetherPhones();
+      await phones.meet();
+      for (var i = 0; i < 10; i++) {
+        phones.pair.injectEvent(phones.pair.b, const SkyTouchEvent());
+      }
+      await pumpEventQueue();
+      expect(phones.b.touchesFelt, 1);
+      await phones.step(const Duration(milliseconds: 300));
+      phones.pair.injectEvent(phones.pair.b, const SkyTouchEvent());
+      await pumpEventQueue();
+      expect(phones.b.touchesFelt, 2);
+      expect(phones.kindsB(), [HapticKind.heartbeat, HapticKind.heartbeat]);
+      phones.dispose();
+    });
+
+    test('nobody can touch a phone that has stepped away, and it feels nothing if one slips through', () async {
+      final phones = TogetherPhones();
+      await phones.meet();
+      phones.b.present(visible: false, night: true);
+      await phones.step();
+      expect(phones.a.canTouch, isFalse);
+      expect(phones.a.touch(), isFalse);
+      phones.pair.injectEvent(phones.pair.b, const SkyTouchEvent());
+      await pumpEventQueue();
+      expect(phones.b.touchesFelt, 0);
+      expect(phones.kindsB(), isEmpty);
+      phones.dispose();
+    });
+
+    test('while the patch is open there is no touching, and none is felt', () async {
+      final phones = TogetherPhones();
+      await phones.meet();
+      await phones.openTogether();
+      expect(phones.a.canTouch, isFalse);
+      expect(phones.a.touch(), isFalse);
+      phones.pair.injectEvent(phones.pair.b, const SkyTouchEvent());
+      await pumpEventQueue();
+      expect(phones.b.touchesFelt, 0);
+      phones.dispose();
+    });
+  });
+
   group('the gate between two phones', () {
     test('when both are here each is invited, and nobody is invited alone', () async {
       final phones = TogetherPhones(pair: FakeSkyPair(connected: false));

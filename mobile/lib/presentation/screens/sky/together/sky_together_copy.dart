@@ -15,6 +15,12 @@ abstract final class SkyTogetherCopy {
 
   static String partnerHoldingOn(String partner) => '$partner is holding on';
 
+  static String touchLabel(bool night, String partner) => night ? "Touch $partner's star" : "Touch $partner's cloud";
+
+  static String touchHint(String partner) => '$partner will feel it';
+
+  static String touched(String partner) => '$partner touched your star';
+
   static String _lead({required bool night, int? dayNumber}) =>
       dayNumber == null ? (night ? 'Tonight' : 'Today') : '${night ? 'Night' : 'Day'} $dayNumber';
 

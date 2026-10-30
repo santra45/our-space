@@ -90,6 +90,10 @@ void main() {
       SkyTogetherCopy.holdLabel(true, 'Alex'),
       SkyTogetherCopy.holdHint('Alex'),
       SkyTogetherCopy.partnerHoldingOn('Alex'),
+      SkyTogetherCopy.touchLabel(true, 'Alex'),
+      SkyTogetherCopy.touchLabel(false, 'Alex'),
+      SkyTogetherCopy.touchHint('Alex'),
+      SkyTogetherCopy.touched('Alex'),
       SkyTogetherCopy.patchKicker(night: true, dayNumber: 28),
       SkyTogetherCopy.patchKicker(night: false),
       SkyTogetherCopy.drawingWith('Alex'),
@@ -142,5 +146,48 @@ void main() {
       'Your drawing stays just as it is. Hold the sun together to pick it up again.',
     );
     expect(SkyTogetherCopy.helpParts, hasLength(3));
+  });
+
+  test('a touch lands on her star by night and on her cloud by day', () {
+    const heart = SkyConstellation();
+    final partner = heart.pointAt(heart.partner);
+    expect(SkyTogetherSpot.touchAt(partner, true), partner);
+    expect(SkyTogetherSpot.touchAt(partner, false), partner + SkyTogetherSpot.cloudRest);
+    expect(SkyTogetherSpot.touchHit * 2, greaterThanOrEqualTo(48));
+  });
+
+  test('in every shape the touch stays clear of the moon and the sun, and inside the sky', () {
+    for (final shape in ConstellationShape.values) {
+      final figure = SkyConstellation(shape: shape);
+      for (final night in [true, false]) {
+        final at = SkyTogetherSpot.touchAt(figure.pointAt(figure.partner), night);
+        final gap = (at - SkyTogetherSpot.body(night)).distance;
+        expect(gap, greaterThan(SkyTogetherSpot.touchHit + SkyTogetherSpot.hit), reason: '$shape night=$night');
+        expect(at.dx - SkyTogetherSpot.touchHit, greaterThanOrEqualTo(0), reason: '$shape night=$night');
+        expect(at.dx + SkyTogetherSpot.touchHit, lessThanOrEqualTo(390), reason: '$shape night=$night');
+        expect(at.dy + SkyTogetherSpot.touchHit, lessThanOrEqualTo(404), reason: '$shape night=$night');
+      }
+    }
+  });
+
+  test('a touch on its own is enough to paint, and an empty frame is still blank', () {
+    const heart = SkyConstellation();
+    final me = heart.pointAt(heart.me);
+    final partner = heart.pointAt(heart.partner);
+    SkyTogetherPaint frame({double? sent, double? felt}) => SkyTogetherPaint(
+      night: true,
+      motion: true,
+      seconds: 0,
+      body: SkyTogetherSpot.moon,
+      me: me,
+      partner: partner,
+      thread: SkyThread(me, partner, centre: heart.bounds.center),
+      sentAt: partner,
+      sentFor: sent,
+      feltFor: felt,
+    );
+    expect(frame().blank, isTrue);
+    expect(frame(sent: 0.2).blank, isFalse);
+    expect(frame(felt: 0.2).blank, isFalse);
   });
 }

@@ -17,8 +17,13 @@ abstract final class SkyTogetherSpot {
   static const double lineMax = 372;
   static const Offset cloudRest = Offset(60, -6);
   static const double cloudScale = 0.36;
+  static const double touchHit = 26;
+  static const double sentSeconds = 0.9;
+  static const double feltSeconds = 1.8;
 
   static Offset body(bool night) => night ? moon : sun;
+
+  static Offset touchAt(Offset partner, bool night) => night ? partner : partner + cloudRest;
 
   static double ring(bool night) => night ? 22 : 25;
 
@@ -142,6 +147,9 @@ class SkyTogetherPaint {
     this.bright = false,
     this.beat = 0,
     this.sinceLub,
+    this.sentAt = Offset.zero,
+    this.sentFor,
+    this.feltFor,
   });
 
   final bool night;
@@ -169,8 +177,13 @@ class SkyTogetherPaint {
   final bool bright;
   final double beat;
   final int? sinceLub;
+  final Offset sentAt;
+  final double? sentFor;
+  final double? feltFor;
 
   bool get blank =>
+      sentFor == null &&
+      feltFor == null &&
       presence <= 0 &&
       sun <= 0 &&
       hint <= 0 &&
@@ -379,7 +392,76 @@ class SkyTogetherFxPainter extends CustomPainter {
       bright: f.bright,
       sinceLub: f.sinceLub,
     );
+    _touches(canvas, f);
     canvas.restore();
+  }
+
+  void _touches(Canvas canvas, SkyTogetherPaint f) {
+    final sent = f.sentFor;
+    if (sent != null) {
+      _ripple(canvas, f, f.sentAt, sent / SkyTogetherSpot.sentSeconds, rings: 1, reach: 24, alpha: f.night ? 0.75 : 0.95);
+    }
+    final felt = f.feltFor;
+    if (felt == null) return;
+    final t = (felt / SkyTogetherSpot.feltSeconds).clamp(0.0, 1.0);
+    final fade = 1 - Curves.easeIn.transform(t);
+    canvas.drawCircle(
+      f.me,
+      30,
+      Paint()
+        ..shader = ui.Gradient.radial(
+          f.me,
+          30,
+          [
+            (f.night ? SkyTogetherInk.cream : SkyTogetherInk.white).withValues(alpha: (f.night ? 0.55 : 0.85) * fade),
+            (f.night ? SkyTogetherInk.gold : SkyTogetherInk.white).withValues(alpha: (f.night ? 0.16 : 0.3) * fade),
+            SkyTogetherInk.gold.withValues(alpha: 0),
+          ],
+          const [0, 0.45, 1],
+        ),
+    );
+    _ripple(canvas, f, f.me, t, rings: 3, reach: 44, alpha: f.night ? 0.8 : 1);
+  }
+
+  void _ripple(
+    Canvas canvas,
+    SkyTogetherPaint f,
+    Offset at,
+    double t, {
+    required int rings,
+    required double reach,
+    required double alpha,
+  }) {
+    if (t < 0 || t >= 1) return;
+    final ink = f.night ? SkyTogetherInk.gold : SkyTogetherInk.white;
+    final count = f.motion ? rings : 1;
+    const lag = 0.18;
+    final span = 1 - (count - 1) * lag;
+    for (var i = 0; i < count; i++) {
+      final local = (t - i * lag) / span;
+      if (local <= 0 || local >= 1) continue;
+      final radius = f.motion ? 12 + reach * Curves.easeOutCubic.transform(local) : 12 + reach * 0.5;
+      final a = alpha * (1 - local) * (i == 0 ? 1 : 0.6);
+      final width = i == 0 ? 1.6 : 1.1;
+      if (!f.night) {
+        canvas.drawCircle(
+          at,
+          radius,
+          Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = width + 2
+            ..color = SkyTogetherInk.indigo.withValues(alpha: 0.16 * a),
+        );
+      }
+      canvas.drawCircle(
+        at,
+        radius,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = width
+          ..color = ink.withValues(alpha: a),
+      );
+    }
   }
 
   void _presence(Canvas canvas, SkyTogetherPaint f) {

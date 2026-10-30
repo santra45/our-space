@@ -193,6 +193,8 @@ class SkyTogetherLink extends ChangeNotifier {
 
   Future<bool> sendClose(String drawing) => send(SkyCloseEvent(drawing: drawing));
 
+  Future<bool> sendTouch() => send(const SkyTouchEvent());
+
   void sendCursor(double x, double y, {bool down = true}) {
     if (_disposed || !_linked || !_speaks) return;
     _pendingCursor = SkyCursorEvent(x: skyRound(x), y: skyRound(y), down: down);

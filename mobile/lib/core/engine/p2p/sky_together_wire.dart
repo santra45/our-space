@@ -41,6 +41,7 @@ sealed class SkyTogetherEvent {
         'agree' => SkyAgreeEvent._read(raw),
         'saved' => SkySavedEvent._read(raw),
         'close' => SkyCloseEvent._read(raw),
+        'touch' => SkyTouchEvent._read(raw),
         _ => null,
       };
     } catch (_) {
@@ -321,4 +322,16 @@ final class SkyCloseEvent extends SkyTogetherEvent {
     final drawing = skyId(raw['drawing']);
     return drawing == null ? null : SkyCloseEvent(drawing: drawing);
   }
+}
+
+final class SkyTouchEvent extends SkyTogetherEvent {
+  const SkyTouchEvent();
+
+  @override
+  String get kind => 'touch';
+
+  @override
+  Map<String, Object?> get body => const {};
+
+  static SkyTouchEvent? _read(Map<Object?, Object?> raw) => raw.length == 2 ? const SkyTouchEvent() : null;
 }
