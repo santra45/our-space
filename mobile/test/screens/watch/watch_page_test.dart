@@ -122,6 +122,20 @@ void main() {
       WatchCopy.filmRemoveYes,
       WatchCopy.filmKeep,
       WatchCopy.together(600000),
+      WatchCopy.fullscreen,
+      WatchCopy.fullscreenExit,
+      WatchCopy.leaveTitle,
+      WatchCopy.leaveAlone,
+      WatchCopy.leaveYes,
+      WatchCopy.leaveStay,
+      WatchCopy.skipBack,
+      WatchCopy.skipAhead,
+      WatchCopy.leaveWith('Alex'),
+      WatchCopy.paused('Alex'),
+      WatchCopy.played('Alex'),
+      WatchCopy.moved('Alex'),
+      WatchCopy.joined('Alex'),
+      WatchCopy.left('Alex'),
       WatchCopy.joinLabel,
       WatchCopy.notNow,
       WatchCopy.loading,
@@ -186,7 +200,18 @@ void main() {
     final mine = sofa.players.first;
     await tester.tap(find.byType(SkyBackButton));
     await settleRoute(tester);
+    expect(find.text(WatchCopy.leaveTitle), findsOneWidget);
+    expect(find.text(WatchCopy.leaveWith('Alex')), findsOneWidget);
+    await tester.tap(find.text(WatchCopy.leaveStay));
+    await settleRoute(tester);
+    expect(find.byType(WatchPage), findsOneWidget);
+    expect(mine.disposed, isFalse);
+    await tester.tap(find.byType(SkyBackButton));
+    await settleRoute(tester);
+    await tester.tap(find.text(WatchCopy.leaveYes));
+    await settleRoute(tester);
     await sofa.run(beat * 3);
+    expect(find.byType(WatchPage), findsNothing);
     expect(mine.disposed, isTrue);
     expect(sofa.other.partnerIn, isFalse);
     expect(tester.takeException(), isNull);
@@ -272,12 +297,127 @@ void main() {
     expect(find.byType(SkyTopBar), findsNothing);
     expect(find.byKey(WatchKeys.video), findsOneWidget);
     expect(find.byKey(WatchKeys.playPause), findsOneWidget);
-    await tester.tapAt(const Offset(200, 100));
-    await tester.pump();
+    expect(find.byType(SkyCard), findsNothing);
+    await tester.tapAt(const Offset(420, 195));
+    await tester.pump(const Duration(milliseconds: 350));
     expect(find.byKey(WatchKeys.playPause), findsNothing);
-    await tester.tapAt(const Offset(200, 100));
-    await tester.pump();
+    await tester.tapAt(const Offset(420, 195));
+    await tester.pump(const Duration(milliseconds: 350));
     expect(find.byKey(WatchKeys.playPause), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await tester.pump(const Duration(seconds: 5));
+    await sofa.close();
+  });
+
+  Future<Sofa> watching(WidgetTester tester) async {
+    final sofa = await onUs(tester);
+    await sofa.openPage();
+    await tester.enterText(find.descendant(of: find.byKey(WatchKeys.linkField), matching: find.byType(EditableText)), movie);
+    await tester.tap(find.byKey(WatchKeys.start));
+    await sofa.run(beat * 3);
+    return sofa;
+  }
+
+  testWidgets('what the partner does is said over the video, and fades after a moment', (tester) async {
+    final sofa = await watching(tester);
+    sofa.other.join();
+    await sofa.run(beat * 3);
+    expect(find.text(WatchCopy.joined('Alex')), findsOneWidget);
+    await sofa.run(const Duration(seconds: 4));
+    expect(find.byKey(WatchKeys.pill), findsNothing);
+
+    sofa.other.togglePlay();
+    await sofa.run(beat * 6);
+    expect(find.text(WatchCopy.played('Alex')), findsOneWidget);
+    sofa.other.togglePlay();
+    await sofa.run(beat * 3);
+    expect(find.text(WatchCopy.paused('Alex')), findsOneWidget);
+    sofa.other.seek(300000);
+    await sofa.run(beat * 3);
+    expect(find.text(WatchCopy.moved('Alex')), findsOneWidget);
+    sofa.other.leave();
+    await sofa.run(beat * 3);
+    expect(find.text(WatchCopy.left('Alex')), findsOneWidget);
+    await sofa.run(const Duration(seconds: 4));
+    expect(find.byKey(WatchKeys.pill), findsNothing);
+    expect(tester.takeException(), isNull);
+    await sofa.close();
+  });
+
+  testWidgets('when the partner stalls the frozen picture says why and shows it is waiting', (tester) async {
+    final sofa = await watching(tester);
+    sofa.other.join();
+    await sofa.run(beat * 3);
+    await sofa.run(const Duration(seconds: 4));
+    await tester.tap(find.byKey(WatchKeys.playPause));
+    await sofa.run(const Duration(seconds: 1));
+    (sofa.other.player! as FakeWatchPlayer).isBuffering = true;
+    await sofa.run(const Duration(seconds: 2));
+    expect(find.byKey(WatchKeys.waiting), findsOneWidget);
+    expect(find.descendant(of: find.byKey(WatchKeys.pill), matching: find.text(WatchCopy.catchingUp('Alex'))), findsOneWidget);
+    (sofa.other.player! as FakeWatchPlayer).isBuffering = false;
+    await sofa.run(const Duration(seconds: 1));
+    expect(find.byKey(WatchKeys.waiting), findsNothing);
+    expect(find.byKey(WatchKeys.pill), findsNothing);
+    await sofa.close();
+  });
+
+  testWidgets('a double tap skips ten seconds on the side it lands on, and never before the start', (tester) async {
+    final sofa = await watching(tester);
+    final mine = sofa.players.single;
+    final video = tester.getRect(find.byKey(WatchKeys.video));
+    Future<void> doubleTap(Offset at) async {
+      await tester.tapAt(at);
+      await tester.pump(const Duration(milliseconds: 60));
+      await tester.tapAt(at);
+      await tester.pump(const Duration(milliseconds: 60));
+    }
+
+    await doubleTap(video.centerRight - const Offset(30, 0));
+    expect(mine.seeks.last, WatchRoom.skipMs);
+    expect(find.descendant(of: find.byKey(WatchKeys.skip), matching: find.text(WatchCopy.skipAhead)), findsOneWidget);
+    await sofa.run(const Duration(seconds: 1));
+    expect(find.byKey(WatchKeys.skip), findsNothing);
+
+    mine.positionNow = 4000;
+    await sofa.run(beat * 3);
+    await doubleTap(video.centerLeft + const Offset(30, 0));
+    expect(mine.seeks.last, 0);
+    expect(find.descendant(of: find.byKey(WatchKeys.skip), matching: find.text(WatchCopy.skipBack)), findsOneWidget);
+    await sofa.run(const Duration(seconds: 1));
+    await sofa.close();
+  });
+
+  testWidgets('the full screen button turns the screen, and back leaves full screen before it asks about leaving', (tester) async {
+    final turns = <Object?>[];
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+      if (call.method == 'SystemChrome.setPreferredOrientations') turns.add(call.arguments);
+      return null;
+    });
+    addTearDown(() => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform, null));
+    final sofa = await watching(tester);
+    turns.clear();
+    await tester.tap(find.byKey(WatchKeys.fullscreen));
+    await tester.pump();
+    expect(turns.single, ['DeviceOrientation.landscapeLeft', 'DeviceOrientation.landscapeRight']);
+
+    tester.view.physicalSize = const Size(2532, 1170);
+    addTearDown(tester.view.reset);
+    await tester.pump();
+    turns.clear();
+    await tester.binding.handlePopRoute();
+    await tester.pump();
+    expect(turns.single, ['DeviceOrientation.portraitUp']);
+    expect(find.text(WatchCopy.leaveTitle), findsNothing);
+    expect(find.byType(WatchPage), findsOneWidget);
+
+    tester.view.physicalSize = const Size(1170, 2532);
+    await tester.pump();
+    await tester.binding.handlePopRoute();
+    await settleRoute(tester);
+    expect(find.text(WatchCopy.leaveTitle), findsOneWidget);
+    await tester.tap(find.text(WatchCopy.leaveStay));
+    await settleRoute(tester);
     expect(tester.takeException(), isNull);
     await tester.pump(const Duration(seconds: 5));
     await sofa.close();

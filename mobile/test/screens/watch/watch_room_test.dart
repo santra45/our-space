@@ -360,6 +360,106 @@ void main() {
     });
   });
 
+  group('saying what the partner did', () {
+    test('play, pause, a jump, arriving and leaving are each said once, and a stall says nothing', () async {
+      final couch = Couch();
+      await couch.meet();
+      couch.a.start(movie);
+      await couch.run(200);
+      expect(couch.a.noticeCount, 0);
+      couch.b.join();
+      await couch.run(600);
+      expect(couch.a.notice, WatchNotice.joined);
+      expect(couch.a.noticeCount, 1);
+      expect(couch.b.noticeCount, 0);
+
+      couch.b.togglePlay();
+      await couch.run(800);
+      expect(couch.a.notice, WatchNotice.played);
+      expect(couch.a.noticeCount, 2);
+      expect(couch.b.noticeCount, 0);
+
+      await couch.run(2000);
+      couch.playerB.isBuffering = true;
+      await couch.run(WatchRoom.waitAfterMs + 400);
+      expect(couch.a.held, isTrue);
+      couch.playerB.isBuffering = false;
+      await couch.run(1000);
+      expect(couch.a.held, isFalse);
+      expect(couch.a.noticeCount, 2);
+
+      couch.b.seek(300000);
+      await couch.run(1000);
+      expect(couch.a.notice, WatchNotice.moved);
+      expect(couch.a.noticeCount, 3);
+
+      couch.b.togglePlay();
+      await couch.run(500);
+      expect(couch.a.notice, WatchNotice.paused);
+      expect(couch.a.noticeCount, 4);
+
+      couch.b.leave();
+      await couch.run(300);
+      expect(couch.a.notice, WatchNotice.left);
+      expect(couch.a.noticeCount, 5);
+      await couch.dispose();
+    });
+
+    test('a film reaching its end is not called a pause', () async {
+      final couch = Couch(makePlayer: () => FakeWatchPlayer(durationMs: 5000));
+      await couch.together();
+      final before = couch.b.noticeCount;
+      couch.b.togglePlay();
+      await couch.run(7000);
+      expect(couch.a.playing, isFalse);
+      expect(couch.a.notice, WatchNotice.played);
+      expect(couch.b.noticeCount, before);
+      await couch.dispose();
+    });
+
+    test('a partner going silent is said once', () async {
+      final couch = Couch();
+      await couch.together();
+      final before = couch.a.noticeCount;
+      couch.pair.drop();
+      await couch.step();
+      expect(couch.a.notice, WatchNotice.left);
+      expect(couch.a.noticeCount, before + 1);
+      await couch.run(WatchRoom.goneMs + 500);
+      expect(couch.a.noticeCount, before + 1);
+      await couch.dispose();
+    });
+  });
+
+  group('skipping', () {
+    test('it moves both phones and stops at each end of the film', () async {
+      final couch = Couch(makePlayer: () => FakeWatchPlayer(durationMs: 60000));
+      await couch.together();
+      couch.playerA.positionNow = 30000;
+      await couch.a.tick();
+      couch.a.skip(WatchRoom.skipMs);
+      await couch.run(600);
+      expect(couch.playerA.positionNow, 40000);
+      expect(couch.playerB.positionNow, 40000);
+      couch.a.skip(-100000);
+      await couch.run(600);
+      expect(couch.playerB.positionNow, 0);
+      couch.a.skip(100000);
+      await couch.run(600);
+      expect(couch.playerB.positionNow, 60000);
+      await couch.dispose();
+    });
+
+    test('a live video cannot be skipped', () async {
+      final couch = Couch(makePlayer: () => FakeWatchPlayer()..isLive = true);
+      await couch.together();
+      couch.a.skip(WatchRoom.skipMs);
+      await couch.run(300);
+      expect(couch.playerA.seeks, isEmpty);
+      await couch.dispose();
+    });
+  });
+
   group('keeping the film', () {
     test('ten minutes watched together keeps it on both phones under one id, and leaving records the full time', () async {
       final couch = Couch();

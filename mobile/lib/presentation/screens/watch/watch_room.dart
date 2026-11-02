@@ -6,6 +6,8 @@ import 'package:flutter/foundation.dart';
 import '../../../core/engine.dart';
 import 'watch_player.dart';
 
+enum WatchNotice { paused, played, moved, joined, left }
+
 @immutable
 class WatchedFilm {
   const WatchedFilm({required this.id, required this.title, required this.togetherMs});
@@ -59,6 +61,8 @@ class WatchRoom extends ChangeNotifier {
   static const int restOverMs = 300;
   static const int endWithinMs = 300;
   static const double nudge = 0.03;
+  static const int movedOverMs = 3000;
+  static const int skipMs = 10000;
   static const int keepAfterMs = 10 * 60 * 1000;
   static const int longestGapMs = 5000;
 
@@ -79,6 +83,8 @@ class WatchRoom extends ChangeNotifier {
   int _togetherMs = 0;
   int? _countedAt;
   bool _kept = false;
+  WatchNotice? _notice;
+  int _noticeCount = 0;
   bool _playing = false;
   bool _hold = false;
   int _pos = 0;
@@ -113,6 +119,21 @@ class WatchRoom extends ChangeNotifier {
   bool get partnerFailed => _partnerFail;
 
   WatchPlayer? get player => _player;
+
+  WatchNotice? get notice => _notice;
+
+  int get noticeCount => _noticeCount;
+
+  void _say(WatchNotice notice) {
+    _notice = notice;
+    _noticeCount++;
+  }
+
+  void skip(int byMs) {
+    final player = _player;
+    if (player == null || !player.ready || player.live) return;
+    seek((positionMs.value + byMs).clamp(0, player.durationMs));
+  }
 
   bool get offered => _url != null && !_inRoom && _partnerIn;
 
@@ -332,6 +353,8 @@ class WatchRoom extends ChangeNotifier {
       return;
     }
     if (state.url != null) _newFilm(state.film);
+    final wasIn = _partnerIn;
+    if (_inRoom && state.url != null && state.url == _url && !state.hold && !_hold) _noticeFrom(state);
     _seq = state.seq;
     _by = state.by;
     _url = state.url;
@@ -342,6 +365,7 @@ class WatchRoom extends ChangeNotifier {
     _lastHeardAt = link.now();
     _partnerIn = state.url != null;
     if (state.url == null) _clearPartner();
+    if (_inRoom && !wasIn && _partnerIn) _say(WatchNotice.joined);
     final url = _url;
     if (_inRoom && url != null && url != _loaded) {
       unawaited(_load(url));
@@ -355,15 +379,30 @@ class WatchRoom extends ChangeNotifier {
     notifyListeners();
   }
 
+  void _noticeFrom(SkyWatchEvent state) {
+    final player = _player;
+    final ended = player != null && player.ready && !player.live && state.pos >= player.durationMs - endWithinMs;
+    if (_playing && !state.playing) {
+      if (!ended) _say(WatchNotice.paused);
+    } else if (!_playing && state.playing) {
+      _say(WatchNotice.played);
+    } else if ((state.pos + (state.playing ? math.max(0, link.sharedNow() - state.at) : 0) - _expected).abs() > movedOverMs) {
+      _say(WatchNotice.moved);
+    }
+  }
+
   void _hearBeat(SkyWatchBeatEvent beat) {
+    final wasIn = _partnerIn;
     _lastHeardAt = link.now();
     _partnerIn = beat.on;
     _partnerWait = beat.on && beat.wait;
     _partnerFail = beat.on && beat.fail;
     if (!beat.on) {
+      if (_inRoom && wasIn) _say(WatchNotice.left);
       _partnerGone();
       return;
     }
+    if (_inRoom && !wasIn) _say(WatchNotice.joined);
     if (_inRoom && beat.seq < _seq) _offer();
     if (_inRoom) unawaited(tick());
     notifyListeners();
@@ -376,6 +415,7 @@ class WatchRoom extends ChangeNotifier {
   }
 
   void _partnerGone() {
+    if (_inRoom && _partnerIn) _say(WatchNotice.left);
     _clearPartner();
     if (!_inRoom) {
       _url = null;

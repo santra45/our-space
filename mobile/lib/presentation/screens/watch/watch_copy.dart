@@ -43,6 +43,27 @@ abstract final class WatchCopy {
 
   static String filmLine(String day, int ms) => '$day · ${together(ms)}';
 
+  static const String fullscreen = 'Full screen';
+  static const String fullscreenExit = 'Leave full screen';
+  static const String leaveTitle = 'Leave the film?';
+  static const String leaveAlone = 'You can start it again any time.';
+  static const String leaveYes = 'Leave';
+  static const String leaveStay = 'Keep watching';
+  static const String skipBack = '10s back';
+  static const String skipAhead = '10s ahead';
+
+  static String leaveWith(String partner) => '$partner can keep watching without you.';
+
+  static String paused(String partner) => '$partner paused';
+
+  static String played(String partner) => '$partner pressed play';
+
+  static String moved(String partner) => '$partner moved the film';
+
+  static String joined(String partner) => '$partner is here';
+
+  static String left(String partner) => '$partner stepped away';
+
   static String track(int number) => 'Track $number';
 
   static String invited(String partner) => '$partner wants to watch something with you';
