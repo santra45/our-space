@@ -45,12 +45,12 @@ void main() {
   group('where the new table sits', () {
     test('it comes last, after every table the website knows, and the lists built from it follow', () {
       expect(skyDrawingsTable, 'skyDrawings');
-      expect(syncedTables, [...tablesBefore, skyDrawingsTable]);
+      expect(syncedTables, [...tablesBefore, skyDrawingsTable, watchedFilmsTable]);
       expect(webSyncedTables, tablesBefore);
-      expect(importableTables, {...tablesBefore, skyDrawingsTable});
-      expect(exportedTables, [vaultMetaTable, ...tablesBefore, skyDrawingsTable]);
+      expect(importableTables, {...tablesBefore, skyDrawingsTable, watchedFilmsTable});
+      expect(exportedTables, [vaultMetaTable, ...tablesBefore, skyDrawingsTable, watchedFilmsTable]);
       expect(mailboxTextTables, tablesBefore.where((t) => t != memoriesTable).toList());
-      expect(allowedPeerTables, {...tablesBefore, skyDrawingsTable});
+      expect(allowedPeerTables, {...tablesBefore, skyDrawingsTable, watchedFilmsTable});
       expect(binaryFieldsByTable.containsKey(skyDrawingsTable), isFalse);
       expect(wireFieldsFor(skyDrawingsTable), {'id', 'updatedAt', 'deleted', 'v', 'ciphertext', 'iv'});
     });

@@ -271,6 +271,41 @@ void main() {
       expect(space.sync.lastNotice, 'Saved 💕 your partner will see it the moment you two connect.');
     });
 
+    test('a film is kept once however often both phones say so, and a name we gave it stays', () async {
+      expect((await space.films.load()).items, isEmpty);
+      await space.films.keep(id: 'film-one', title: '  Our First Film (2020) ', togetherMs: 600000);
+      var film = (await space.films.load()).items.single;
+      expect(film.title, 'Our First Film (2020)');
+      expect(film.togetherMs, 600000);
+      expect(film.watchedAt, greaterThan(0));
+      final firstDay = film.watchedAt;
+
+      await space.films.rename(film, 'The one with the rain');
+      await space.films.keep(id: 'film-one', title: 'Our First Film (2020)', togetherMs: 7200000);
+      film = (await space.films.load()).items.single;
+      expect(film.title, 'The one with the rain');
+      expect(film.togetherMs, 7200000);
+      expect(film.watchedAt, firstDay);
+
+      await space.films.keep(id: 'film-one', title: 'x', togetherMs: 1000);
+      expect((await space.films.load()).items.single.togetherMs, 7200000);
+
+      expect(await space.films.keep(id: 'film-blank', title: '   ', togetherMs: 1000), isNull);
+      expect(await space.films.rename(film, '   '), isNull);
+
+      await space.films.remove('film-one');
+      expect((await space.films.load()).items, isEmpty);
+      expect(await space.films.keep(id: 'film-one', title: 'Back again', togetherMs: 9000000), isNull);
+      expect((await space.films.load()).items, isEmpty);
+
+      await space.films.keep(id: 'film-old', title: 'Older', togetherMs: 1);
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+      await space.films.keep(id: 'film-new', title: 'Newer ${'x' * 200}', togetherMs: 1);
+      final shelf = (await space.films.load()).items;
+      expect(shelf.map((item) => item.id), ['film-new', 'film-old']);
+      expect(shelf.first.title.length, filmTitleLimit);
+    });
+
     test('date ideas start with the ten built in ones and take our own', () async {
       await space.roulette.persist(ideaId: 'd5', category: 'food', revealed: true);
       var snapshot = await space.dateIdeas.load();

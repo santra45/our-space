@@ -16,13 +16,15 @@ class Couch {
       made.add(player);
       return player;
     };
-    a = WatchRoom(link: this.pair.a, tickEvery: null);
-    b = WatchRoom(link: this.pair.b, tickEvery: null);
+    a = WatchRoom(link: this.pair.a, tickEvery: null, onWatched: keptA.add);
+    b = WatchRoom(link: this.pair.b, tickEvery: null, onWatched: keptB.add);
   }
 
   final FakeSkyPair pair;
   final FakeWatchPlayer Function()? makePlayer;
   final List<FakeWatchPlayer> made = [];
+  final List<WatchedFilm> keptA = [];
+  final List<WatchedFilm> keptB = [];
   late final WatchRoom a;
   late final WatchRoom b;
 
@@ -355,6 +357,90 @@ void main() {
       expect(couch.playerB.seeks, isEmpty);
       expect(couch.playerB.speeds, isEmpty);
       await couch.dispose();
+    });
+  });
+
+  group('keeping the film', () {
+    test('ten minutes watched together keeps it on both phones under one id, and leaving records the full time', () async {
+      final couch = Couch();
+      await couch.together();
+      couch.a.togglePlay();
+      await couch.run(WatchRoom.keepAfterMs - 60000, every: 1000);
+      expect(couch.keptA, isEmpty);
+      expect(couch.keptB, isEmpty);
+      await couch.run(70000, every: 1000);
+      expect(couch.keptA, hasLength(1));
+      expect(couch.keptB, hasLength(1));
+      expect(couch.keptA.single.id, couch.keptB.single.id);
+      expect(couch.keptA.single.title, 'our-film');
+      await couch.run(60000, every: 1000);
+      expect(couch.keptA, hasLength(1));
+      couch.a.leave();
+      expect(couch.keptA, hasLength(2));
+      expect(couch.keptA.last.id, couch.keptA.first.id);
+      expect(couch.keptA.last.togetherMs, greaterThan(couch.keptA.first.togetherMs + 50000));
+      await couch.dispose();
+    });
+
+    test('watching alone never keeps anything', () async {
+      final couch = Couch();
+      await couch.meet();
+      couch.a.start(movie);
+      await couch.run(200);
+      couch.a.togglePlay();
+      await couch.run(WatchRoom.keepAfterMs + 60000, every: 1000);
+      expect(couch.keptA, isEmpty);
+      couch.a.leave();
+      expect(couch.keptA, isEmpty);
+      await couch.dispose();
+    });
+
+    test('paused time does not count', () async {
+      final couch = Couch();
+      await couch.together();
+      await couch.run(WatchRoom.keepAfterMs + 60000, every: 1000);
+      expect(couch.keptA, isEmpty);
+      couch.a.togglePlay();
+      await couch.run(5 * 60000, every: 1000);
+      couch.a.togglePlay();
+      await couch.run(20 * 60000, every: 1000);
+      expect(couch.keptA, isEmpty);
+      await couch.dispose();
+    });
+
+    test('a new link is a new film, and the one before keeps its time', () async {
+      final couch = Couch();
+      await couch.together();
+      couch.a.togglePlay();
+      await couch.run(WatchRoom.keepAfterMs + 5000, every: 1000);
+      final first = couch.keptA.single;
+      couch.a.start(other);
+      await couch.run(1000);
+      expect(couch.keptA, hasLength(2));
+      expect(couch.keptA.last.id, first.id);
+      expect(couch.keptB.last.id, first.id);
+      couch.a.togglePlay();
+      await couch.run(WatchRoom.keepAfterMs + 5000, every: 1000);
+      expect(couch.keptA.last.id, isNot(first.id));
+      expect(couch.keptA.last.title, 'other-film');
+      await couch.dispose();
+    });
+
+    test('a good name is pulled from the link, and a meaningless one is left out', () {
+      for (final (link, title) in <(String, String?)>[
+        ('https://a.dev/8acf85d/Our.Film.2021.1080p.WEB-DL.mkv', 'Our Film (2021)'),
+        ('https://a.dev/My%20Film%20%5B1080p%5D.mp4', 'My Film'),
+        ('https://a.dev/x/The_Long_Road_720p_x264.mkv?token=abc', 'The Long Road'),
+        ('https://a.dev/%E0%A4%AB%E0%A4%BF%E0%A4%B2%E0%A5%8D%E0%A4%AE.mp4', 'फिल्म'),
+        ('https://a.dev/2012.mkv', null),
+        ('https://a.dev/8acf85d0-11ee-4c55.mkv', null),
+        ('https://a.dev/hls/master.m3u8', null),
+        ('https://a.dev/', null),
+        ('https://a.dev', null),
+      ]) {
+        expect(filmTitleFromLink(link), title, reason: link);
+      }
+      expect(filmTitleFromLink('https://a.dev/${'long ' * 40}.mkv')!.runes.length, lessThanOrEqualTo(80));
     });
   });
 

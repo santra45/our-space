@@ -5,6 +5,7 @@ import 'package:our_space_mobile/core/engine.dart';
 import 'package:our_space_mobile/presentation/app_shell.dart';
 import 'package:our_space_mobile/presentation/home_shell.dart';
 import 'package:our_space_mobile/presentation/screens/sky/together/sky_together_scope.dart';
+import 'package:our_space_mobile/presentation/screens/watch/films_shelf.dart';
 import 'package:our_space_mobile/presentation/screens/watch/watch_copy.dart';
 import 'package:our_space_mobile/presentation/screens/watch/watch_page.dart';
 import 'package:our_space_mobile/presentation/screens/watch/watch_player.dart';
@@ -109,6 +110,18 @@ void main() {
       WatchCopy.subtitles,
       WatchCopy.subtitlesOff,
       WatchCopy.track(2),
+      WatchCopy.unnamedFilm,
+      WatchCopy.filmsTitle,
+      WatchCopy.filmEditTitle,
+      WatchCopy.filmNameLabel,
+      WatchCopy.filmSave,
+      WatchCopy.filmSaveFailed,
+      WatchCopy.filmRemove,
+      WatchCopy.filmRemoveTitle,
+      WatchCopy.filmRemoveNote,
+      WatchCopy.filmRemoveYes,
+      WatchCopy.filmKeep,
+      WatchCopy.together(600000),
       WatchCopy.joinLabel,
       WatchCopy.notNow,
       WatchCopy.loading,
@@ -127,6 +140,9 @@ void main() {
     expect(WatchCopy.clock(65000), '1:05');
     expect(WatchCopy.clock(3725000), '1:02:05');
     expect(WatchCopy.clock(-5), '0:00');
+    expect(WatchCopy.together(600000), '10 min together');
+    expect(WatchCopy.together(3600000), '1h together');
+    expect(WatchCopy.together(7500000), '2h 5m together');
   });
 
   testWidgets('the Us tab opens a screen that asks for a link, and a bad one is turned away kindly', (tester) async {
@@ -330,6 +346,44 @@ void main() {
     expect(find.byKey(WatchKeys.playPause), findsOneWidget);
     expect(find.byKey(WatchKeys.audio), findsNothing);
     expect(find.byKey(WatchKeys.subtitles), findsNothing);
+    await sofa.close();
+  });
+
+  testWidgets('films we watched sit on the Us tab, and can be renamed or taken off for both of us', (tester) async {
+    final sofa = await onUs(tester);
+    expect(find.text(WatchCopy.filmsTitle), findsNothing);
+    final room = WatchScope.maybeOf(tester.element(find.byKey(WatchKeys.entry)))!;
+    room.onWatched!(const WatchedFilm(id: 'film-one', title: 'Our First Film (2020)', togetherMs: 7500000));
+    await settle(tester, sofa.space);
+    await untilFound(tester, find.text(WatchCopy.filmsTitle));
+    expect(find.text('Our First Film (2020)'), findsOneWidget);
+    expect(find.textContaining('2h 5m together'), findsOneWidget);
+
+    final ticket = find.byKey(FilmKeys.film('film-one'));
+    await reveal(tester, ticket);
+    await tester.tap(ticket);
+    await settleRoute(tester);
+    await tester.enterText(find.descendant(of: find.byKey(FilmKeys.title), matching: find.byType(EditableText)), 'The one with the rain');
+    await tester.pump();
+    await tester.tap(find.byKey(FilmKeys.save));
+    await settle(tester, sofa.space);
+    await untilFound(tester, find.text('The one with the rain'));
+    await settleRoute(tester);
+    expect((await drive(tester, sofa.space.films.load)).items.single.title, 'The one with the rain');
+
+    await reveal(tester, ticket);
+    await tester.tap(ticket);
+    await settleRoute(tester);
+    await reveal(tester, find.byKey(FilmKeys.remove));
+    await tester.tap(find.byKey(FilmKeys.remove));
+    await settleRoute(tester);
+    expect(find.text(WatchCopy.filmRemoveNote), findsOneWidget);
+    await tester.tap(find.text(WatchCopy.filmRemoveYes));
+    await settleRoute(tester);
+    await settle(tester, sofa.space);
+    await untilGone(tester, ticket);
+    expect((await drive(tester, sofa.space.films.load)).items, isEmpty);
+    expect(tester.takeException(), isNull);
     await sofa.close();
   });
 

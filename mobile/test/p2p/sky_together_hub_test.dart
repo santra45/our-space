@@ -82,6 +82,23 @@ void main() {
     await b.close();
   });
 
+  test('a film kept on one phone reaches the other live and quietly', () async {
+    final network = FakeNetwork();
+    final (a, b) = await linkedPhones(network);
+    final skyA = a.hub.skyTogether;
+    await waitFor(() => skyA.partnerSpeaksSky && b.hub.skyTogether.partnerSpeaksSky, reason: 'both to speak sky');
+
+    await a.space.films.keep(id: 'film-live', title: 'Our film', togetherMs: 600000);
+    await waitUntil(() async => (await b.space.films.load()).items.any((film) => film.id == 'film-live'),
+        reason: 'the film to arrive live');
+    await settle(40);
+    expect(b.texts.where((t) => t.startsWith('Synced')), isEmpty);
+    expect(b.notices.where((n) => n.kind == SyncNoticeKind.warning), isEmpty);
+
+    await a.close();
+    await b.close();
+  });
+
   test('a drawing kept on one phone reaches the other live and quietly, but never goes live to a partner who cannot draw',
       () async {
     final network = FakeNetwork();

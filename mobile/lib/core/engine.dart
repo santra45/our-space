@@ -1,6 +1,7 @@
 export '../models/bucket_list_record.dart';
 export '../models/daily_answers_record.dart';
 export '../models/date_idea_record.dart';
+export '../models/film_record.dart';
 export '../models/letter_record.dart';
 export '../models/love_burst_record.dart';
 export '../models/memory_record.dart';
@@ -33,6 +34,7 @@ export 'engine/p2p/sky_together_link.dart';
 export 'engine/p2p/sky_together_wire.dart';
 export 'engine/repositories/bucket_list_repository.dart';
 export 'engine/repositories/date_ideas_repository.dart';
+export 'engine/repositories/films_repository.dart';
 export 'engine/repositories/letters_repository.dart';
 export 'engine/repositories/memories_repository.dart';
 export 'engine/repositories/milestones_repository.dart';

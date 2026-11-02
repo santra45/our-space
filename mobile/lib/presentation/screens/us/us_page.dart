@@ -13,6 +13,7 @@ import '../countdown/together_date_sheet.dart';
 import '../countdown/together_hero.dart';
 import '../countdown/upcoming_milestones.dart';
 import '../roulette/date_roulette.dart';
+import '../watch/films_shelf.dart';
 import '../watch/watch_page.dart';
 import 'us_copy.dart';
 import 'us_keys.dart';
@@ -164,8 +165,15 @@ class _UsPageState extends State<UsPage> {
             if (watch != null && identity != null && identity.partner != null)
               Padding(
                 padding: const EdgeInsets.only(top: SkySpace.sectionGap),
-                child: WatchEntry(
-                  onTap: () => unawaited(openWatchPage(context, room: watch, partner: identity.partnerName)),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    WatchEntry(
+                      onTap: () => unawaited(openWatchPage(context, room: watch, partner: identity.partnerName)),
+                    ),
+                    const FilmsShelf(),
+                  ],
                 ),
               ),
             Padding(

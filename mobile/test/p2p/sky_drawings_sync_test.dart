@@ -58,8 +58,19 @@ void main() {
     expect(await solo.side.engine.syncNow(), isTrue);
     await settle();
     final second = solo.lastSent(link, 'SYNC_MANIFEST')['manifest'] as Map;
-    expect(second.keys.toList(), syncedTables);
+    expect(second.keys.toList(), [...webSyncedTables, skyDrawingsTable]);
     expect((second[skyDrawingsTable] as List).single, containsPair('id', 'sky-1'));
+
+    await solo.side.store.putEncrypted(
+      watchedFilmsTable,
+      {'id': 'film-1', 'title': 'Our film', 'watchedAt': 1, 'togetherMs': 600000, 'updatedAt': 5, 'deleted': false},
+      solo.key,
+    );
+    expect(await solo.side.engine.syncNow(), isTrue);
+    await settle();
+    final third = solo.lastSent(link, 'SYNC_MANIFEST')['manifest'] as Map;
+    expect(third.keys.toList(), syncedTables);
+    expect((third[watchedFilmsTable] as List).single, containsPair('id', 'film-1'));
     await solo.close();
   });
 

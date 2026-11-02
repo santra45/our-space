@@ -22,6 +22,8 @@ class SkyTogetherScope extends InheritedWidget {
 
   static SkyTogetherLink? maybeOf(BuildContext context) => _scope(context)?.link ?? _space(context)?.peer.skyTogether;
 
+  static FilmsRepository? filmsOf(BuildContext context) => _space(context)?.films;
+
   static SkyDrawingService? drawingsOf(BuildContext context) =>
       _scope(context)?.drawings ?? _space(context)?.skyDrawings;
 

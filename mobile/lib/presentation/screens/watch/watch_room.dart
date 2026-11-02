@@ -6,8 +6,43 @@ import 'package:flutter/foundation.dart';
 import '../../../core/engine.dart';
 import 'watch_player.dart';
 
+@immutable
+class WatchedFilm {
+  const WatchedFilm({required this.id, required this.title, required this.togetherMs});
+
+  final String id;
+  final String title;
+  final int togetherMs;
+}
+
+final RegExp _filmExtension = RegExp(r'\.(mkv|mp4|m4v|webm|mov|avi|ts|m3u8|mpd)$', caseSensitive: false);
+final RegExp _filmYear = RegExp(r'\b(19|20)\d{2}\b');
+final RegExp _filmNoise = RegExp(
+  r'\b(480p|720p|1080p|2160p|4k|web-?dl|web-?rip|bluray|blu-ray|brrip|bdrip|hdrip|dvdrip|hdtv|x264|x265|h264|h265|hevc|aac|ddp?5|dual|multi)\b',
+  caseSensitive: false,
+);
+final RegExp _filmHash = RegExp(r'^[0-9a-f-]{8,}$', caseSensitive: false);
+const Set<String> _filmPlainNames = {'index', 'master', 'playlist', 'video', 'stream', 'manifest', 'file', 'download'};
+
+String? filmTitleFromLink(String url) {
+  final segments = Uri.tryParse(url)?.pathSegments.where((segment) => segment.isNotEmpty).toList() ?? const <String>[];
+  if (segments.isEmpty) return null;
+  var name = segments.last.replaceFirst(_filmExtension, '').replaceAll(RegExp(r'[._+]'), ' ');
+  name = name.replaceAll(RegExp(r'[\[({][^\])}]*[\])}]'), ' ').replaceAll(RegExp(r'\s+'), ' ').trim();
+  if (name.isEmpty || _filmHash.hasMatch(name) || !RegExp(r'\p{L}', unicode: true).hasMatch(name)) return null;
+  if (_filmPlainNames.contains(name.toLowerCase())) return null;
+  final year = _filmYear.firstMatch(name);
+  if (year != null && year.start > 0) {
+    name = '${name.substring(0, year.start).trim()} (${year.group(0)})';
+  } else {
+    final noise = _filmNoise.firstMatch(name);
+    if (noise != null && noise.start > 0) name = name.substring(0, noise.start).trim();
+  }
+  return name.runes.length > 80 ? String.fromCharCodes(name.runes.take(80)).trim() : name;
+}
+
 class WatchRoom extends ChangeNotifier {
-  WatchRoom({required this.link, this._tickEvery = const Duration(milliseconds: 200)}) {
+  WatchRoom({required this.link, this.onWatched, this.unnamedFilm = 'A film together', this._tickEvery = const Duration(milliseconds: 200)}) {
     _foreground = link.foreground;
     link.addListener(_onLink);
     _events = link.events.listen(_hear);
@@ -24,8 +59,12 @@ class WatchRoom extends ChangeNotifier {
   static const int restOverMs = 300;
   static const int endWithinMs = 300;
   static const double nudge = 0.03;
+  static const int keepAfterMs = 10 * 60 * 1000;
+  static const int longestGapMs = 5000;
 
   final SkyTogetherLink link;
+  final void Function(WatchedFilm film)? onWatched;
+  final String unnamedFilm;
   final Duration? _tickEvery;
   final ValueNotifier<int> positionMs = ValueNotifier<int>(0);
 
@@ -36,6 +75,10 @@ class WatchRoom extends ChangeNotifier {
   String? _loaded;
   String? _declined;
   String? _by;
+  String? _film;
+  int _togetherMs = 0;
+  int? _countedAt;
+  bool _kept = false;
   bool _playing = false;
   bool _hold = false;
   int _pos = 0;
@@ -78,9 +121,38 @@ class WatchRoom extends ChangeNotifier {
   bool start(String raw) {
     final clean = skyWatchUrl(raw);
     if (clean == null || _disposed) return false;
+    _newFilm('film-${generateUrlSafeNonce(16)}');
     _publish(url: clean, playing: false, hold: false, pos: 0);
     _enter();
     return true;
+  }
+
+  void _newFilm(String? id) {
+    if (id == _film) return;
+    _keep();
+    _film = id;
+    _togetherMs = 0;
+    _countedAt = null;
+    _kept = false;
+  }
+
+  void _keep() {
+    final id = _film;
+    final url = _url;
+    if (!_kept || id == null || url == null) return;
+    onWatched?.call(WatchedFilm(id: id, title: filmTitleFromLink(url) ?? unnamedFilm, togetherMs: _togetherMs));
+  }
+
+  void _count(WatchPlayer player) {
+    final now = link.now();
+    final counting = _partnerIn && _playing && !_hold && player.playing && !player.buffering;
+    final last = _countedAt;
+    _countedAt = counting ? now : null;
+    if (!counting || last == null || now - last > longestGapMs || now < last) return;
+    _togetherMs += now - last;
+    if (_kept || _togetherMs < keepAfterMs) return;
+    _kept = true;
+    _keep();
   }
 
   void join() {
@@ -96,6 +168,8 @@ class WatchRoom extends ChangeNotifier {
 
   void leave() {
     if (!_inRoom || _disposed) return;
+    _keep();
+    _countedAt = null;
     _inRoom = false;
     _dropPlayer();
     _beat();
@@ -156,7 +230,18 @@ class WatchRoom extends ChangeNotifier {
   void _offer() {
     _lastOfferAt = link.now();
     unawaited(
-      link.send(SkyWatchEvent(url: _url, playing: _playing, hold: _hold, pos: _pos, at: _at, seq: _seq, by: _by ?? link.tag)),
+      link.send(
+        SkyWatchEvent(
+          url: _url,
+          playing: _playing,
+          hold: _hold,
+          pos: _pos,
+          at: _at,
+          seq: _seq,
+          by: _by ?? link.tag,
+          film: _film,
+        ),
+      ),
     );
   }
 
@@ -246,6 +331,7 @@ class WatchRoom extends ChangeNotifier {
       _partnerGone();
       return;
     }
+    if (state.url != null) _newFilm(state.film);
     _seq = state.seq;
     _by = state.by;
     _url = state.url;
@@ -363,6 +449,7 @@ class WatchRoom extends ChangeNotifier {
     positionMs.value = pos;
     _settleHold(player, pos, waiting);
     await _steer(player, pos);
+    if (!_disposed && identical(player, _player)) _count(player);
   }
 
   void _holdAt(int pos) => _publish(url: _url, playing: true, hold: true, pos: pos);
@@ -415,6 +502,7 @@ class WatchRoom extends ChangeNotifier {
   void dispose() {
     if (_disposed) return;
     if (_inRoom) {
+      _keep();
       _inRoom = false;
       _beat();
     }

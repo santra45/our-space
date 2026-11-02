@@ -182,6 +182,12 @@ Future<void> live(String phoneRole) async {
     table: skyDrawingsTable,
   );
   await phone.store.putRow(skyDrawingsTable, drawing);
+  final film = encryptRecord(
+    {'id': 'film-from-the-phone', 'title': 'Our film', 'watchedAt': 1, 'togetherMs': 600000, 'updatedAt': clock.now(), 'deleted': false},
+    key,
+    table: watchedFilmsTable,
+  );
+  await phone.store.putRow(watchedFilmsTable, film);
   phone.engine.addStatusListener((status) {
     if (status.state == 'authorized') phone.engine.syncVaultConfig((configs[phoneRole] as Map).cast<String, Object?>());
   });
@@ -220,8 +226,10 @@ Future<void> live(String phoneRole) async {
 
   final webDump = await web.dump();
   expect(webDump.containsKey(skyDrawingsTable), isFalse);
+  expect(webDump.containsKey(watchedFilmsTable), isFalse);
   final phoneDump = await phone.dump();
   expect(phoneDump.remove(skyDrawingsTable), hasLength(1));
+  expect(phoneDump.remove(watchedFilmsTable), hasLength(1));
   expect(canonicalJson(phoneDump), canonicalJson(webDump));
   int webWarnings() => web.statuses.where((s) => s['warning'] != null || s['error'] != null).length;
   final quiet = webWarnings();
@@ -288,7 +296,7 @@ Future<void> live(String phoneRole) async {
   web.send({'cmd': 'sync'});
   await waitFor(() => web.count('sync_complete') >= 2, reason: 'a manual web sync');
   await settle(50);
-  final phoneAfter = await phone.dump()..remove(skyDrawingsTable);
+  final phoneAfter = await phone.dump()..remove(skyDrawingsTable)..remove(watchedFilmsTable);
   expect(canonicalJson(phoneAfter), canonicalJson(await web.dump()));
   expect(webWarnings(), quiet);
 

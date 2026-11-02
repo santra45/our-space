@@ -22,6 +22,27 @@ abstract final class WatchCopy {
   static const String joinLabel = 'Join';
   static const String notNow = 'Not now';
 
+  static const String unnamedFilm = 'A film together';
+  static const String filmsTitle = 'Films we watched';
+  static const String filmEditTitle = 'Our film';
+  static const String filmNameLabel = 'What shall we call it?';
+  static const String filmSave = 'Save';
+  static const String filmSaveFailed = "That didn't save. Try once more.";
+  static const String filmRemove = 'Remove';
+  static const String filmRemoveTitle = 'Take this film off the shelf?';
+  static const String filmRemoveNote = 'It will be gone for both of us.';
+  static const String filmRemoveYes = 'Take it off';
+  static const String filmKeep = 'Keep it';
+
+  static String together(int ms) {
+    final minutes = (ms / 60000).round();
+    if (minutes < 60) return '$minutes min together';
+    final left = minutes % 60;
+    return left == 0 ? '${minutes ~/ 60}h together' : '${minutes ~/ 60}h ${left}m together';
+  }
+
+  static String filmLine(String day, int ms) => '$day · ${together(ms)}';
+
   static String track(int number) => 'Track $number';
 
   static String invited(String partner) => '$partner wants to watch something with you';

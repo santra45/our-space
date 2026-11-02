@@ -9,6 +9,7 @@ import 'screens/love/love_sheet.dart';
 import 'screens/people/people_setup.dart';
 import 'screens/sky/together/sky_together_scope.dart';
 import 'screens/sync/peer_link.dart';
+import 'screens/watch/watch_copy.dart';
 import 'screens/watch/watch_page.dart';
 import 'screens/watch/watch_room.dart';
 import 'sky/sky.dart';
@@ -131,7 +132,16 @@ class _HomeShellState extends State<HomeShell> {
     final sky = SkyTogetherScope.maybeOf(context);
     if (!identical(sky, _watch?.link)) {
       _watch?.dispose();
-      _watch = sky == null ? null : WatchRoom(link: sky);
+      final films = SkyTogetherScope.filmsOf(context);
+      _watch = sky == null
+          ? null
+          : WatchRoom(
+              link: sky,
+              unnamedFilm: WatchCopy.unnamedFilm,
+              onWatched: (film) => unawaited(
+                films?.keep(id: film.id, title: film.title, togetherMs: film.togetherMs).catchError((Object _) => null),
+              ),
+            );
     }
   }
 

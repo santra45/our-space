@@ -18,6 +18,7 @@ import 'p2p/peerjs.dart';
 import 'p2p/signal_socket.dart';
 import 'repositories/bucket_list_repository.dart';
 import 'repositories/date_ideas_repository.dart';
+import 'repositories/films_repository.dart';
 import 'repositories/letters_repository.dart';
 import 'repositories/memories_repository.dart';
 import 'repositories/milestones_repository.dart';
@@ -44,6 +45,7 @@ class OurSpace {
     required this.bucketList,
     required this.roulette,
     required this.dateIdeas,
+    required this.films,
     required this.dailyQuestion,
     required this.loveBursts,
     required this.mailbox,
@@ -119,6 +121,7 @@ class OurSpace {
       bucketList: BucketListRepository(store: store, vault: vault),
       roulette: RouletteRepository(store: store, vault: vault),
       dateIdeas: DateIdeasRepository(store: store, vault: vault),
+      films: FilmsRepository(store: store, vault: vault),
       dailyQuestion: dailyQuestion,
       loveBursts: loveBursts,
       mailbox: mailbox,
@@ -151,6 +154,7 @@ class OurSpace {
   final BucketListRepository bucketList;
   final RouletteRepository roulette;
   final DateIdeasRepository dateIdeas;
+  final FilmsRepository films;
   final DailyQuestionService dailyQuestion;
   final LoveBurstService loveBursts;
   final Mailbox mailbox;

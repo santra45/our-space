@@ -359,6 +359,7 @@ final class SkyWatchEvent extends SkyTogetherEvent {
     required this.at,
     required this.seq,
     required this.by,
+    this.film,
   });
 
   final String? url;
@@ -368,6 +369,7 @@ final class SkyWatchEvent extends SkyTogetherEvent {
   final int at;
   final int seq;
   final String by;
+  final String? film;
 
   @override
   String get kind => 'watch';
@@ -381,6 +383,7 @@ final class SkyWatchEvent extends SkyTogetherEvent {
     'at': at,
     'seq': seq,
     'by': by,
+    if (film != null) 'film': film,
   };
 
   static SkyWatchEvent? _read(Map<Object?, Object?> raw) {
@@ -392,9 +395,11 @@ final class SkyWatchEvent extends SkyTogetherEvent {
     final at = skyInt(raw['at']);
     final seq = skyInt(raw['seq'], max: maxSkyWatchSeq);
     final by = _tag(raw['by']);
-    if ((rawUrl != null && url == null) || playing == null || hold == null) return null;
+    final rawFilm = raw['film'];
+    final film = skyId(rawFilm);
+    if ((rawUrl != null && url == null) || (rawFilm != null && film == null) || playing == null || hold == null) return null;
     if (pos == null || at == null || seq == null || by == null) return null;
-    return SkyWatchEvent(url: url, playing: playing, hold: hold, pos: pos, at: at, seq: seq, by: by);
+    return SkyWatchEvent(url: url, playing: playing, hold: hold, pos: pos, at: at, seq: seq, by: by, film: film);
   }
 }
 
