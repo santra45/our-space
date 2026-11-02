@@ -6,7 +6,9 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
-if (file("google-services.json").exists()) {
+val testApp = findProperty("ourSpaceTestApp") == "true"
+
+if (!testApp && file("google-services.json").exists()) {
     apply(plugin = "com.google.gms.google-services")
 }
 
@@ -26,11 +28,16 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.ourspace.our_space_mobile"
+        applicationId = if (testApp) "com.ourspace.our_space_mobile.test" else "com.ourspace.our_space_mobile"
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        manifestPlaceholders["appLabel"] = if (testApp) "Our Space Test" else "Our Space"
+    }
+
+    if (testApp) {
+        sourceSets.getByName("release").res.srcDir("src/testApp/res")
     }
 
     signingConfigs {
