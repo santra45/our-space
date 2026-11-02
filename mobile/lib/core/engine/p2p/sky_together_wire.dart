@@ -428,7 +428,7 @@ final class SkyWatchBeatEvent extends SkyTogetherEvent {
   }
 }
 
-enum SkyReaction { heart, laugh, tear, wow }
+enum SkyReaction { heart, love, laugh, wow, tear, fire }
 
 final class SkyWatchReactEvent extends SkyTogetherEvent {
   const SkyWatchReactEvent(this.reaction);

@@ -452,7 +452,7 @@ void main() {
       await couch.dispose();
     });
 
-    test('mashing a button sends about four a second, and a flood from the other phone is thinned', () async {
+    test('mashing a button is thinned to a few a second, on the way out and on the way in', () async {
       final couch = Couch();
       await couch.together();
       final onB = <WatchReactionSeen>[];

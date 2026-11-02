@@ -422,28 +422,28 @@ void main() {
     await sofa.close();
   });
 
-  testWidgets('a reaction flies across the film on both sides and lands, and the buttons are there sideways too', (tester) async {
+  testWidgets('an emoji floats up the film on both sides and fades, and the buttons are there sideways too', (tester) async {
     final sofa = await watching(tester);
     sofa.other.join();
     await sofa.run(beat * 3);
-    expect(find.byKey(WatchReactionKeys.comet), findsNothing);
-    final heart = tester.widget<SkyIconButton>(find.byKey(WatchReactionKeys.button(SkyReaction.heart)));
+    expect(find.byKey(WatchReactionKeys.floater), findsNothing);
+    final heart = tester.widget<SkyPressable>(find.byKey(WatchReactionKeys.button(SkyReaction.heart)));
     expect(heart.semanticLabel, 'Send a heart');
 
     await reveal(tester, find.byKey(WatchReactionKeys.button(SkyReaction.heart)));
     await tester.tap(find.byKey(WatchReactionKeys.button(SkyReaction.heart)));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
-    expect(find.byKey(WatchReactionKeys.comet), findsOneWidget);
-    expect(find.descendant(of: find.byKey(WatchKeys.video), matching: find.byWidgetPredicate((w) => w is SkyIcon && w.icon == SkyIcons.heart)), findsOneWidget);
+    expect(find.byKey(WatchReactionKeys.floater), findsOneWidget);
+    expect(find.descendant(of: find.byKey(WatchKeys.video), matching: find.text(watchReactionEmoji(SkyReaction.heart))), findsOneWidget);
 
     await sofa.run(const Duration(milliseconds: 300));
     sofa.pair.injectEvent(sofa.pair.a, const SkyWatchReactEvent(SkyReaction.tear));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
-    expect(find.byKey(WatchReactionKeys.comet), findsNWidgets(2));
-    await tester.pump(const Duration(seconds: 2));
-    expect(find.byKey(WatchReactionKeys.comet), findsNothing);
+    expect(find.byKey(WatchReactionKeys.floater), findsNWidgets(2));
+    await tester.pump(const Duration(seconds: 4));
+    expect(find.byKey(WatchReactionKeys.floater), findsNothing);
 
     tester.view.physicalSize = const Size(2532, 1170);
     addTearDown(tester.view.reset);
@@ -452,13 +452,41 @@ void main() {
     await tester.tap(find.byKey(WatchReactionKeys.button(SkyReaction.wow)));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
-    expect(find.byKey(WatchReactionKeys.comet), findsOneWidget);
+    expect(find.byKey(WatchReactionKeys.floater), findsOneWidget);
     expect(tester.takeException(), isNull);
     await tester.pump(const Duration(seconds: 6));
     await sofa.close();
   });
 
-  testWidgets('a burst keeps only the newest dozen in the air', (tester) async {
+  testWidgets('with motion on, mine rise on the right and theirs on the left, and both climb and fade', (tester) async {
+    final sofa = await watching(tester);
+    tester.platformDispatcher.clearAccessibilityFeaturesTestValue();
+    await tester.pump();
+    final video = tester.getRect(find.byKey(WatchKeys.video));
+    await reveal(tester, find.byKey(WatchReactionKeys.button(SkyReaction.fire)));
+    await tester.tap(find.byKey(WatchReactionKeys.button(SkyReaction.fire)));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    final mine = find.descendant(of: find.byKey(WatchKeys.video), matching: find.text(watchReactionEmoji(SkyReaction.fire)));
+    final early = tester.getCenter(mine);
+    expect(early.dx, greaterThan(video.center.dx));
+    await tester.pump(const Duration(milliseconds: 900));
+    final later = tester.getCenter(mine);
+    expect(later.dy, lessThan(early.dy - 20));
+
+    sofa.pair.advance(const Duration(milliseconds: 200));
+    sofa.pair.injectEvent(sofa.pair.a, const SkyWatchReactEvent(SkyReaction.love));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    final theirs = find.descendant(of: find.byKey(WatchKeys.video), matching: find.text(watchReactionEmoji(SkyReaction.love)));
+    expect(tester.getCenter(theirs).dx, lessThan(video.center.dx));
+    await tester.pump(const Duration(seconds: 4));
+    expect(find.byKey(WatchReactionKeys.floater), findsNothing);
+    expect(tester.takeException(), isNull);
+    await sofa.close();
+  });
+
+  testWidgets('a burst keeps only the newest ones in the air', (tester) async {
     final sofa = await watching(tester);
     for (var i = 0; i < WatchReactionLayer.most + 5; i++) {
       sofa.pair.advance(const Duration(milliseconds: 120));
@@ -466,9 +494,9 @@ void main() {
       await tester.pump();
     }
     await tester.pump(const Duration(milliseconds: 50));
-    expect(find.byKey(WatchReactionKeys.comet), findsNWidgets(WatchReactionLayer.most));
-    await tester.pump(const Duration(seconds: 2));
-    expect(find.byKey(WatchReactionKeys.comet), findsNothing);
+    expect(find.byKey(WatchReactionKeys.floater), findsNWidgets(WatchReactionLayer.most));
+    await tester.pump(const Duration(seconds: 4));
+    expect(find.byKey(WatchReactionKeys.floater), findsNothing);
     await sofa.close();
   });
 

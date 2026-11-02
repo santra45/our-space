@@ -68,9 +68,11 @@ abstract final class WatchCopy {
 
   static String reaction(SkyReaction reaction) => switch (reaction) {
     SkyReaction.heart => 'Send a heart',
+    SkyReaction.love => 'Send heart eyes',
     SkyReaction.laugh => 'Send a laugh',
-    SkyReaction.tear => 'Send a tear',
     SkyReaction.wow => 'Send a wow',
+    SkyReaction.tear => 'Send a tear',
+    SkyReaction.fire => 'Send fire',
   };
 
   static String track(int number) => 'Track $number';

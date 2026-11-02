@@ -71,8 +71,8 @@ class WatchRoom extends ChangeNotifier {
   static const double nudge = 0.03;
   static const int movedOverMs = 3000;
   static const int skipMs = 10000;
-  static const int reactGapMs = 250;
-  static const int heardGapMs = 100;
+  static const int reactGapMs = 150;
+  static const int heardGapMs = 60;
   static const int keepAfterMs = 10 * 60 * 1000;
   static const int longestGapMs = 5000;
 

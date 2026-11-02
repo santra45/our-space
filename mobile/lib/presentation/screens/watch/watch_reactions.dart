@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:math' as math;
-import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 
@@ -11,23 +10,24 @@ import 'watch_room.dart';
 
 abstract final class WatchReactionKeys {
   static const Key layer = ValueKey<String>('watch-reactions');
-  static const Key comet = ValueKey<String>('watch-comet');
+  static const Key floater = ValueKey<String>('watch-floater');
 
   static Key button(SkyReaction reaction) => ValueKey<String>('watch-react-${reaction.name}');
 }
 
-SkyIcons _iconFor(SkyReaction reaction) => switch (reaction) {
-  SkyReaction.heart => SkyIcons.heart,
-  SkyReaction.laugh => SkyIcons.laugh,
-  SkyReaction.tear => SkyIcons.tear,
-  SkyReaction.wow => SkyIcons.sparkle,
+String watchReactionEmoji(SkyReaction reaction) => switch (reaction) {
+  SkyReaction.heart => '❤️',
+  SkyReaction.love => '😍',
+  SkyReaction.laugh => '😂',
+  SkyReaction.wow => '😮',
+  SkyReaction.tear => '😢',
+  SkyReaction.fire => '🔥',
 };
 
 class WatchReactionButtons extends StatelessWidget {
-  const WatchReactionButtons({super.key, required this.room, required this.full});
+  const WatchReactionButtons({super.key, required this.room});
 
   final WatchRoom room;
-  final bool full;
 
   @override
   Widget build(BuildContext context) {
@@ -36,15 +36,20 @@ class WatchReactionButtons extends StatelessWidget {
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
         for (final reaction in SkyReaction.values)
-          Padding(
-            padding: EdgeInsets.symmetric(horizontal: full ? 0 : SkySpace.xs),
-            child: SkyIconButton(
-              key: WatchReactionKeys.button(reaction),
-              icon: _iconFor(reaction),
-              tone: full ? SkyIconButtonTone.ghost : SkyIconButtonTone.surface,
-              iconColor: full ? SkyTokens.white : null,
-              semanticLabel: WatchCopy.reaction(reaction),
-              onPressed: () => room.react(reaction),
+          SkyPressable(
+            key: WatchReactionKeys.button(reaction),
+            onTap: () => room.react(reaction),
+            pressedScale: 0.8,
+            semanticLabel: WatchCopy.reaction(reaction),
+            excludeSemantics: true,
+            child: SizedBox.square(
+              dimension: 46,
+              child: Center(
+                child: Text(
+                  watchReactionEmoji(reaction),
+                  style: const TextStyle(fontSize: 26, height: 1.1, decoration: TextDecoration.none),
+                ),
+              ),
             ),
           ),
       ],
@@ -55,7 +60,7 @@ class WatchReactionButtons extends StatelessWidget {
 class WatchReactionLayer extends StatefulWidget {
   const WatchReactionLayer({super.key = WatchReactionKeys.layer, required this.room, this.random});
 
-  static const int most = 12;
+  static const int most = 20;
 
   final WatchRoom room;
   final math.Random? random;
@@ -86,7 +91,7 @@ class _WatchReactionLayerState extends State<WatchReactionLayer> {
     if (!mounted) return;
     setState(() {
       if (_flights.length >= WatchReactionLayer.most) _flights.removeAt(0);
-      _flights.add(_Flight(_nextId++, seen, 0.45 + _random.nextDouble() * 0.6));
+      _flights.add(_Flight.random(_nextId++, seen, _random));
     });
   }
 
@@ -105,7 +110,7 @@ class _WatchReactionLayerState extends State<WatchReactionLayer> {
               fit: StackFit.expand,
               children: [
                 for (final flight in _flights)
-                  _Comet(key: ValueKey<int>(flight.id), flight: flight, onLanded: () => _land(flight.id)),
+                  _Floater(key: ValueKey<int>(flight.id), flight: flight, onLanded: () => _land(flight.id)),
               ],
             ),
           ),
@@ -117,29 +122,55 @@ class _WatchReactionLayerState extends State<WatchReactionLayer> {
 
 @immutable
 class _Flight {
-  const _Flight(this.id, this.seen, this.startX);
+  const _Flight({
+    required this.id,
+    required this.seen,
+    required this.inset,
+    required this.size,
+    required this.duration,
+    required this.sway,
+    required this.turns,
+    required this.phase,
+  });
+
+  factory _Flight.random(int id, WatchReactionSeen seen, math.Random random) => _Flight(
+    id: id,
+    seen: seen,
+    inset: random.nextDouble(),
+    size: 28 + random.nextDouble() * 12,
+    duration: Duration(milliseconds: 2200 + random.nextInt(1000)),
+    sway: 8 + random.nextDouble() * 14,
+    turns: 1.2 + random.nextDouble() * 1.3,
+    phase: random.nextDouble() * math.pi * 2,
+  );
 
   final int id;
   final WatchReactionSeen seen;
-  final double startX;
+  final double inset;
+  final double size;
+  final Duration duration;
+  final double sway;
+  final double turns;
+  final double phase;
 }
 
-class _Comet extends StatefulWidget {
-  const _Comet({super.key, required this.flight, required this.onLanded});
+class _Floater extends StatefulWidget {
+  const _Floater({super.key, required this.flight, required this.onLanded});
 
   final _Flight flight;
   final VoidCallback onLanded;
 
   @override
-  State<_Comet> createState() => _CometState();
+  State<_Floater> createState() => _FloaterState();
 }
 
-class _CometState extends State<_Comet> with SingleTickerProviderStateMixin {
-  static const Duration _flying = Duration(milliseconds: 1700);
+class _FloaterState extends State<_Floater> with SingleTickerProviderStateMixin {
+  static const double _edge = 12;
+  static const double _band = 56;
 
   late final AnimationController _run = AnimationController(
     vsync: this,
-    duration: _flying,
+    duration: widget.flight.duration,
     animationBehavior: AnimationBehavior.preserve,
   );
 
@@ -159,90 +190,40 @@ class _CometState extends State<_Comet> with SingleTickerProviderStateMixin {
 
   @override
   Widget build(BuildContext context) {
-    final t = context.sky;
-    final color = widget.flight.seen.mine ? t.gold : t.rose;
+    final flight = widget.flight;
     final moves = skyMotionAllowed(context);
+    final emoji = watchReactionEmoji(flight.seen.reaction);
     return LayoutBuilder(
       builder: (context, box) => AnimatedBuilder(
         animation: _run,
-        builder: (context, _) {
+        builder: (context, child) {
           final p = _run.value;
-          final fade = p < 0.08 ? p / 0.08 : (p > 0.72 ? (1 - p) / 0.28 : 1.0);
-          final flown = moves ? Curves.easeInSine.transform(p) : 0.45;
-          final head = Offset(
-            (widget.flight.startX - 0.42 * flown) * box.maxWidth,
-            (-0.08 + 1.16 * flown) * box.maxHeight,
-          );
-          const size = 26.0;
+          final fade = p < 0.06 ? p / 0.06 : (p > 0.65 ? (1 - p) / 0.35 : 1.0);
+          final fromEdge = _edge + _band * flight.inset;
+          final home = flight.seen.mine ? box.maxWidth - fromEdge - flight.size : fromEdge;
+          final rise = moves ? Curves.easeOutSine.transform(p) * box.maxHeight * 0.82 : box.maxHeight * 0.3;
+          final side = moves ? math.sin(p * flight.turns * math.pi * 2 + flight.phase) * flight.sway * (0.35 + 0.65 * p) : 0.0;
+          final pop = moves && p < 0.14 ? 0.4 + 0.6 * Curves.easeOutBack.transform(p / 0.14) : 1.0;
           return Stack(
-            key: WatchReactionKeys.comet,
-            fit: StackFit.expand,
+            clipBehavior: Clip.none,
             children: [
-              if (moves)
-                CustomPaint(
-                  painter: _StreakPainter(
-                    head: head,
-                    back: Offset(0.42 * box.maxWidth, -1.16 * box.maxHeight),
-                    color: color,
-                    alpha: fade,
-                  ),
-                ),
               Positioned(
-                left: head.dx - size / 2,
-                top: head.dy - size / 2,
-                width: size,
-                height: size,
+                left: home + side,
+                top: box.maxHeight - flight.size * 1.3 - rise,
                 child: Opacity(
                   opacity: fade.clamp(0.0, 1.0),
-                  child: SkyIcon(_iconFor(widget.flight.seen.reaction), size: size, color: color),
+                  child: Transform.scale(scale: pop, child: child),
                 ),
               ),
             ],
           );
         },
+        child: Text(
+          emoji,
+          key: WatchReactionKeys.floater,
+          style: TextStyle(fontSize: flight.size, height: 1.2, decoration: TextDecoration.none),
+        ),
       ),
     );
   }
-}
-
-class _StreakPainter extends CustomPainter {
-  const _StreakPainter({required this.head, required this.back, required this.color, required this.alpha});
-
-  static const double length = 74;
-
-  final Offset head;
-  final Offset back;
-  final Color color;
-  final double alpha;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final distance = back.distance;
-    if (distance <= 0 || alpha <= 0) return;
-    final tail = head + back / distance * length;
-    canvas.drawLine(
-      head,
-      tail,
-      Paint()
-        ..strokeWidth = 2.4
-        ..strokeCap = StrokeCap.round
-        ..shader = ui.Gradient.linear(head, tail, [
-          color.withValues(alpha: 0.85 * alpha),
-          color.withValues(alpha: 0),
-        ]),
-    );
-    canvas.drawCircle(
-      head,
-      15,
-      Paint()
-        ..shader = ui.Gradient.radial(head, 15, [
-          color.withValues(alpha: 0.4 * alpha),
-          color.withValues(alpha: 0),
-        ]),
-    );
-  }
-
-  @override
-  bool shouldRepaint(_StreakPainter old) =>
-      old.head != head || old.alpha != alpha || old.color != color || old.back != back;
 }

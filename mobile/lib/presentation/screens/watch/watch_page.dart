@@ -424,7 +424,7 @@ class _WatchPageState extends State<WatchPage> {
       const SizedBox(height: SkySpace.md),
       Text(_statusText() ?? '', key: WatchKeys.status, textAlign: TextAlign.center, style: context.skyText.body),
       const SizedBox(height: SkySpace.lg),
-      Center(child: WatchReactionButtons(room: _room, full: false)),
+      Center(child: WatchReactionButtons(room: _room)),
     ];
   }
 
@@ -556,7 +556,7 @@ class _WatchPageState extends State<WatchPage> {
                           ),
                         ),
                         const SizedBox(width: SkySpace.sm),
-                        WatchReactionButtons(room: _room, full: true),
+                        WatchReactionButtons(room: _room),
                       ],
                     ),
                   ),
