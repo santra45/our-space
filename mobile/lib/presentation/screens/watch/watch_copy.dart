@@ -6,6 +6,7 @@ abstract final class WatchCopy {
   static const String linkHint = 'https://';
   static const String linkHelp = 'Paste a direct link to the video itself, starting with https://';
   static const String linkInvalid = "That doesn't look like a video link. It needs to start with https://";
+  static const String linkBroken = 'Something in that link looks broken. Try copying it again.';
   static const String paste = 'Paste a link';
   static const String pasteEmpty = 'There is no link to paste yet';
   static const String start = 'Start watching';
@@ -15,8 +16,13 @@ abstract final class WatchCopy {
   static const String wontPlay = "This link won't play here. Go back and try another one.";
   static const String seekLabel = 'Move to another part of the video';
   static const String live = 'Live';
+  static const String audio = 'Audio';
+  static const String subtitles = 'Subtitles';
+  static const String subtitlesOff = 'Off';
   static const String joinLabel = 'Join';
   static const String notNow = 'Not now';
+
+  static String track(int number) => 'Track $number';
 
   static String invited(String partner) => '$partner wants to watch something with you';
 

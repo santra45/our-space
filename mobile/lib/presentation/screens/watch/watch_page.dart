@@ -19,6 +19,12 @@ abstract final class WatchKeys {
   static const Key playPause = ValueKey<String>('watch-play-pause');
   static const Key seek = ValueKey<String>('watch-seek');
   static const Key status = ValueKey<String>('watch-status');
+  static const Key audio = ValueKey<String>('watch-audio');
+  static const Key subtitles = ValueKey<String>('watch-subtitles');
+  static const Key subtitlesOff = ValueKey<String>('watch-subtitles-off');
+  static const Key cues = ValueKey<String>('watch-cues');
+
+  static Key track(String id) => ValueKey<String>('watch-track-$id');
 }
 
 abstract final class WatchScreen {
@@ -193,7 +199,8 @@ class _WatchPageState extends State<WatchPage> {
       if (_error != null) setState(() => _error = null);
       FocusScope.of(context).unfocus();
     } else {
-      setState(() => _error = WatchCopy.linkInvalid);
+      final secure = _link.text.trim().toLowerCase().startsWith('https://');
+      setState(() => _error = secure ? WatchCopy.linkBroken : WatchCopy.linkInvalid);
     }
   }
 
@@ -321,7 +328,15 @@ class _WatchPageState extends State<WatchPage> {
       color: const Color(0xFF000000),
       child: AspectRatio(
         aspectRatio: player.aspect > 0 ? player.aspect : 16 / 9,
-        child: player.ready ? player.view() : const Center(child: SkySpinner(size: 26)),
+        child: player.ready
+            ? Stack(
+                fit: StackFit.expand,
+                children: [
+                  player.view(),
+                  if (player.cues.isNotEmpty) _Cues(lines: player.cues),
+                ],
+              )
+            : const Center(child: SkySpinner(size: 26)),
       ),
     );
   }
@@ -393,49 +408,182 @@ class _ControlsState extends State<_Controls> {
     final player = widget.player;
     final t = context.sky;
     final canPlay = player.ready;
-    return Row(
+    return Column(
+      mainAxisSize: MainAxisSize.min,
       children: [
-        SkyIconButton(
-          key: WatchKeys.playPause,
-          icon: room.playing ? SkyIcons.pause : SkyIcons.play,
-          semanticLabel: room.playing ? WatchCopy.pause : WatchCopy.play,
-          onPressed: canPlay ? room.togglePlay : null,
-        ),
-        const SizedBox(width: SkySpace.xs),
-        Expanded(
-          child: player.live || !canPlay
-              ? Text(player.live && canPlay ? WatchCopy.live : '', style: context.skyText.bodySmall)
-              : ValueListenableBuilder<int>(
-                  valueListenable: room.positionMs,
-                  builder: (context, position, _) {
-                    final duration = player.durationMs;
-                    final shown = _dragging ?? position.clamp(0, duration).toDouble();
-                    return Row(
-                      children: [
-                        Text(WatchCopy.clock(shown.round()), style: context.skyText.bodySmall),
-                        Expanded(
-                          child: Semantics(
-                            label: WatchCopy.seekLabel,
-                            child: Slider(
-                              key: WatchKeys.seek,
-                              value: shown,
-                              max: duration.toDouble(),
-                              activeColor: t.rose,
-                              onChanged: (value) => setState(() => _dragging = value),
-                              onChangeEnd: (value) {
-                                setState(() => _dragging = null);
-                                room.seek(value.round());
-                              },
-                            ),
-                          ),
-                        ),
-                        Text(WatchCopy.clock(duration), style: context.skyText.bodySmall),
-                      ],
-                    );
-                  },
-                ),
+        if (canPlay && player.live)
+          Text(WatchCopy.live, style: context.skyText.bodySmall)
+        else if (canPlay)
+          ValueListenableBuilder<int>(
+            valueListenable: room.positionMs,
+            builder: (context, position, _) {
+              final duration = player.durationMs;
+              final shown = _dragging ?? position.clamp(0, duration).toDouble();
+              return Row(
+                children: [
+                  Text(WatchCopy.clock(shown.round()), style: context.skyText.bodySmall),
+                  Expanded(
+                    child: Semantics(
+                      label: WatchCopy.seekLabel,
+                      child: Slider(
+                        key: WatchKeys.seek,
+                        value: shown,
+                        max: duration.toDouble(),
+                        activeColor: t.rose,
+                        onChanged: (value) => setState(() => _dragging = value),
+                        onChangeEnd: (value) {
+                          setState(() => _dragging = null);
+                          room.seek(value.round());
+                        },
+                      ),
+                    ),
+                  ),
+                  Text(WatchCopy.clock(duration), style: context.skyText.bodySmall),
+                ],
+              );
+            },
+          ),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            if (player.audioTracks.length > 1)
+              SkyIconButton(
+                key: WatchKeys.audio,
+                icon: SkyIcons.audio,
+                semanticLabel: WatchCopy.audio,
+                onPressed: () => unawaited(_pickAudio(context, player)),
+              ),
+            const SizedBox(width: SkySpace.md),
+            SkyIconButton(
+              key: WatchKeys.playPause,
+              icon: room.playing ? SkyIcons.pause : SkyIcons.play,
+              semanticLabel: room.playing ? WatchCopy.pause : WatchCopy.play,
+              onPressed: canPlay ? room.togglePlay : null,
+            ),
+            const SizedBox(width: SkySpace.md),
+            if (player.subtitleTracks.isNotEmpty)
+              SkyIconButton(
+                key: WatchKeys.subtitles,
+                icon: SkyIcons.subtitles,
+                semanticLabel: WatchCopy.subtitles,
+                onPressed: () => unawaited(_pickSubtitle(context, player)),
+              ),
+          ],
         ),
       ],
+    );
+  }
+}
+
+Future<void> _pickAudio(BuildContext context, WatchPlayer player) {
+  return showSkySheet<void>(
+    context: context,
+    builder: (sheet) => _TrackSheet(
+      title: WatchCopy.audio,
+      tracks: player.audioTracks,
+      onPick: (track) => unawaited(player.selectAudio(track.id)),
+    ),
+  );
+}
+
+Future<void> _pickSubtitle(BuildContext context, WatchPlayer player) {
+  return showSkySheet<void>(
+    context: context,
+    builder: (sheet) => _TrackSheet(
+      title: WatchCopy.subtitles,
+      tracks: player.subtitleTracks,
+      onPick: (track) => unawaited(player.selectSubtitle(track.id)),
+      onOff: () => unawaited(player.selectSubtitle(null)),
+    ),
+  );
+}
+
+class _TrackSheet extends StatelessWidget {
+  const _TrackSheet({required this.title, required this.tracks, required this.onPick, this.onOff});
+
+  final String title;
+  final List<WatchTrack> tracks;
+  final ValueChanged<WatchTrack> onPick;
+  final VoidCallback? onOff;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.sky;
+    Widget? tick(bool on) => on ? SkyIcon(SkyIcons.check, size: 18, color: t.rose) : null;
+    void close(VoidCallback action) {
+      action();
+      Navigator.of(context).pop();
+    }
+
+    final off = onOff;
+    final rows = <Widget>[
+      if (off != null)
+        SkyListRow(
+          key: WatchKeys.subtitlesOff,
+          title: WatchCopy.subtitlesOff,
+          trailing: tick(!tracks.any((track) => track.selected)),
+          chevron: false,
+          onTap: () => close(off),
+        ),
+      for (final (index, track) in tracks.indexed)
+        SkyListRow(
+          key: WatchKeys.track(track.id),
+          title: track.label ?? WatchCopy.track(index + 1),
+          value: track.detail,
+          trailing: tick(track.selected),
+          chevron: false,
+          onTap: () => close(() => onPick(track)),
+        ),
+    ];
+    return SingleChildScrollView(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(title, style: context.skyText.title),
+          const SizedBox(height: SkySpace.md),
+          SkyListGroup(children: rows),
+        ],
+      ),
+    );
+  }
+}
+
+class _Cues extends StatelessWidget {
+  const _Cues({required this.lines});
+
+  final List<String> lines;
+
+  @override
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      child: LayoutBuilder(
+        builder: (context, box) {
+          final size = (box.maxWidth * 0.04).clamp(13.0, 26.0);
+          return Align(
+            alignment: Alignment.bottomCenter,
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(box.maxWidth * 0.05, 0, box.maxWidth * 0.05, box.maxHeight * 0.05),
+              child: Text(
+                lines.join('\n'),
+                key: WatchKeys.cues,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: const Color(0xFFFFFFFF),
+                  fontSize: size,
+                  height: 1.25,
+                  fontWeight: FontWeight.w600,
+                  decoration: TextDecoration.none,
+                  shadows: const [
+                    Shadow(color: Color(0xE6000000), blurRadius: 4),
+                    Shadow(color: Color(0xCC000000), offset: Offset(0, 1), blurRadius: 2),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
+      ),
     );
   }
 }

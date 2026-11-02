@@ -360,7 +360,9 @@ void main() {
       {...good, 'url': 'javascript:alert(1)'},
       {...good, 'url': 'https://'},
       {...good, 'url': 'https://user:pass@example.com/film.mp4'},
-      {...good, 'url': 'https://example.com/a b.mp4'},
+      {...good, 'url': 'https://exa mple.com/a.mp4'},
+      {...good, 'url': 'https://example.com/a\tb.mp4'},
+      {...good, 'url': 'https://example.com/a\nb.mp4'},
       {...good, 'url': 'https://example.com/${'a' * maxSkyWatchUrl}'},
       {...good, 'url': 7},
       {...good, 'playing': 'yes'},
@@ -379,6 +381,15 @@ void main() {
     await drain();
     expect(toB.where((e) => e is SkyWatchEvent || e is SkyWatchBeatEvent), isEmpty);
     pair.dispose();
+  });
+
+  test('a copied link with spaces in its name still works, and a long signed one fits', () {
+    expect(skyWatchUrl('  https://a.workers.dev/8acf/My Film 2024.mkv \n'), 'https://a.workers.dev/8acf/My%20Film%202024.mkv');
+    expect(skyWatchUrl('https://a.workers.dev/already%20fine.mkv'), 'https://a.workers.dev/already%20fine.mkv');
+    final signed = 'https://a.workers.dev/film.mkv?token=${'x' * 4000}';
+    expect(skyWatchUrl(signed), signed);
+    expect(skyWatchUrl('https://a b/film.mkv'), isNull);
+    expect(skyWatchUrl('https://a.workers.dev/${'x' * maxSkyWatchUrl}'), isNull);
   });
 
   test('the leader falls back to the random tag when both phones carry the same owner', () {

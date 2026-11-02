@@ -10,15 +10,16 @@ const int maxSkyEventKeys = 12;
 const int maxSkyHeldMs = 60000;
 const int maxSkyHoldSeq = 2147483647;
 const int maxSkyNameRev = 2147483647;
-const int maxSkyWatchUrl = 2048;
+const int maxSkyWatchUrl = 8192;
 const int maxSkyWatchSeq = 2147483647;
 
 String? skyWatchUrl(Object? value) {
   if (value is! String) return null;
-  final url = value.trim();
+  final url = value.trim().replaceAll(' ', '%20');
   if (url.isEmpty || url.length > maxSkyWatchUrl || RegExp(r'[\s\u0000-\u001F\u007F]').hasMatch(url)) return null;
   final uri = Uri.tryParse(url);
   if (uri == null || uri.scheme != 'https' || uri.host.isEmpty || uri.userInfo.isNotEmpty) return null;
+  if (uri.host.contains('%')) return null;
   return url;
 }
 

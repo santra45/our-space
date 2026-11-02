@@ -73,7 +73,7 @@ class Couch {
 }
 
 void main() {
-  tearDown(() => WatchPlayers.create = ExoWatchPlayer.new);
+  tearDown(() => WatchPlayers.create = NativeWatchPlayer.new);
 
   group('starting and joining', () {
     test('only a real https link can start, and nothing goes out for a bad one', () async {

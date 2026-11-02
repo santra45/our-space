@@ -58,7 +58,7 @@ class Sofa {
     other.dispose();
     pair.dispose();
     await tester.pump(const Duration(milliseconds: 50));
-    WatchPlayers.create = ExoWatchPlayer.new;
+    WatchPlayers.create = NativeWatchPlayer.new;
     WatchScreen.keepOn = (_) async {};
   }
 }
@@ -95,6 +95,7 @@ void main() {
       WatchCopy.linkLabel,
       WatchCopy.linkHelp,
       WatchCopy.linkInvalid,
+      WatchCopy.linkBroken,
       WatchCopy.paste,
       WatchCopy.pasteEmpty,
       WatchCopy.start,
@@ -104,6 +105,10 @@ void main() {
       WatchCopy.wontPlay,
       WatchCopy.seekLabel,
       WatchCopy.live,
+      WatchCopy.audio,
+      WatchCopy.subtitles,
+      WatchCopy.subtitlesOff,
+      WatchCopy.track(2),
       WatchCopy.joinLabel,
       WatchCopy.notNow,
       WatchCopy.loading,
@@ -259,6 +264,72 @@ void main() {
     expect(find.byKey(WatchKeys.playPause), findsOneWidget);
     expect(tester.takeException(), isNull);
     await tester.pump(const Duration(seconds: 5));
+    await sofa.close();
+  });
+
+  testWidgets('each phone picks its own audio and subtitles, and the other phone is not touched', (tester) async {
+    final sofa = await onUs(
+      tester,
+      player: () => FakeWatchPlayer()
+        ..audioTracks = const [
+          WatchTrack(id: '0:0', label: 'Hindi', detail: '5.1', selected: true),
+          WatchTrack(id: '1:0', label: 'English'),
+          WatchTrack(id: '2:0'),
+        ]
+        ..subtitleTracks = const [WatchTrack(id: '3:0', label: 'English')],
+    );
+    await sofa.openPage();
+    await tester.enterText(find.descendant(of: find.byKey(WatchKeys.linkField), matching: find.byType(EditableText)), movie);
+    await tester.tap(find.byKey(WatchKeys.start));
+    await sofa.run(beat * 3);
+    final mine = sofa.players.single;
+    final told = sofa.pair.transportA.sentOf('watch').length;
+
+    await tester.tap(find.byKey(WatchKeys.audio));
+    await settleRoute(tester);
+    expect(find.text('Hindi'), findsOneWidget);
+    expect(find.text('5.1'), findsOneWidget);
+    expect(find.text(WatchCopy.track(3)), findsOneWidget);
+    await tester.tap(find.byKey(WatchKeys.track('1:0')));
+    await settleRoute(tester);
+    expect(mine.pickedAudio, ['1:0']);
+
+    await tester.tap(find.byKey(WatchKeys.subtitles));
+    await settleRoute(tester);
+    await tester.tap(find.byKey(WatchKeys.track('3:0')));
+    await settleRoute(tester);
+    expect(mine.pickedSubtitles, ['3:0']);
+
+    mine.show(['Hello there', 'my love']);
+    await tester.pump();
+    expect(find.text('Hello there\nmy love'), findsOneWidget);
+    mine.show(const []);
+    await tester.pump();
+    expect(find.byKey(WatchKeys.cues), findsNothing);
+
+    await tester.tap(find.byKey(WatchKeys.subtitles));
+    await settleRoute(tester);
+    await tester.tap(find.byKey(WatchKeys.subtitlesOff));
+    await settleRoute(tester);
+    expect(mine.pickedSubtitles, ['3:0', null]);
+
+    expect(sofa.pair.transportA.sentOf('watch').length, told);
+    expect(tester.takeException(), isNull);
+    await sofa.close();
+  });
+
+  testWidgets('with one audio track and no subtitles there is nothing extra to press', (tester) async {
+    final sofa = await onUs(
+      tester,
+      player: () => FakeWatchPlayer()..audioTracks = const [WatchTrack(id: '0:0', label: 'Hindi', selected: true)],
+    );
+    await sofa.openPage();
+    await tester.enterText(find.descendant(of: find.byKey(WatchKeys.linkField), matching: find.byType(EditableText)), movie);
+    await tester.tap(find.byKey(WatchKeys.start));
+    await sofa.run(beat * 3);
+    expect(find.byKey(WatchKeys.playPause), findsOneWidget);
+    expect(find.byKey(WatchKeys.audio), findsNothing);
+    expect(find.byKey(WatchKeys.subtitles), findsNothing);
     await sofa.close();
   });
 

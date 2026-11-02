@@ -64,6 +64,10 @@ android {
 
 dependencies {
     implementation("androidx.biometric:biometric:1.1.0")
+    implementation("androidx.media3:media3-exoplayer:1.9.3")
+    implementation("androidx.media3:media3-exoplayer-hls:1.9.3")
+    implementation("androidx.media3:media3-exoplayer-dash:1.9.3")
+    implementation("io.github.anilbeesetti:nextlib-media3ext:1.9.3-0.12.0")
 }
 
 kotlin {

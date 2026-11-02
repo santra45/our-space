@@ -14,6 +14,17 @@ class FakeWatchPlayer extends ChangeNotifier implements WatchPlayer {
   final Completer<void> _loading = Completer<void>();
   final List<int> seeks = [];
   final List<double> speeds = [];
+  final List<String?> pickedSubtitles = [];
+  final List<String> pickedAudio = [];
+
+  @override
+  List<WatchTrack> audioTracks = const [];
+
+  @override
+  List<WatchTrack> subtitleTracks = const [];
+
+  @override
+  List<String> cues = const [];
 
   String? url;
   bool isReady = false;
@@ -95,6 +106,31 @@ class FakeWatchPlayer extends ChangeNotifier implements WatchPlayer {
   Future<void> setSpeed(double value) async {
     speeds.add(value);
     speed = value;
+  }
+
+  @override
+  Future<void> selectAudio(String id) async {
+    pickedAudio.add(id);
+    audioTracks = [
+      for (final track in audioTracks)
+        WatchTrack(id: track.id, label: track.label, detail: track.detail, selected: track.id == id),
+    ];
+    notifyListeners();
+  }
+
+  @override
+  Future<void> selectSubtitle(String? id) async {
+    pickedSubtitles.add(id);
+    subtitleTracks = [
+      for (final track in subtitleTracks)
+        WatchTrack(id: track.id, label: track.label, detail: track.detail, selected: track.id == id),
+    ];
+    notifyListeners();
+  }
+
+  void show(List<String> lines) {
+    cues = lines;
+    notifyListeners();
   }
 
   @override

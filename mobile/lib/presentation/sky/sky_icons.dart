@@ -45,9 +45,13 @@ enum SkyIcons {
   play,
   pause,
   film,
+  audio,
+  subtitles,
 }
 
 const Map<SkyIcons, String> _paths = {
+  SkyIcons.audio: '<path d="M4 9.5v5h3.5l4.5 4v-13l-4.5 4z" fill="currentColor" fill-opacity="0.2" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>',
+  SkyIcons.subtitles: '<rect x="3" y="5" width="18" height="14" rx="3" fill="currentColor" fill-opacity="0.12" stroke="currentColor" stroke-width="1.8"/><path d="M7 15h5M14.5 15H17M7 11.5h2.5M12 11.5h5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>',
   SkyIcons.play: '<path d="M8 5.5v13l10.5-6.5z" fill="currentColor" fill-opacity="0.25" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>',
   SkyIcons.pause: '<path d="M9 5.5v13M15 5.5v13" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>',
   SkyIcons.film: '<rect x="3" y="5" width="18" height="14" rx="3" fill="currentColor" fill-opacity="0.12" stroke="currentColor" stroke-width="1.8"/><path d="M10 9.2v5.6l4.8-2.8z" fill="currentColor"/>',
