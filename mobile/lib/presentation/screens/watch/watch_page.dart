@@ -29,6 +29,7 @@ abstract final class WatchKeys {
   static const Key pill = ValueKey<String>('watch-pill');
   static const Key skip = ValueKey<String>('watch-skip');
   static const Key waiting = ValueKey<String>('watch-waiting');
+  static const Key straightThrough = ValueKey<String>('watch-straight-through');
 
   static Key track(String id) => ValueKey<String>('watch-track-$id');
 }
@@ -143,6 +144,7 @@ class _WatchPageState extends State<WatchPage> {
   static const Duration _controlsFor = Duration(seconds: 4);
   static const Duration _noticeFor = Duration(seconds: 3);
   static const Duration _skipFor = Duration(milliseconds: 700);
+  static const Duration _slowAfter = Duration(seconds: 20);
   static const Color _black = Color(0xFF000000);
 
   final TextEditingController _link = TextEditingController();
@@ -159,6 +161,9 @@ class _WatchPageState extends State<WatchPage> {
   Timer? _hide;
   Timer? _noticeHide;
   Timer? _skipHide;
+  Timer? _slowTimer;
+  WatchPlayer? _slowFor;
+  bool _slow = false;
 
   WatchRoom get _room => widget.room;
 
@@ -198,6 +203,17 @@ class _WatchPageState extends State<WatchPage> {
 
   void _onRoom() {
     if (!mounted) return;
+    final player = _room.player;
+    if (!identical(player, _slowFor)) {
+      _slowFor = player;
+      _slow = false;
+      _slowTimer?.cancel();
+      if (player != null) {
+        _slowTimer = Timer(_slowAfter, () {
+          if (mounted) setState(() => _slow = true);
+        });
+      }
+    }
     final playing = _room.playing;
     if (playing && !_wasPlaying && _full) _armHide();
     _wasPlaying = playing;
@@ -232,7 +248,7 @@ class _WatchPageState extends State<WatchPage> {
   }
 
   void _skip(double width) {
-    if (width <= 0) return;
+    if (width <= 0 || _room.player?.seekable != true) return;
     final ahead = _lastTap.dx >= width / 2;
     _room.skip(ahead ? WatchRoom.skipMs : -WatchRoom.skipMs);
     setState(() => _skipped = ahead ? WatchCopy.skipAhead : WatchCopy.skipBack);
@@ -267,6 +283,7 @@ class _WatchPageState extends State<WatchPage> {
     _hide?.cancel();
     _noticeHide?.cancel();
     _skipHide?.cancel();
+    _slowTimer?.cancel();
     _link.dispose();
     final room = _room;
     scheduleMicrotask(room.leave);
@@ -312,9 +329,13 @@ class _WatchPageState extends State<WatchPage> {
   String? _statusText() {
     final player = _room.player;
     if (player != null && player.failed) return WatchCopy.wontPlay;
-    if (player != null && !player.ready) return WatchCopy.loading;
+    if (player != null && !player.ready) {
+      if (!_slow) return WatchCopy.loading;
+      return player.rangeless ? WatchCopy.loadingFully : WatchCopy.loadingLong;
+    }
     if (player != null && player.buffering && _room.held) return WatchCopy.catchingUpMine;
     if (_room.partnerFailed) return WatchCopy.partnerCantPlay(widget.partner);
+    if (_room.outOfStep && _room.partnerIn) return WatchCopy.cantCatchUp(widget.partner);
     if (_room.partnerWaiting) return WatchCopy.catchingUp(widget.partner);
     return _room.partnerIn ? WatchCopy.withPartner(widget.partner) : WatchCopy.waitingFor(widget.partner);
   }
@@ -648,6 +669,19 @@ class _ControlsState extends State<_Controls> {
       children: [
         if (canPlay && player.live)
           Text(WatchCopy.live, style: small)
+        else if (canPlay && !player.seekable)
+          ValueListenableBuilder<int>(
+            valueListenable: room.positionMs,
+            builder: (context, position, _) => Padding(
+              padding: const EdgeInsets.symmetric(vertical: SkySpace.xs),
+              child: Text(
+                '${WatchCopy.clock(position)} / ${WatchCopy.clock(player.durationMs)} · ${WatchCopy.straightThrough}',
+                key: WatchKeys.straightThrough,
+                textAlign: TextAlign.center,
+                style: small,
+              ),
+            ),
+          )
         else if (canPlay)
           ListenableBuilder(
             listenable: Listenable.merge([room.positionMs, room.bufferedMs]),

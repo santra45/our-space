@@ -37,6 +37,8 @@ void main() {
     bool playing = false,
     bool failed = false,
     bool live = false,
+    bool seekable = true,
+    bool rangeless = false,
     int duration = 7200000,
     double width = 1920,
     double height = 800,
@@ -49,6 +51,8 @@ void main() {
     'playing': playing,
     'failed': failed,
     'live': live,
+    'seekable': seekable,
+    'rangeless': rangeless,
     'durationMs': duration,
     'width': width,
     'height': height,
@@ -105,6 +109,19 @@ void main() {
     expect(player.cues, ['Hello there', 'you']);
     await tell('cues', {'id': 7, 'lines': <String>[]});
     expect(player.cues, isEmpty);
+    player.dispose();
+  });
+
+  test('whether the link can jump comes from the phone', () async {
+    final player = NativeWatchPlayer();
+    await player.load(movie);
+    expect(player.seekable, isFalse);
+    await tell('state', state());
+    expect(player.seekable, isTrue);
+    expect(player.rangeless, isFalse);
+    await tell('state', state(seekable: false, rangeless: true));
+    expect(player.seekable, isFalse);
+    expect(player.rangeless, isTrue);
     player.dispose();
   });
 

@@ -98,6 +98,7 @@ class WatchRoom extends ChangeNotifier {
   int? _countedAt;
   bool _kept = false;
   WatchNotice? _notice;
+  bool _outOfStep = false;
   int _noticeCount = 0;
   bool _playing = false;
   bool _hold = false;
@@ -136,6 +137,8 @@ class WatchRoom extends ChangeNotifier {
 
   WatchNotice? get notice => _notice;
 
+  bool get outOfStep => _outOfStep;
+
   int get noticeCount => _noticeCount;
 
   void _say(WatchNotice notice) {
@@ -167,7 +170,7 @@ class WatchRoom extends ChangeNotifier {
 
   void skip(int byMs) {
     final player = _player;
-    if (player == null || !player.ready || player.live) return;
+    if (player == null || !player.ready || player.live || !player.seekable) return;
     seek((positionMs.value + byMs).clamp(0, player.durationMs));
   }
 
@@ -258,6 +261,8 @@ class WatchRoom extends ChangeNotifier {
 
   void seek(int ms) {
     if (!_inRoom || _url == null) return;
+    final player = _player;
+    if (player != null && player.ready && !player.seekable) return;
     final target = math.max(0, ms);
     positionMs.value = target;
     _publish(url: _url, playing: _playing, hold: _hold, pos: target, at: link.sharedNow() + leadMs);
@@ -329,6 +334,7 @@ class WatchRoom extends ChangeNotifier {
 
   Future<void> _load(String url) async {
     _dropPlayer();
+    _outOfStep = false;
     _loaded = url;
     _speed = 1;
     final player = WatchPlayers.create();
@@ -555,21 +561,30 @@ class WatchRoom extends ChangeNotifier {
     if (!shouldPlay) {
       if (player.playing) await player.pause();
       await _setSpeed(player, 1);
-      if (!player.live && !(_playing && !_hold) && (pos - _pos).abs() > restOverMs) await player.seekTo(_pos);
+      if (!player.live && player.seekable && !(_playing && !_hold) && (pos - _pos).abs() > restOverMs) {
+        await player.seekTo(_pos);
+      }
       return;
     }
     if (!player.playing) await player.play();
     if (player.live || player.buffering) return;
     final expected = _expected;
     final diff = pos - expected;
+    _setOutOfStep(!player.seekable && diff.abs() > seekOverMs);
     if (diff.abs() > seekOverMs) {
       await _setSpeed(player, 1);
-      await player.seekTo(expected);
+      if (player.seekable) await player.seekTo(expected);
     } else if (diff.abs() > nudgeOverMs) {
       await _setSpeed(player, diff > 0 ? 1 - nudge : 1 + nudge);
     } else if (diff.abs() <= settledMs) {
       await _setSpeed(player, 1);
     }
+  }
+
+  void _setOutOfStep(bool value) {
+    if (value == _outOfStep) return;
+    _outOfStep = value;
+    notifyListeners();
   }
 
   Future<void> _setSpeed(WatchPlayer player, double speed) async {

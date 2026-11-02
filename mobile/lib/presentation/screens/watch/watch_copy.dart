@@ -91,6 +91,15 @@ abstract final class WatchCopy {
 
   static const String loading = 'Getting your video ready';
 
+  static const String loadingLong = 'Big films can take a while to get ready';
+
+  static const String loadingFully = 'This link has to load all the way first, so this may take a while';
+
+  static const String straightThrough = 'This link only plays straight through';
+
+  static String cantCatchUp(String partner) =>
+      "This link can't jump ahead, so you can't catch up with $partner. Go back and start it again together.";
+
   static const String catchingUpMine = 'Your video is catching up';
 
   static String clock(int ms) {

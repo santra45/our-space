@@ -142,6 +142,10 @@ void main() {
       WatchCopy.joinLabel,
       WatchCopy.notNow,
       WatchCopy.loading,
+      WatchCopy.loadingLong,
+      WatchCopy.loadingFully,
+      WatchCopy.straightThrough,
+      WatchCopy.cantCatchUp('Alex'),
       WatchCopy.catchingUpMine,
       WatchCopy.invited('Alex'),
       WatchCopy.stillWatching('Alex'),
@@ -497,6 +501,66 @@ void main() {
     expect(find.byKey(WatchReactionKeys.floater), findsNWidgets(WatchReactionLayer.most));
     await tester.pump(const Duration(seconds: 4));
     expect(find.byKey(WatchReactionKeys.floater), findsNothing);
+    await sofa.close();
+  });
+
+  testWidgets('a link that cannot jump has no seek bar or skips, and says it plays straight through', (tester) async {
+    final sofa = await onUs(
+      tester,
+      player: () => FakeWatchPlayer()
+        ..isSeekable = false
+        ..isRangeless = true,
+    );
+    await sofa.openPage();
+    await tester.enterText(find.descendant(of: find.byKey(WatchKeys.linkField), matching: find.byType(EditableText)), movie);
+    await tester.tap(find.byKey(WatchKeys.start));
+    await sofa.run(beat * 3);
+    expect(find.byKey(WatchKeys.seek), findsNothing);
+    expect(find.textContaining(WatchCopy.straightThrough), findsOneWidget);
+    final video = tester.getRect(find.byKey(WatchKeys.video));
+    await tester.tapAt(video.centerRight - const Offset(30, 0));
+    await tester.pump(const Duration(milliseconds: 60));
+    await tester.tapAt(video.centerRight - const Offset(30, 0));
+    await tester.pump(const Duration(milliseconds: 60));
+    expect(find.byKey(WatchKeys.skip), findsNothing);
+    expect(sofa.players.single.seeks, isEmpty);
+    expect(tester.takeException(), isNull);
+    await sofa.close();
+  });
+
+  testWidgets('a film that takes long to get ready says so, and says why when the link cannot jump', (tester) async {
+    final sofa = await onUs(tester, player: () => FakeWatchPlayer(loadsAtOnce: false)..isRangeless = true);
+    await sofa.openPage();
+    await tester.enterText(find.descendant(of: find.byKey(WatchKeys.linkField), matching: find.byType(EditableText)), movie);
+    await tester.tap(find.byKey(WatchKeys.start));
+    await sofa.run(beat * 3);
+    expect(find.text(WatchCopy.loading), findsOneWidget);
+    await tester.pump(const Duration(seconds: 21));
+    expect(find.text(WatchCopy.loadingFully), findsOneWidget);
+    sofa.players.single.finishLoading();
+    await sofa.run(beat * 3);
+    expect(find.text(WatchCopy.loadingFully), findsNothing);
+    await sofa.close();
+  });
+
+  testWidgets('falling behind on a link that cannot jump tells you to start again together', (tester) async {
+    final sofa = await onUs(
+      tester,
+      player: () => FakeWatchPlayer()
+        ..isSeekable = false
+        ..isRangeless = true,
+    );
+    await sofa.openPage();
+    await tester.enterText(find.descendant(of: find.byKey(WatchKeys.linkField), matching: find.byType(EditableText)), movie);
+    await tester.tap(find.byKey(WatchKeys.start));
+    await sofa.run(beat * 3);
+    sofa.other.join();
+    await sofa.run(beat * 3);
+    sofa.other.togglePlay();
+    await sofa.run(beat * 6);
+    sofa.players.first.positionNow += 60000;
+    await sofa.run(beat * 3);
+    expect(find.text(WatchCopy.cantCatchUp('Alex')), findsOneWidget);
     await sofa.close();
   });
 

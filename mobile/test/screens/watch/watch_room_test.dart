@@ -498,6 +498,72 @@ void main() {
     });
   });
 
+  group('a link that cannot jump', () {
+    FakeWatchPlayer straight() => FakeWatchPlayer()
+      ..isSeekable = false
+      ..isRangeless = true;
+
+    test('nothing ever asks it to jump, whatever the drift, the seek or the pause', () async {
+      final couch = Couch(makePlayer: straight);
+      await couch.together();
+      couch.a.togglePlay();
+      await couch.run(2000);
+      couch.a.seek(600000);
+      couch.a.skip(WatchRoom.skipMs);
+      couch.playerB.positionNow += 20000;
+      await couch.run(1000);
+      couch.b.togglePlay();
+      await couch.run(1000);
+      expect(couch.playerA.seeks, isEmpty);
+      expect(couch.playerB.seeks, isEmpty);
+      await couch.dispose();
+    });
+
+    test('a small drift is still eased back, and a big one is called out instead of jumped', () async {
+      final couch = Couch(makePlayer: straight);
+      await couch.together();
+      couch.a.togglePlay();
+      await couch.run(1500);
+      couch.playerB.positionNow += 600;
+      await couch.run(300);
+      expect(couch.playerB.speed, 1 - WatchRoom.nudge);
+      expect(couch.b.outOfStep, isFalse);
+      couch.playerB.positionNow += 20000;
+      await couch.run(300);
+      expect(couch.b.outOfStep, isTrue);
+      expect(couch.playerB.speed, 1);
+      couch.playerB.positionNow -= 20600;
+      await couch.run(30000, every: 500);
+      expect(couch.b.outOfStep, isFalse);
+      await couch.dispose();
+    });
+
+    test('joining a film already playing cannot catch up, and says so', () async {
+      final couch = Couch(makePlayer: straight);
+      await couch.meet();
+      couch.a.start(movie);
+      await couch.run(200);
+      couch.a.togglePlay();
+      await couch.run(60000, every: 500);
+      couch.b.join();
+      await couch.run(2000);
+      expect(couch.playerB.seeks, isEmpty);
+      expect(couch.b.outOfStep, isTrue);
+      await couch.dispose();
+    });
+
+    test('at the end it can still start again from the top', () async {
+      final couch = Couch(makePlayer: () => straight()..durationMs = 5000);
+      await couch.together();
+      couch.a.togglePlay();
+      await couch.run(6000);
+      expect(couch.a.playing, isFalse);
+      couch.a.togglePlay();
+      expect(couch.playerA.seeks, [0]);
+      await couch.dispose();
+    });
+  });
+
   group('skipping', () {
     test('it moves both phones and stops at each end of the film', () async {
       final couch = Couch(makePlayer: () => FakeWatchPlayer(durationMs: 60000));

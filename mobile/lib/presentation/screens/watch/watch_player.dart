@@ -22,6 +22,10 @@ abstract class WatchPlayer implements Listenable {
 
   bool get live;
 
+  bool get seekable;
+
+  bool get rangeless;
+
   int get durationMs;
 
   int get bufferedMs;
@@ -83,6 +87,8 @@ class NativeWatchPlayer extends ChangeNotifier implements WatchPlayer {
   bool _failed = false;
   bool _playing = false;
   bool _live = false;
+  bool _seekable = false;
+  bool _rangeless = false;
   bool _disposed = false;
   int _durationMs = 0;
   int _lastPosition = 0;
@@ -106,6 +112,12 @@ class NativeWatchPlayer extends ChangeNotifier implements WatchPlayer {
 
   @override
   bool get live => _live || _durationMs <= 0 || _durationMs > _longestMs;
+
+  @override
+  bool get seekable => _seekable;
+
+  @override
+  bool get rangeless => _rangeless;
 
   @override
   int get durationMs => _durationMs;
@@ -145,6 +157,8 @@ class NativeWatchPlayer extends ChangeNotifier implements WatchPlayer {
     _playing = raw['playing'] == true;
     _failed = raw['failed'] == true;
     _live = raw['live'] == true;
+    _seekable = raw['seekable'] == true;
+    _rangeless = raw['rangeless'] == true;
     final duration = raw['durationMs'];
     _durationMs = duration is int ? duration : 0;
     final width = raw['width'];

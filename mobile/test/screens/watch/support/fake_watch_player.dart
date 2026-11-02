@@ -32,6 +32,8 @@ class FakeWatchPlayer extends ChangeNotifier implements WatchPlayer {
   bool isFailed = false;
   bool isPlaying = false;
   bool isLive = false;
+  bool isSeekable = true;
+  bool isRangeless = false;
   bool disposed = false;
   double speed = 1;
   int positionNow = 0;
@@ -53,6 +55,12 @@ class FakeWatchPlayer extends ChangeNotifier implements WatchPlayer {
 
   @override
   bool get live => isLive;
+
+  @override
+  bool get seekable => isSeekable;
+
+  @override
+  bool get rangeless => isRangeless;
 
   @override
   double get aspect => 16 / 9;
