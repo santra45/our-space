@@ -56,6 +56,7 @@ sealed class SkyTogetherEvent {
         'touch' => SkyTouchEvent._read(raw),
         'watch' => SkyWatchEvent._read(raw),
         'watchbeat' => SkyWatchBeatEvent._read(raw),
+        'watchreact' => SkyWatchReactEvent._read(raw),
         _ => null,
       };
     } catch (_) {
@@ -424,5 +425,25 @@ final class SkyWatchBeatEvent extends SkyTogetherEvent {
     final seq = skyInt(raw['seq'], max: maxSkyWatchSeq);
     if (on == null || wait == null || fail == null || seq == null) return null;
     return SkyWatchBeatEvent(on: on, wait: wait, fail: fail, seq: seq);
+  }
+}
+
+enum SkyReaction { heart, laugh, tear, wow }
+
+final class SkyWatchReactEvent extends SkyTogetherEvent {
+  const SkyWatchReactEvent(this.reaction);
+
+  final SkyReaction reaction;
+
+  @override
+  String get kind => 'watchreact';
+
+  @override
+  Map<String, Object?> get body => {'r': reaction.name};
+
+  static SkyWatchReactEvent? _read(Map<Object?, Object?> raw) {
+    final name = raw['r'];
+    final reaction = name is String ? SkyReaction.values.asNameMap()[name] : null;
+    return reaction == null ? null : SkyWatchReactEvent(reaction);
   }
 }

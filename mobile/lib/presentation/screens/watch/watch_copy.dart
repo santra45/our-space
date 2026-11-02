@@ -1,3 +1,5 @@
+import '../../../core/engine.dart';
+
 abstract final class WatchCopy {
   static const String kicker = 'Just the two of us';
   static const String title = 'Watch together';
@@ -63,6 +65,13 @@ abstract final class WatchCopy {
   static String joined(String partner) => '$partner is here';
 
   static String left(String partner) => '$partner stepped away';
+
+  static String reaction(SkyReaction reaction) => switch (reaction) {
+    SkyReaction.heart => 'Send a heart',
+    SkyReaction.laugh => 'Send a laugh',
+    SkyReaction.tear => 'Send a tear',
+    SkyReaction.wow => 'Send a wow',
+  };
 
   static String track(int number) => 'Track $number';
 

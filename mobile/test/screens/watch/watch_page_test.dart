@@ -9,6 +9,7 @@ import 'package:our_space_mobile/presentation/screens/watch/films_shelf.dart';
 import 'package:our_space_mobile/presentation/screens/watch/watch_copy.dart';
 import 'package:our_space_mobile/presentation/screens/watch/watch_page.dart';
 import 'package:our_space_mobile/presentation/screens/watch/watch_player.dart';
+import 'package:our_space_mobile/presentation/screens/watch/watch_reactions.dart';
 import 'package:our_space_mobile/presentation/screens/watch/watch_room.dart';
 import 'package:our_space_mobile/presentation/screens/watch/watch_seek_bar.dart';
 import 'package:our_space_mobile/presentation/sky/sky.dart';
@@ -123,6 +124,7 @@ void main() {
       WatchCopy.filmRemoveYes,
       WatchCopy.filmKeep,
       WatchCopy.together(600000),
+      for (final reaction in SkyReaction.values) WatchCopy.reaction(reaction),
       WatchCopy.fullscreen,
       WatchCopy.fullscreenExit,
       WatchCopy.leaveTitle,
@@ -417,6 +419,56 @@ void main() {
     await sofa.run(const Duration(seconds: 1));
     expect(find.byKey(WatchKeys.waiting), findsNothing);
     expect(find.byKey(WatchKeys.pill), findsNothing);
+    await sofa.close();
+  });
+
+  testWidgets('a reaction flies across the film on both sides and lands, and the buttons are there sideways too', (tester) async {
+    final sofa = await watching(tester);
+    sofa.other.join();
+    await sofa.run(beat * 3);
+    expect(find.byKey(WatchReactionKeys.comet), findsNothing);
+    final heart = tester.widget<SkyIconButton>(find.byKey(WatchReactionKeys.button(SkyReaction.heart)));
+    expect(heart.semanticLabel, 'Send a heart');
+
+    await reveal(tester, find.byKey(WatchReactionKeys.button(SkyReaction.heart)));
+    await tester.tap(find.byKey(WatchReactionKeys.button(SkyReaction.heart)));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(find.byKey(WatchReactionKeys.comet), findsOneWidget);
+    expect(find.descendant(of: find.byKey(WatchKeys.video), matching: find.byWidgetPredicate((w) => w is SkyIcon && w.icon == SkyIcons.heart)), findsOneWidget);
+
+    await sofa.run(const Duration(milliseconds: 300));
+    sofa.pair.injectEvent(sofa.pair.a, const SkyWatchReactEvent(SkyReaction.tear));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(find.byKey(WatchReactionKeys.comet), findsNWidgets(2));
+    await tester.pump(const Duration(seconds: 2));
+    expect(find.byKey(WatchReactionKeys.comet), findsNothing);
+
+    tester.view.physicalSize = const Size(2532, 1170);
+    addTearDown(tester.view.reset);
+    await tester.pump();
+    expect(find.byKey(WatchReactionKeys.button(SkyReaction.wow)), findsOneWidget);
+    await tester.tap(find.byKey(WatchReactionKeys.button(SkyReaction.wow)));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(find.byKey(WatchReactionKeys.comet), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await tester.pump(const Duration(seconds: 6));
+    await sofa.close();
+  });
+
+  testWidgets('a burst keeps only the newest dozen in the air', (tester) async {
+    final sofa = await watching(tester);
+    for (var i = 0; i < WatchReactionLayer.most + 5; i++) {
+      sofa.pair.advance(const Duration(milliseconds: 120));
+      sofa.pair.injectEvent(sofa.pair.a, const SkyWatchReactEvent(SkyReaction.laugh));
+      await tester.pump();
+    }
+    await tester.pump(const Duration(milliseconds: 50));
+    expect(find.byKey(WatchReactionKeys.comet), findsNWidgets(WatchReactionLayer.most));
+    await tester.pump(const Duration(seconds: 2));
+    expect(find.byKey(WatchReactionKeys.comet), findsNothing);
     await sofa.close();
   });
 

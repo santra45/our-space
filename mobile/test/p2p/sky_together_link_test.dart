@@ -383,6 +383,22 @@ void main() {
     pair.dispose();
   });
 
+  test('a reaction arrives as itself, and an unknown one is dropped', () async {
+    final pair = FakeSkyPair();
+    pair.settle();
+    final toB = heard(pair.b);
+    for (final reaction in SkyReaction.values) {
+      expect(await pair.a.send(SkyWatchReactEvent(reaction)), isTrue);
+    }
+    pair.flush();
+    pair.inject(pair.b, {'v': 1, 'k': 'watchreact', 'r': 'thunder'});
+    pair.inject(pair.b, {'v': 1, 'k': 'watchreact', 'r': 7});
+    pair.inject(pair.b, {'v': 1, 'k': 'watchreact'});
+    await drain();
+    expect(toB.whereType<SkyWatchReactEvent>().map((event) => event.reaction), SkyReaction.values);
+    pair.dispose();
+  });
+
   test('a copied link with spaces in its name still works, and a long signed one fits', () {
     expect(skyWatchUrl('  https://a.workers.dev/8acf/My Film 2024.mkv \n'), 'https://a.workers.dev/8acf/My%20Film%202024.mkv');
     expect(skyWatchUrl('https://a.workers.dev/already%20fine.mkv'), 'https://a.workers.dev/already%20fine.mkv');

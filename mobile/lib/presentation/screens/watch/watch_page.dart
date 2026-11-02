@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import '../../sky/sky.dart';
 import 'watch_copy.dart';
 import 'watch_player.dart';
+import 'watch_reactions.dart';
 import 'watch_room.dart';
 import 'watch_seek_bar.dart';
 
@@ -55,7 +56,12 @@ class WatchScope extends InheritedWidget {
   bool updateShouldNotify(WatchScope oldWidget) => !identical(oldWidget.room, room);
 }
 
-Future<void> openWatchPage(BuildContext context, {required WatchRoom room, required String partner, bool join = false}) {
+Future<void> openWatchPage(
+  BuildContext context, {
+  required WatchRoom room,
+  required String partner,
+  bool join = false,
+}) {
   return skyPush<void>(
     context,
     (_) => WatchPage(room: room, partner: partner, joinOnOpen: join),
@@ -218,7 +224,9 @@ class _WatchPageState extends State<WatchPage> {
   void _toggleFull() {
     unawaited(
       SystemChrome.setPreferredOrientations(
-        _full ? const [DeviceOrientation.portraitUp] : const [DeviceOrientation.landscapeLeft, DeviceOrientation.landscapeRight],
+        _full
+            ? const [DeviceOrientation.portraitUp]
+            : const [DeviceOrientation.landscapeLeft, DeviceOrientation.landscapeRight],
       ),
     );
   }
@@ -336,7 +344,12 @@ class _WatchPageState extends State<WatchPage> {
                       ),
                       Expanded(
                         child: ListView(
-                          padding: const EdgeInsets.fromLTRB(SkySpace.gutter, SkySpace.md, SkySpace.gutter, SkySpace.gutter),
+                          padding: const EdgeInsets.fromLTRB(
+                            SkySpace.gutter,
+                            SkySpace.md,
+                            SkySpace.gutter,
+                            SkySpace.gutter,
+                          ),
                           children: watching ? _watching(player) : _before(),
                         ),
                       ),
@@ -409,12 +422,9 @@ class _WatchPageState extends State<WatchPage> {
       const SizedBox(height: SkySpace.md),
       _Controls(room: _room, player: player, full: false, onFull: _toggleFull),
       const SizedBox(height: SkySpace.md),
-      Text(
-        _statusText() ?? '',
-        key: WatchKeys.status,
-        textAlign: TextAlign.center,
-        style: context.skyText.body,
-      ),
+      Text(_statusText() ?? '', key: WatchKeys.status, textAlign: TextAlign.center, style: context.skyText.body),
+      const SizedBox(height: SkySpace.lg),
+      Center(child: WatchReactionButtons(room: _room, full: false)),
     ];
   }
 
@@ -446,6 +456,7 @@ class _WatchPageState extends State<WatchPage> {
                 fit: StackFit.expand,
                 children: [
                   player.view(),
+                  WatchReactionLayer(room: _room),
                   if (player.cues.isNotEmpty) _Cues(lines: player.cues, lift: lift),
                   if (player.buffering || _room.held)
                     const IgnorePointer(
@@ -478,15 +489,23 @@ class _WatchPageState extends State<WatchPage> {
   }
 
   Widget _fade(Alignment from, Alignment to, Widget child) {
-    return Container(
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: from,
-          end: to,
-          colors: [_black.withValues(alpha: 0.82), _black.withValues(alpha: 0)],
+    return Stack(
+      children: [
+        Positioned.fill(
+          child: IgnorePointer(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: from,
+                  end: to,
+                  colors: [_black.withValues(alpha: 0.82), _black.withValues(alpha: 0)],
+                ),
+              ),
+            ),
+          ),
         ),
-      ),
-      child: SafeArea(child: child),
+        SafeArea(child: child),
+      ],
     );
   }
 
@@ -494,66 +513,68 @@ class _WatchPageState extends State<WatchPage> {
     return Material(
       color: _black,
       child: LayoutBuilder(
-        builder: (context, box) => _gestures(
-          width: box.maxWidth,
-          onTap: () {
-            if (_controls) {
-              _hide?.cancel();
-              setState(() => _controls = false);
-            } else {
-              _showControls();
-            }
-          },
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              Center(child: _video(player)),
-              if (_controls) ...[
-                Align(
-                  alignment: Alignment.topCenter,
-                  child: _fade(
-                    Alignment.topCenter,
-                    Alignment.bottomCenter,
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(SkySpace.md, SkySpace.xs, SkySpace.md, SkySpace.xl),
-                      child: Row(
-                        children: [
-                          SkyIconButton(
-                            icon: SkyIcons.back,
-                            tone: SkyIconButtonTone.ghost,
-                            iconColor: SkyTokens.white,
-                            semanticLabel: WatchCopy.fullscreenExit,
-                            onPressed: _toggleFull,
+        builder: (context, box) => Stack(
+          fit: StackFit.expand,
+          children: [
+            _gestures(
+              width: box.maxWidth,
+              onTap: () {
+                if (_controls) {
+                  _hide?.cancel();
+                  setState(() => _controls = false);
+                } else {
+                  _showControls();
+                }
+              },
+              child: Center(child: _video(player)),
+            ),
+            if (_controls) ...[
+              Align(
+                alignment: Alignment.topCenter,
+                child: _fade(
+                  Alignment.topCenter,
+                  Alignment.bottomCenter,
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(SkySpace.md, SkySpace.xs, SkySpace.md, SkySpace.xl),
+                    child: Row(
+                      children: [
+                        SkyIconButton(
+                          icon: SkyIcons.back,
+                          tone: SkyIconButtonTone.ghost,
+                          iconColor: SkyTokens.white,
+                          semanticLabel: WatchCopy.fullscreenExit,
+                          onPressed: _toggleFull,
+                        ),
+                        const SizedBox(width: SkySpace.sm),
+                        Expanded(
+                          child: Text(
+                            _statusText() ?? '',
+                            key: WatchKeys.status,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: context.skyText.bodySmall.copyWith(color: SkyTokens.white),
                           ),
-                          const SizedBox(width: SkySpace.sm),
-                          Expanded(
-                            child: Text(
-                              _statusText() ?? '',
-                              key: WatchKeys.status,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: context.skyText.bodySmall.copyWith(color: SkyTokens.white),
-                            ),
-                          ),
-                        ],
-                      ),
+                        ),
+                        const SizedBox(width: SkySpace.sm),
+                        WatchReactionButtons(room: _room, full: true),
+                      ],
                     ),
                   ),
                 ),
-                Align(
-                  alignment: Alignment.bottomCenter,
-                  child: _fade(
-                    Alignment.bottomCenter,
-                    Alignment.topCenter,
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(SkySpace.lg, SkySpace.xl, SkySpace.lg, SkySpace.xs),
-                      child: _Controls(room: _room, player: player, full: true, onFull: _toggleFull),
-                    ),
+              ),
+              Align(
+                alignment: Alignment.bottomCenter,
+                child: _fade(
+                  Alignment.bottomCenter,
+                  Alignment.topCenter,
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(SkySpace.lg, SkySpace.xl, SkySpace.lg, SkySpace.xs),
+                    child: _Controls(room: _room, player: player, full: true, onFull: _toggleFull),
                   ),
                 ),
-              ],
+              ),
             ],
-          ),
+          ],
         ),
       ),
     );
@@ -572,10 +593,7 @@ class _Pill extends StatelessWidget {
         liveRegion: true,
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: SkySpace.md, vertical: 6),
-          decoration: BoxDecoration(
-            color: const Color(0xB3000000),
-            borderRadius: BorderRadius.circular(999),
-          ),
+          decoration: BoxDecoration(color: const Color(0xB3000000), borderRadius: BorderRadius.circular(999)),
           child: Text(
             text,
             maxLines: 2,
@@ -643,7 +661,13 @@ class _ControlsState extends State<_Controls> {
                 children: [
                   SizedBox(
                     width: width,
-                    child: Text(WatchCopy.clock(shown), style: digits, maxLines: 1, softWrap: false, textAlign: TextAlign.left),
+                    child: Text(
+                      WatchCopy.clock(shown),
+                      style: digits,
+                      maxLines: 1,
+                      softWrap: false,
+                      textAlign: TextAlign.left,
+                    ),
                   ),
                   Expanded(
                     child: WatchSeekBar(
@@ -658,7 +682,13 @@ class _ControlsState extends State<_Controls> {
                   ),
                   SizedBox(
                     width: width,
-                    child: Text(WatchCopy.clock(duration), style: digits, maxLines: 1, softWrap: false, textAlign: TextAlign.right),
+                    child: Text(
+                      WatchCopy.clock(duration),
+                      style: digits,
+                      maxLines: 1,
+                      softWrap: false,
+                      textAlign: TextAlign.right,
+                    ),
                   ),
                 ],
               );

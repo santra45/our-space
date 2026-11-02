@@ -9,6 +9,14 @@ import 'watch_player.dart';
 enum WatchNotice { paused, played, moved, joined, left }
 
 @immutable
+class WatchReactionSeen {
+  const WatchReactionSeen(this.reaction, {required this.mine});
+
+  final SkyReaction reaction;
+  final bool mine;
+}
+
+@immutable
 class WatchedFilm {
   const WatchedFilm({required this.id, required this.title, required this.togetherMs});
 
@@ -63,6 +71,8 @@ class WatchRoom extends ChangeNotifier {
   static const double nudge = 0.03;
   static const int movedOverMs = 3000;
   static const int skipMs = 10000;
+  static const int reactGapMs = 250;
+  static const int heardGapMs = 100;
   static const int keepAfterMs = 10 * 60 * 1000;
   static const int longestGapMs = 5000;
 
@@ -74,6 +84,9 @@ class WatchRoom extends ChangeNotifier {
   final ValueNotifier<int> bufferedMs = ValueNotifier<int>(0);
 
   late final StreamSubscription<SkyTogetherEvent> _events;
+  final StreamController<WatchReactionSeen> _reactions = StreamController<WatchReactionSeen>.broadcast();
+  int? _lastReact;
+  int? _lastHeard;
   Timer? _timer;
   WatchPlayer? _player;
   String? _url;
@@ -128,6 +141,28 @@ class WatchRoom extends ChangeNotifier {
   void _say(WatchNotice notice) {
     _notice = notice;
     _noticeCount++;
+  }
+
+  Stream<WatchReactionSeen> get reactions => _reactions.stream;
+
+  bool react(SkyReaction reaction) {
+    if (_disposed || !_inRoom || _url == null) return false;
+    final now = link.now();
+    final last = _lastReact;
+    if (last != null && now >= last && now - last < reactGapMs) return false;
+    _lastReact = now;
+    unawaited(link.send(SkyWatchReactEvent(reaction)));
+    _reactions.add(WatchReactionSeen(reaction, mine: true));
+    return true;
+  }
+
+  void _heardReaction(SkyReaction reaction) {
+    if (!_inRoom || !_foreground) return;
+    final now = link.now();
+    final last = _lastHeard;
+    if (last != null && now >= last && now - last < heardGapMs) return;
+    _lastHeard = now;
+    _reactions.add(WatchReactionSeen(reaction, mine: false));
   }
 
   void skip(int byMs) {
@@ -338,6 +373,8 @@ class WatchRoom extends ChangeNotifier {
         _hearState(state);
       case final SkyWatchBeatEvent beat:
         _hearBeat(beat);
+      case SkyWatchReactEvent(:final reaction):
+        _heardReaction(reaction);
       default:
         return;
     }
@@ -554,6 +591,7 @@ class WatchRoom extends ChangeNotifier {
     _dropPlayer();
     link.removeListener(_onLink);
     unawaited(_events.cancel());
+    unawaited(_reactions.close());
     positionMs.dispose();
     bufferedMs.dispose();
     super.dispose();

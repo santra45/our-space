@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:our_space_mobile/core/engine.dart';
 import 'package:our_space_mobile/presentation/screens/watch/watch_player.dart';
 import 'package:our_space_mobile/presentation/screens/watch/watch_room.dart';
 
@@ -427,6 +428,72 @@ void main() {
       expect(couch.a.noticeCount, before + 1);
       await couch.run(WatchRoom.goneMs + 500);
       expect(couch.a.noticeCount, before + 1);
+      await couch.dispose();
+    });
+  });
+
+  group('reactions', () {
+    test('it shows on this phone at once and on the other when it arrives, marked whose it is', () async {
+      final couch = Couch();
+      await couch.together();
+      final onA = <WatchReactionSeen>[];
+      final onB = <WatchReactionSeen>[];
+      couch.a.reactions.listen(onA.add);
+      couch.b.reactions.listen(onB.add);
+      expect(couch.a.react(SkyReaction.heart), isTrue);
+      await pumpEventQueue();
+      expect(onA.single.mine, isTrue);
+      expect(onA.single.reaction, SkyReaction.heart);
+      expect(onB, isEmpty);
+      await couch.run(100);
+      expect(onB.single.mine, isFalse);
+      expect(onB.single.reaction, SkyReaction.heart);
+      expect(onA, hasLength(1));
+      await couch.dispose();
+    });
+
+    test('mashing a button sends about four a second, and a flood from the other phone is thinned', () async {
+      final couch = Couch();
+      await couch.together();
+      final onB = <WatchReactionSeen>[];
+      couch.b.reactions.listen(onB.add);
+      expect(couch.a.react(SkyReaction.laugh), isTrue);
+      expect(couch.a.react(SkyReaction.laugh), isFalse);
+      await couch.run(100);
+      expect(couch.a.react(SkyReaction.laugh), isFalse);
+      await couch.run(200);
+      expect(couch.a.react(SkyReaction.tear), isTrue);
+      await couch.run(100);
+      expect(onB.map((seen) => seen.reaction), [SkyReaction.laugh, SkyReaction.tear]);
+
+      onB.clear();
+      await couch.run(200);
+      for (var i = 0; i < 10; i++) {
+        couch.pair.injectEvent(couch.pair.b, const SkyWatchReactEvent(SkyReaction.wow));
+      }
+      await pumpEventQueue();
+      expect(onB, hasLength(1));
+      await couch.dispose();
+    });
+
+    test('nobody outside the room or away from the app sees or sends one', () async {
+      final couch = Couch();
+      await couch.meet();
+      final onB = <WatchReactionSeen>[];
+      couch.b.reactions.listen(onB.add);
+      expect(couch.a.react(SkyReaction.heart), isFalse);
+      couch.a.start(movie);
+      await couch.run(200);
+      expect(couch.a.react(SkyReaction.heart), isTrue);
+      await couch.run(100);
+      expect(onB, isEmpty);
+      couch.b.join();
+      await couch.run(300);
+      couch.pair.b.setForeground(false);
+      await couch.run(100);
+      couch.pair.injectEvent(couch.pair.b, const SkyWatchReactEvent(SkyReaction.heart));
+      await pumpEventQueue();
+      expect(onB, isEmpty);
       await couch.dispose();
     });
   });
