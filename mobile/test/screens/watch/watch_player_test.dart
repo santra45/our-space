@@ -144,10 +144,12 @@ void main() {
   test('position comes from the phone, and the last known one is kept if it cannot answer', () async {
     final player = NativeWatchPlayer();
     await player.load(movie);
-    answer = (call) => call.method == 'position' ? 5000 : null;
+    answer = (call) => call.method == 'position' ? {'position': 5000, 'buffered': 42000} : null;
     expect(await player.position(), 5000);
+    expect(player.bufferedMs, 42000);
     answer = (_) => throw PlatformException(code: 'gone');
     expect(await player.position(), 5000);
+    expect(player.bufferedMs, 42000);
     player.dispose();
   });
 

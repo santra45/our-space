@@ -88,7 +88,7 @@ class WatchPlayerChannel(
             "speed" -> player.exo.playbackParameters =
                 PlaybackParameters((call.argument<Number>("value")?.toFloat() ?: 1f).coerceIn(0.25f, 4f))
             "position" -> {
-                result.success(player.exo.currentPosition)
+                result.success(mapOf("position" to player.exo.currentPosition, "buffered" to player.exo.bufferedPosition))
                 return
             }
             "audio" -> player.select(C.TRACK_TYPE_AUDIO, call.argument<String>("track"))

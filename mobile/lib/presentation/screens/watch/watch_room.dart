@@ -71,6 +71,7 @@ class WatchRoom extends ChangeNotifier {
   final String unnamedFilm;
   final Duration? _tickEvery;
   final ValueNotifier<int> positionMs = ValueNotifier<int>(0);
+  final ValueNotifier<int> bufferedMs = ValueNotifier<int>(0);
 
   late final StreamSubscription<SkyTogetherEvent> _events;
   Timer? _timer;
@@ -201,6 +202,7 @@ class WatchRoom extends ChangeNotifier {
     }
     _waitingSent = false;
     positionMs.value = 0;
+    bufferedMs.value = 0;
     if (_url == null) _stopTimer();
     notifyListeners();
   }
@@ -487,6 +489,7 @@ class WatchRoom extends ChangeNotifier {
     final pos = await player.position();
     if (_disposed || !identical(player, _player)) return;
     positionMs.value = pos;
+    bufferedMs.value = player.bufferedMs;
     _settleHold(player, pos, waiting);
     await _steer(player, pos);
     if (!_disposed && identical(player, _player)) _count(player);
@@ -552,6 +555,7 @@ class WatchRoom extends ChangeNotifier {
     link.removeListener(_onLink);
     unawaited(_events.cancel());
     positionMs.dispose();
+    bufferedMs.dispose();
     super.dispose();
   }
 }

@@ -10,6 +10,7 @@ import 'package:our_space_mobile/presentation/screens/watch/watch_copy.dart';
 import 'package:our_space_mobile/presentation/screens/watch/watch_page.dart';
 import 'package:our_space_mobile/presentation/screens/watch/watch_player.dart';
 import 'package:our_space_mobile/presentation/screens/watch/watch_room.dart';
+import 'package:our_space_mobile/presentation/screens/watch/watch_seek_bar.dart';
 import 'package:our_space_mobile/presentation/sky/sky.dart';
 
 import '../../support/fake_sky_together.dart';
@@ -317,6 +318,63 @@ void main() {
     await sofa.run(beat * 3);
     return sofa;
   }
+
+  testWidgets('a tap on the seek bar jumps there, and a drag only moves the film when it lets go', (tester) async {
+    final sofa = await watching(tester);
+    final mine = sofa.players.single;
+    await sofa.run(beat * 3);
+    final bar = tester.getRect(find.byKey(WatchKeys.seek));
+    double xAt(double fraction) => bar.left + WatchSeekBar.side + (bar.width - WatchSeekBar.side * 2) * fraction;
+
+    await tester.tapAt(Offset(xAt(0.5), bar.center.dy));
+    await sofa.run(beat);
+    expect(mine.seeks.last, closeTo(mine.durationMs / 2, 1000));
+
+    final before = mine.seeks.length;
+    final gesture = await tester.startGesture(Offset(xAt(0.5), bar.center.dy));
+    await tester.pump(const Duration(milliseconds: 30));
+    await gesture.moveTo(Offset(xAt(0.25), bar.center.dy));
+    await tester.pump(const Duration(milliseconds: 30));
+    await gesture.moveTo(Offset(xAt(0.25) - 1, bar.center.dy));
+    await tester.pump(const Duration(milliseconds: 30));
+    expect(mine.seeks.length, before);
+    final painter = tester.widget<CustomPaint>(
+      find.descendant(of: find.byKey(WatchKeys.seek), matching: find.byType(CustomPaint)),
+    ).painter! as WatchSeekPainter;
+    expect(painter.played, closeTo(0.25, 0.01));
+    expect(painter.bubble, isNotNull);
+    expect(find.text(WatchCopy.clock((mine.durationMs * painter.played).round())), findsOneWidget);
+    await gesture.up();
+    await sofa.run(beat);
+    expect(mine.seeks.length, before + 1);
+    expect(mine.seeks.last, closeTo(mine.durationMs / 4, mine.durationMs * 0.01));
+    expect(tester.takeException(), isNull);
+    await sofa.close();
+  });
+
+  testWidgets('the seek bar shows what has loaded, and a reader can step through the film', (tester) async {
+    final sofa = await watching(tester);
+    final mine = sofa.players.single..bufferedMs = 900000;
+    await sofa.run(beat * 3);
+    final seek = tester.widget<WatchSeekBar>(find.byKey(WatchKeys.seek));
+    expect(seek.bufferedMs, 900000);
+    WatchSeekPainter painter() => tester.widget<CustomPaint>(
+      find.descendant(of: find.byKey(WatchKeys.seek), matching: find.byType(CustomPaint)),
+    ).painter! as WatchSeekPainter;
+    expect(painter().buffered, closeTo(900000 / mine.durationMs, 0.001));
+    expect(painter().bubble, isNull);
+
+    final reader = tester.widget<Semantics>(
+      find.descendant(of: find.byKey(WatchKeys.seek), matching: find.byWidgetPredicate((w) => w is Semantics && w.properties.slider == true)),
+    );
+    expect(reader.properties.label, WatchCopy.seekLabel);
+    expect(reader.properties.value, '0:00');
+    expect(reader.properties.increasedValue, '0:10');
+    reader.properties.onIncrease!();
+    await sofa.run(beat);
+    expect(mine.seeks.last, WatchSeekBar.stepMs);
+    await sofa.close();
+  });
 
   testWidgets('what the partner does is said over the video, and fades after a moment', (tester) async {
     final sofa = await watching(tester);

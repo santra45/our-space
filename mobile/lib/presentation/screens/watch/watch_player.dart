@@ -24,6 +24,8 @@ abstract class WatchPlayer implements Listenable {
 
   int get durationMs;
 
+  int get bufferedMs;
+
   double get aspect;
 
   List<WatchTrack> get audioTracks;
@@ -84,6 +86,7 @@ class NativeWatchPlayer extends ChangeNotifier implements WatchPlayer {
   bool _disposed = false;
   int _durationMs = 0;
   int _lastPosition = 0;
+  int _buffered = 0;
   double _aspect = 16 / 9;
   List<WatchTrack> _audio = const [];
   List<WatchTrack> _subtitles = const [];
@@ -106,6 +109,9 @@ class NativeWatchPlayer extends ChangeNotifier implements WatchPlayer {
 
   @override
   int get durationMs => _durationMs;
+
+  @override
+  int get bufferedMs => _buffered;
 
   @override
   double get aspect => _aspect;
@@ -194,7 +200,11 @@ class NativeWatchPlayer extends ChangeNotifier implements WatchPlayer {
     final id = _id;
     if (id == null) return _lastPosition;
     try {
-      _lastPosition = await channel.invokeMethod<int>('position', {'id': id}) ?? _lastPosition;
+      final now = await channel.invokeMapMethod<String, Object?>('position', {'id': id});
+      final position = now?['position'];
+      final buffered = now?['buffered'];
+      if (position is int) _lastPosition = position;
+      if (buffered is int) _buffered = buffered;
     } catch (_) {}
     return _lastPosition;
   }

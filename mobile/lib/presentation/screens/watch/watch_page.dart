@@ -7,6 +7,7 @@ import '../../sky/sky.dart';
 import 'watch_copy.dart';
 import 'watch_player.dart';
 import 'watch_room.dart';
+import 'watch_seek_bar.dart';
 
 abstract final class WatchKeys {
   static const Key entry = ValueKey<String>('watch-entry');
@@ -601,13 +602,24 @@ class _Controls extends StatefulWidget {
 }
 
 class _ControlsState extends State<_Controls> {
-  double? _dragging;
+  int? _dragging;
+
+  double _clockWidth(BuildContext context, TextStyle style, int durationMs) {
+    final painter = TextPainter(
+      text: TextSpan(text: WatchCopy.clock(durationMs).replaceAll(RegExp(r'\d'), '8'), style: style),
+      textDirection: TextDirection.ltr,
+      textScaler: MediaQuery.textScalerOf(context),
+      maxLines: 1,
+    )..layout();
+    final width = painter.width;
+    painter.dispose();
+    return width.ceilToDouble() + 1;
+  }
 
   @override
   Widget build(BuildContext context) {
     final room = widget.room;
     final player = widget.player;
-    final t = context.sky;
     final canPlay = player.ready;
     final full = widget.full;
     final small = full ? context.skyText.bodySmall.copyWith(color: SkyTokens.white) : context.skyText.bodySmall;
@@ -619,32 +631,35 @@ class _ControlsState extends State<_Controls> {
         if (canPlay && player.live)
           Text(WatchCopy.live, style: small)
         else if (canPlay)
-          ValueListenableBuilder<int>(
-            valueListenable: room.positionMs,
-            builder: (context, position, _) {
+          ListenableBuilder(
+            listenable: Listenable.merge([room.positionMs, room.bufferedMs]),
+            builder: (context, _) {
+              final position = room.positionMs.value;
               final duration = player.durationMs;
-              final shown = _dragging ?? position.clamp(0, duration).toDouble();
+              final shown = _dragging ?? position.clamp(0, duration);
+              final digits = small.copyWith(fontFeatures: const [FontFeature.tabularFigures()]);
+              final width = _clockWidth(context, digits, duration);
               return Row(
                 children: [
-                  Text(WatchCopy.clock(shown.round()), style: small),
+                  SizedBox(
+                    width: width,
+                    child: Text(WatchCopy.clock(shown), style: digits, maxLines: 1, softWrap: false, textAlign: TextAlign.left),
+                  ),
                   Expanded(
-                    child: Semantics(
-                      label: WatchCopy.seekLabel,
-                      child: Slider(
-                        key: WatchKeys.seek,
-                        value: shown,
-                        max: duration.toDouble(),
-                        activeColor: t.rose,
-                        inactiveColor: full ? SkyTokens.white.withValues(alpha: 0.28) : null,
-                        onChanged: (value) => setState(() => _dragging = value),
-                        onChangeEnd: (value) {
-                          setState(() => _dragging = null);
-                          room.seek(value.round());
-                        },
-                      ),
+                    child: WatchSeekBar(
+                      key: WatchKeys.seek,
+                      positionMs: position,
+                      durationMs: duration,
+                      bufferedMs: room.bufferedMs.value,
+                      full: full,
+                      onSeek: room.seek,
+                      onPreview: (ms) => setState(() => _dragging = ms),
                     ),
                   ),
-                  Text(WatchCopy.clock(duration), style: small),
+                  SizedBox(
+                    width: width,
+                    child: Text(WatchCopy.clock(duration), style: digits, maxLines: 1, softWrap: false, textAlign: TextAlign.right),
+                  ),
                 ],
               );
             },

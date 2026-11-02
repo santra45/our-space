@@ -37,6 +37,9 @@ class FakeWatchPlayer extends ChangeNotifier implements WatchPlayer {
   int positionNow = 0;
 
   @override
+  int bufferedMs = 0;
+
+  @override
   bool get ready => isReady && !isFailed;
 
   @override
