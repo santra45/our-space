@@ -7,7 +7,10 @@ import '../core/engine.dart';
 import 'app_shell.dart';
 import 'screens/love/love_sheet.dart';
 import 'screens/people/people_setup.dart';
+import 'screens/sky/together/sky_together_scope.dart';
 import 'screens/sync/peer_link.dart';
+import 'screens/watch/watch_page.dart';
+import 'screens/watch/watch_room.dart';
 import 'sky/sky.dart';
 import 'space_scope.dart';
 import 'widgets/app_haptics.dart';
@@ -99,6 +102,7 @@ class _HomeShellState extends State<HomeShell> {
   int _now = DateTime.now().millisecondsSinceEpoch;
   AppNotices? _notices;
   PeerLink? _peer;
+  WatchRoom? _watch;
   bool _askingInvite = false;
 
   @override
@@ -123,6 +127,11 @@ class _HomeShellState extends State<HomeShell> {
       _peer?.removeListener(_onPeer);
       _peer = peer?..addListener(_onPeer);
       _onPeer();
+    }
+    final sky = SkyTogetherScope.maybeOf(context);
+    if (!identical(sky, _watch?.link)) {
+      _watch?.dispose();
+      _watch = sky == null ? null : WatchRoom(link: sky);
     }
   }
 
@@ -164,6 +173,7 @@ class _HomeShellState extends State<HomeShell> {
     _clock?.cancel();
     _notices?.removeListener(_onNotices);
     _peer?.removeListener(_onPeer);
+    _watch?.dispose();
     super.dispose();
   }
 
@@ -175,23 +185,30 @@ class _HomeShellState extends State<HomeShell> {
     final peer = context.watch<PeerLink?>();
     final link = peer?.state ?? PeerLinkView.offline;
     final couple = vault.config?.coupleNames;
+    final watch = _watch;
 
-    return SkyShell(
-      initialTab: widget.initialTab,
-      pageBuilder: widget.pageBuilder ?? skyTabPage,
-      toastController: notices.toast,
-      presence: partnerPresenceFor(identity, now: _now, together: link.authorized),
-      status: ShellStatus(
-        errorText: link.error?.text,
-        onDismissError: peer?.clearError,
-        warningText: notices.syncWarning,
+    return WatchScope(
+      room: watch,
+      child: SkyShell(
+        initialTab: widget.initialTab,
+        pageBuilder: widget.pageBuilder ?? skyTabPage,
+        toastController: notices.toast,
+        presence: partnerPresenceFor(identity, now: _now, together: link.authorized),
+        status: ShellStatus(
+          errorText: link.error?.text,
+          onDismissError: peer?.clearError,
+          warningText: notices.syncWarning,
+        ),
+        myName: identity.me != null ? identity.myName : couple,
+        partnerName: identity.partner != null ? identity.partnerName : null,
+        onOpenSettings: () => unawaited(openSettings(context)),
+        onOpenLove: () => unawaited(showLoveSheet(context)),
+        onLock: vault.lock,
+        overlays: [
+          const PeopleSetup(),
+          if (watch != null && identity.partner != null) WatchInvite(room: watch, partner: identity.partnerName),
+        ],
       ),
-      myName: identity.me != null ? identity.myName : couple,
-      partnerName: identity.partner != null ? identity.partnerName : null,
-      onOpenSettings: () => unawaited(openSettings(context)),
-      onOpenLove: () => unawaited(showLoveSheet(context)),
-      onLock: vault.lock,
-      overlays: const [PeopleSetup()],
     );
   }
 }

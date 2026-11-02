@@ -83,6 +83,8 @@ class SkyTogetherLink extends ChangeNotifier {
 
   bool get here => _here && _foreground;
 
+  bool get foreground => _foreground;
+
   bool get night => _night;
 
   bool get partnerHere => _linked && _partnerHere;

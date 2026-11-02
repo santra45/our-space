@@ -42,9 +42,15 @@ enum SkyIcons {
   sun,
   clock,
   sealedStar,
+  play,
+  pause,
+  film,
 }
 
 const Map<SkyIcons, String> _paths = {
+  SkyIcons.play: '<path d="M8 5.5v13l10.5-6.5z" fill="currentColor" fill-opacity="0.25" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>',
+  SkyIcons.pause: '<path d="M9 5.5v13M15 5.5v13" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>',
+  SkyIcons.film: '<rect x="3" y="5" width="18" height="14" rx="3" fill="currentColor" fill-opacity="0.12" stroke="currentColor" stroke-width="1.8"/><path d="M10 9.2v5.6l4.8-2.8z" fill="currentColor"/>',
   SkyIcons.star: '<path d="M12 2l3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1z" fill="currentColor" fill-opacity="0.25" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"/>',
   SkyIcons.sparkle: '<path d="M12 2l2.4 7.6L22 12l-7.6 2.4L12 22l-2.4-7.6L2 12l7.6-2.4z" fill="currentColor" fill-opacity="0.3" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>',
   SkyIcons.letter: '<rect x="2.5" y="4.5" width="19" height="15" rx="3" fill="currentColor" fill-opacity="0.12" stroke="currentColor" stroke-width="1.8"/><path d="M3 7l9 6.2L21 7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>',

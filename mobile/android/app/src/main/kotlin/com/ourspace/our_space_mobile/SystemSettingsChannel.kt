@@ -5,6 +5,7 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
+import android.view.WindowManager
 import io.flutter.plugin.common.BinaryMessenger
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
@@ -21,7 +22,19 @@ class SystemSettingsChannel(
     override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
         when (call.method) {
             "notifications" -> result.success(openNotifications())
+            "keepScreenOn" -> {
+                keepScreenOn(call.arguments == true)
+                result.success(null)
+            }
             else -> result.notImplemented()
+        }
+    }
+
+    private fun keepScreenOn(on: Boolean) {
+        if (on) {
+            activity.window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        } else {
+            activity.window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         }
     }
 

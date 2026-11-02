@@ -13,6 +13,7 @@ import '../countdown/together_date_sheet.dart';
 import '../countdown/together_hero.dart';
 import '../countdown/upcoming_milestones.dart';
 import '../roulette/date_roulette.dart';
+import '../watch/watch_page.dart';
 import 'us_copy.dart';
 import 'us_keys.dart';
 
@@ -113,6 +114,8 @@ class _UsPageState extends State<UsPage> {
     _counter.track(startDate);
     final now = DateTime.fromMillisecondsSinceEpoch(_counter.now());
     final start = parseLocalDate(startDate) ?? now;
+    final watch = WatchScope.maybeOf(context);
+    final identity = watch == null ? null : context.watch<IdentityController>();
     return NotificationListener<ScrollStartNotification>(
       onNotification: _onScroll,
       child: NotificationListener<SizeChangedLayoutNotification>(
@@ -158,6 +161,13 @@ class _UsPageState extends State<UsPage> {
               padding: const EdgeInsets.only(top: SkySpace.sectionGap),
               child: _anchored(UsSection.dreams, const SizeChangedLayoutNotifier(child: DreamsSection(key: UsKeys.dreams))),
             ),
+            if (watch != null && identity != null && identity.partner != null)
+              Padding(
+                padding: const EdgeInsets.only(top: SkySpace.sectionGap),
+                child: WatchEntry(
+                  onTap: () => unawaited(openWatchPage(context, room: watch, partner: identity.partnerName)),
+                ),
+              ),
             Padding(
               padding: const EdgeInsets.only(top: SkySpace.sectionGap),
               child: _anchored(UsSection.dates, const DateRoulette(key: UsKeys.dateNight)),

@@ -10,6 +10,17 @@ const int maxSkyEventKeys = 12;
 const int maxSkyHeldMs = 60000;
 const int maxSkyHoldSeq = 2147483647;
 const int maxSkyNameRev = 2147483647;
+const int maxSkyWatchUrl = 2048;
+const int maxSkyWatchSeq = 2147483647;
+
+String? skyWatchUrl(Object? value) {
+  if (value is! String) return null;
+  final url = value.trim();
+  if (url.isEmpty || url.length > maxSkyWatchUrl || RegExp(r'[\s\u0000-\u001F\u007F]').hasMatch(url)) return null;
+  final uri = Uri.tryParse(url);
+  if (uri == null || uri.scheme != 'https' || uri.host.isEmpty || uri.userInfo.isNotEmpty) return null;
+  return url;
+}
 
 bool? _flag(Object? value) => value is bool ? value : null;
 
@@ -42,6 +53,8 @@ sealed class SkyTogetherEvent {
         'saved' => SkySavedEvent._read(raw),
         'close' => SkyCloseEvent._read(raw),
         'touch' => SkyTouchEvent._read(raw),
+        'watch' => SkyWatchEvent._read(raw),
+        'watchbeat' => SkyWatchBeatEvent._read(raw),
         _ => null,
       };
     } catch (_) {
@@ -334,4 +347,76 @@ final class SkyTouchEvent extends SkyTogetherEvent {
   Map<String, Object?> get body => const {};
 
   static SkyTouchEvent? _read(Map<Object?, Object?> raw) => raw.length == 2 ? const SkyTouchEvent() : null;
+}
+
+final class SkyWatchEvent extends SkyTogetherEvent {
+  const SkyWatchEvent({
+    required this.url,
+    required this.playing,
+    required this.hold,
+    required this.pos,
+    required this.at,
+    required this.seq,
+    required this.by,
+  });
+
+  final String? url;
+  final bool playing;
+  final bool hold;
+  final int pos;
+  final int at;
+  final int seq;
+  final String by;
+
+  @override
+  String get kind => 'watch';
+
+  @override
+  Map<String, Object?> get body => {
+    if (url != null) 'url': url,
+    'playing': playing,
+    'hold': hold,
+    'pos': pos,
+    'at': at,
+    'seq': seq,
+    'by': by,
+  };
+
+  static SkyWatchEvent? _read(Map<Object?, Object?> raw) {
+    final rawUrl = raw['url'];
+    final url = skyWatchUrl(rawUrl);
+    final playing = _flag(raw['playing']);
+    final hold = _flag(raw['hold']);
+    final pos = skyInt(raw['pos']);
+    final at = skyInt(raw['at']);
+    final seq = skyInt(raw['seq'], max: maxSkyWatchSeq);
+    final by = _tag(raw['by']);
+    if ((rawUrl != null && url == null) || playing == null || hold == null) return null;
+    if (pos == null || at == null || seq == null || by == null) return null;
+    return SkyWatchEvent(url: url, playing: playing, hold: hold, pos: pos, at: at, seq: seq, by: by);
+  }
+}
+
+final class SkyWatchBeatEvent extends SkyTogetherEvent {
+  const SkyWatchBeatEvent({required this.on, required this.wait, required this.fail, required this.seq});
+
+  final bool on;
+  final bool wait;
+  final bool fail;
+  final int seq;
+
+  @override
+  String get kind => 'watchbeat';
+
+  @override
+  Map<String, Object?> get body => {'on': on, 'wait': wait, 'fail': fail, 'seq': seq};
+
+  static SkyWatchBeatEvent? _read(Map<Object?, Object?> raw) {
+    final on = _flag(raw['on']);
+    final wait = _flag(raw['wait']);
+    final fail = _flag(raw['fail']);
+    final seq = skyInt(raw['seq'], max: maxSkyWatchSeq);
+    if (on == null || wait == null || fail == null || seq == null) return null;
+    return SkyWatchBeatEvent(on: on, wait: wait, fail: fail, seq: seq);
+  }
 }

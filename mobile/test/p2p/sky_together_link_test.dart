@@ -327,6 +327,60 @@ void main() {
     pair.dispose();
   });
 
+  test('watch events arrive the same as they left, and only a clean https link gets through', () async {
+    final pair = FakeSkyPair();
+    pair.settle();
+    final toB = heard(pair.b);
+    const state = SkyWatchEvent(
+      url: 'https://example.com/film.mp4?t=1',
+      playing: true,
+      hold: false,
+      pos: 1500,
+      at: 1760000000000,
+      seq: 3,
+      by: 'tag-phone-a',
+    );
+    const closed = SkyWatchEvent(url: null, playing: false, hold: false, pos: 0, at: 5, seq: 4, by: 'tag-phone-a');
+    const beat = SkyWatchBeatEvent(on: true, wait: true, fail: false, seq: 4);
+    expect(await pair.a.send(state), isTrue);
+    expect(await pair.a.send(closed), isTrue);
+    expect(await pair.a.send(beat), isTrue);
+    pair.flush();
+    await drain();
+    expect(toB.whereType<SkyWatchEvent>(), [state, closed]);
+    expect(toB.whereType<SkyWatchBeatEvent>(), [beat]);
+    expect(pair.transportA.sentOf('watch').last.containsKey('url'), isFalse);
+
+    toB.clear();
+    final good = state.toWire();
+    final goodBeat = beat.toWire();
+    for (final bad in <Object?>[
+      {...good, 'url': 'http://example.com/film.mp4'},
+      {...good, 'url': 'file:///sdcard/film.mp4'},
+      {...good, 'url': 'javascript:alert(1)'},
+      {...good, 'url': 'https://'},
+      {...good, 'url': 'https://user:pass@example.com/film.mp4'},
+      {...good, 'url': 'https://example.com/a b.mp4'},
+      {...good, 'url': 'https://example.com/${'a' * maxSkyWatchUrl}'},
+      {...good, 'url': 7},
+      {...good, 'playing': 'yes'},
+      {...good, 'hold': 1},
+      {...good, 'pos': -1},
+      {...good, 'at': 1.5},
+      {...good, 'seq': -2},
+      {...good, 'by': 'x'},
+      {...goodBeat, 'on': 'yes'},
+      {...goodBeat, 'wait': 0},
+      {...goodBeat, 'fail': null},
+      {...goodBeat, 'seq': 'one'},
+    ]) {
+      pair.inject(pair.b, bad);
+    }
+    await drain();
+    expect(toB.where((e) => e is SkyWatchEvent || e is SkyWatchBeatEvent), isEmpty);
+    pair.dispose();
+  });
+
   test('the leader falls back to the random tag when both phones carry the same owner', () {
     final pair = FakeSkyPair(ownerA: 'owner-same0000', ownerB: 'owner-same0000');
     pair.settle();
