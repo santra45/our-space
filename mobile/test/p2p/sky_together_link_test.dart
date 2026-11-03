@@ -428,6 +428,38 @@ void main() {
     pair.dispose();
   });
 
+  test('voices find each other over the wire, and a broken signal is dropped', () async {
+    final pair = FakeSkyPair();
+    pair.settle();
+    await drain();
+    final toB = heard(pair.b);
+    expect(await pair.a.send(const SkyWatchVoiceEvent(call: 'call-1', what: skyVoiceOffer, text: 'sdp')), isTrue);
+    expect(await pair.a.send(const SkyWatchVoiceEvent(call: 'call-1', what: skyVoiceIce, text: 'c', mid: '0', line: 0)), isTrue);
+    pair.flush();
+    Map<String, Object?> signal(Map<String, Object?> change) => {'v': 1, 'k': 'watchvoice', 'call': 'call-1', 'what': 'ice', 'text': 'c', ...change};
+    pair.inject(pair.b, signal({'call': 'bad id'}));
+    pair.inject(pair.b, signal({'what': 'hello'}));
+    pair.inject(pair.b, signal({'text': ''}));
+    pair.inject(pair.b, signal({'text': 'x' * (maxSkyVoiceText + 1)}));
+    pair.inject(pair.b, signal({'mid': 7}));
+    pair.inject(pair.b, signal({'line': 'one'}));
+    await drain();
+    final signals = toB.whereType<SkyWatchVoiceEvent>().toList();
+    expect(signals, hasLength(2));
+    expect(signals.first.text, 'sdp');
+    expect(signals.last.mid, '0');
+    expect(signals.last.line, 0);
+    pair.dispose();
+  });
+
+  test('a beat says whether someone wants to talk, and stays the same size when they do not', () {
+    const quiet = SkyWatchBeatEvent(on: true, wait: false, fail: false, seq: 1);
+    expect(quiet.toWire().containsKey('voice'), isFalse);
+    expect((SkyTogetherEvent.fromWire(quiet.toWire()) as SkyWatchBeatEvent).voice, isFalse);
+    const talking = SkyWatchBeatEvent(on: true, wait: false, fail: false, seq: 1, voice: true);
+    expect((SkyTogetherEvent.fromWire(talking.toWire()) as SkyWatchBeatEvent).voice, isTrue);
+  });
+
   test('a chat line is tidied before it goes', () {
     expect(cleanSkyWatchSay('  a\n\tb   c '), 'a b c');
     expect(cleanSkyWatchSay('x' * (maxSkyWatchSay + 1)).length, maxSkyWatchSay);

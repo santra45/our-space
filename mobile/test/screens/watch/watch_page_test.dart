@@ -13,11 +13,13 @@ import 'package:our_space_mobile/presentation/screens/watch/watch_player.dart';
 import 'package:our_space_mobile/presentation/screens/watch/watch_reactions.dart';
 import 'package:our_space_mobile/presentation/screens/watch/watch_room.dart';
 import 'package:our_space_mobile/presentation/screens/watch/watch_seek_bar.dart';
+import 'package:our_space_mobile/presentation/screens/watch/watch_voice.dart';
 import 'package:our_space_mobile/presentation/sky/sky.dart';
 
 import '../../support/fake_sky_together.dart';
 import '../love/love_harness.dart';
 import 'support/fake_watch_player.dart';
+import 'support/fake_watch_voice.dart';
 
 const String movie = 'https://example.com/movies/our-film.mp4';
 const Duration beat = Duration(milliseconds: 100);
@@ -63,6 +65,8 @@ class Sofa {
     pair.dispose();
     await tester.pump(const Duration(milliseconds: 50));
     WatchPlayers.create = NativeWatchPlayer.new;
+    WatchVoices.create = NativeWatchVoice.new;
+    WatchVoices.askMic = NativeWatchVoice.askMic;
     WatchScreen.keepOn = (_) async {};
   }
 }
@@ -152,6 +156,15 @@ void main() {
       WatchCopy.loadingFully,
       WatchCopy.straightThrough,
       WatchCopy.sayLabel,
+      WatchCopy.voiceStop,
+      WatchCopy.voiceConnecting,
+      WatchCopy.voiceCantReach,
+      WatchCopy.voiceStart('Alex'),
+      WatchCopy.voiceAsked('Alex'),
+      WatchCopy.voiceWaiting('Alex'),
+      WatchCopy.voiceOn('Alex'),
+      WatchCopy.voiceStopped('Alex'),
+      WatchCopy.voiceNoMic('Alex'),
       WatchCopy.filmSaid,
       WatchCopy.sayHint('Alex'),
       WatchCopy.sayMissed('Alex'),
@@ -528,6 +541,68 @@ void main() {
   }
 
   Finder sayBox() => find.descendant(of: find.byKey(WatchKeys.sayField), matching: find.byType(EditableText));
+
+  testWidgets('the talk button tells you what is going on, on both screens', (tester) async {
+    final voices = <FakeWatchVoice>[];
+    WatchVoices.create = () {
+      final voice = FakeWatchVoice();
+      voices.add(voice);
+      return voice;
+    };
+    var allowed = false;
+    WatchVoices.askMic = () async => allowed;
+    final sofa = await talking(tester);
+    SkyIconButton mic() => tester.widget<SkyIconButton>(find.byKey(WatchKeys.voice));
+    expect(mic().semanticLabel, WatchCopy.voiceStart('Alex'));
+    expect(mic().tone, isNot(SkyIconButtonTone.rose));
+
+    await tester.tap(find.byKey(WatchKeys.voice));
+    await sofa.run(beat * 2);
+    expect(find.text(WatchCopy.voiceNoMic('Alex')), findsOneWidget);
+
+    allowed = true;
+    await tester.tap(find.byKey(WatchKeys.voice));
+    await sofa.run(beat * 2);
+    expect(find.text(WatchCopy.voiceWaiting('Alex')), findsOneWidget);
+    expect(mic().semanticLabel, WatchCopy.voiceStop);
+    expect(mic().tone, SkyIconButtonTone.rose);
+
+    await sofa.other.toggleVoice();
+    await sofa.run(beat * 5);
+    expect(find.text(WatchCopy.voiceConnecting), findsOneWidget);
+    for (final voice in voices) {
+      voice.connect();
+    }
+    await tester.pump();
+    expect(find.text(WatchCopy.voiceOn('Alex')), findsOneWidget);
+
+    tester.view.physicalSize = const Size(2532, 1170);
+    addTearDown(tester.view.reset);
+    await tester.pump();
+    expect(find.byKey(WatchKeys.voice), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await tester.pump(const Duration(seconds: 5));
+    await sofa.close();
+  });
+
+  testWidgets('when they want to talk it says so, and the button lights up', (tester) async {
+    WatchVoices.create = FakeWatchVoice.new;
+    WatchVoices.askMic = () async => true;
+    final sofa = await talking(tester);
+    await sofa.other.toggleVoice();
+    await sofa.run(beat * 3);
+    expect(find.text(WatchCopy.voiceAsked('Alex')), findsWidgets);
+    expect(tester.widget<SkyIconButton>(find.byKey(WatchKeys.voice)).tone, SkyIconButtonTone.rose);
+    expect(tester.takeException(), isNull);
+    await tester.pump(const Duration(seconds: 5));
+    await sofa.close();
+  });
+
+  testWidgets('with nobody there the talk button rests', (tester) async {
+    final sofa = await watching(tester);
+    expect(tester.widget<SkyIconButton>(find.byKey(WatchKeys.voice)).onPressed, isNull);
+    await sofa.close();
+  });
 
   testWidgets('a line typed under the film reaches them, and theirs shows up too', (tester) async {
     final sofa = await talking(tester);

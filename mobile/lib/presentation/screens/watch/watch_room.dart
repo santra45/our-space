@@ -5,8 +5,11 @@ import 'package:flutter/foundation.dart';
 
 import '../../../core/engine.dart';
 import 'watch_player.dart';
+import 'watch_voice.dart';
 
-enum WatchNotice { paused, played, moved, joined, left }
+enum WatchNotice { paused, played, moved, joined, left, voiceAsked, voiceStopped }
+
+enum WatchVoiceTrouble { noMic, cantReach }
 
 @immutable
 class WatchReactionSeen {
@@ -97,6 +100,7 @@ class WatchRoom extends ChangeNotifier {
   static const int keepAfterMs = 10 * 60 * 1000;
   static const int longestGapMs = 5000;
   static const int mostSaid = 200;
+  static const int voiceWaitMs = 25000;
 
   final SkyTogetherLink link;
   final void Function(WatchedFilm film)? onWatched;
@@ -110,6 +114,13 @@ class WatchRoom extends ChangeNotifier {
   final StreamController<WatchReactionSeen> _reactions = StreamController<WatchReactionSeen>.broadcast();
   final StreamController<WatchSaid> _heard = StreamController<WatchSaid>.broadcast();
   final List<WatchSaid> _said = [];
+  WatchVoice? _voice;
+  String? _voiceCall;
+  bool _voiceWanted = false;
+  bool _partnerVoice = false;
+  bool _askingMic = false;
+  int _voiceAt = 0;
+  WatchVoiceTrouble? _voiceTrouble;
   int? _lastReact;
   int? _lastHeard;
   Timer? _timer;
@@ -248,6 +259,110 @@ class WatchRoom extends ChangeNotifier {
     notifyListeners();
   }
 
+  bool get voiceWanted => _voiceWanted;
+
+  bool get partnerWantsVoice => _partnerVoice;
+
+  bool get talking => _voice?.connected ?? false;
+
+  WatchVoiceTrouble? get voiceTrouble => _voiceTrouble;
+
+  Future<void> toggleVoice() async {
+    if (_disposed || !_inRoom) return;
+    if (_voiceWanted) {
+      _voiceWanted = false;
+      _steerVoice();
+      _beat();
+      notifyListeners();
+      return;
+    }
+    if (_askingMic) return;
+    _askingMic = true;
+    final allowed = await WatchVoices.askMic();
+    _askingMic = false;
+    if (_disposed || !_inRoom) return;
+    _voiceTrouble = allowed ? null : WatchVoiceTrouble.noMic;
+    _voiceWanted = allowed;
+    _beat();
+    _steerVoice();
+    notifyListeners();
+  }
+
+  void _steerVoice() {
+    if (_disposed) return;
+    if (!(_inRoom && _foreground && _partnerIn && _voiceWanted && _partnerVoice)) {
+      _dropVoice();
+      return;
+    }
+    final now = link.now();
+    final voice = _voice;
+    if (voice != null) {
+      if (voice.connected) {
+        _voiceAt = now;
+      } else if (now - _voiceAt > voiceWaitMs) {
+        _voiceLost();
+      }
+      return;
+    }
+    final leader = link.isLeader;
+    if (leader == null) return;
+    _voiceAt = now;
+    _voiceCall = leader ? 'call-${generateUrlSafeNonce(12)}' : null;
+    final made = WatchVoices.create();
+    _voice = made;
+    made.addListener(_onVoice);
+    unawaited(made.start(offering: leader, send: _sendVoice));
+    notifyListeners();
+  }
+
+  void _sendVoice(String what, String text, {String? mid, int? line}) {
+    final call = _voiceCall;
+    if (call == null || _disposed) return;
+    unawaited(link.send(SkyWatchVoiceEvent(call: call, what: what, text: text, mid: mid, line: line)));
+  }
+
+  void _onVoice() {
+    final voice = _voice;
+    if (voice == null || _disposed) return;
+    if (voice.failed) {
+      _voiceLost();
+      return;
+    }
+    if (voice.connected) _voiceAt = link.now();
+    notifyListeners();
+  }
+
+  void _voiceLost() {
+    _voiceTrouble = WatchVoiceTrouble.cantReach;
+    _voiceWanted = false;
+    _dropVoice();
+    _beat();
+    notifyListeners();
+  }
+
+  void _dropVoice() {
+    final voice = _voice;
+    _voice = null;
+    _voiceCall = null;
+    if (voice == null) return;
+    voice.removeListener(_onVoice);
+    scheduleMicrotask(voice.dispose);
+  }
+
+  void _heardVoice(SkyWatchVoiceEvent signal) {
+    if (!_inRoom) return;
+    if (signal.what == skyVoiceOffer) {
+      if (link.isLeader != false) return;
+      if (_voiceCall != null && _voiceCall != signal.call) _dropVoice();
+      _steerVoice();
+      if (_voice == null) return;
+      _voiceCall = signal.call;
+    } else if (signal.call != _voiceCall) {
+      return;
+    }
+    unawaited(_voice?.hear(signal));
+  }
+
   void skip(int byMs) {
     final player = _player;
     if (player == null || !player.ready || player.live || !player.seekable) return;
@@ -313,6 +428,9 @@ class WatchRoom extends ChangeNotifier {
     _keep();
     _countedAt = null;
     _inRoom = false;
+    _voiceWanted = false;
+    _voiceTrouble = null;
+    _dropVoice();
     _dropPlayer();
     _beat();
     if (_partnerIn) {
@@ -399,6 +517,7 @@ class WatchRoom extends ChangeNotifier {
           wait: _inRoom && _waitingSent,
           fail: _inRoom && (_player?.failed ?? false),
           seq: _seq,
+          voice: _inRoom && _foreground && _voiceWanted,
         ),
       ),
     );
@@ -465,6 +584,8 @@ class WatchRoom extends ChangeNotifier {
         _heardReaction(reaction);
       case final SkyWatchSayEvent said:
         _heardSay(said);
+      case final SkyWatchVoiceEvent signal:
+        _heardVoice(signal);
       default:
         return;
     }
@@ -526,12 +647,23 @@ class WatchRoom extends ChangeNotifier {
     _partnerIn = beat.on;
     _partnerWait = beat.on && beat.wait;
     _partnerFail = beat.on && beat.fail;
+    final wasVoice = _partnerVoice;
+    final wasTalking = talking;
+    final wasTrying = _voice != null && !wasTalking && link.now() - _voiceAt >= voiceWaitMs ~/ 2;
+    _partnerVoice = beat.on && beat.voice;
+    if (_inRoom && beat.on && wasTrying && !_partnerVoice) {
+      _voiceTrouble = WatchVoiceTrouble.cantReach;
+      _voiceWanted = false;
+    }
+    if (_inRoom && !wasVoice && _partnerVoice && !_voiceWanted) _say(WatchNotice.voiceAsked);
+    if (_inRoom && beat.on && wasTalking && !_partnerVoice) _say(WatchNotice.voiceStopped);
     if (!beat.on) {
       if (_inRoom && wasIn) _say(WatchNotice.left);
       _partnerGone();
       return;
     }
     if (_inRoom && !wasIn) _say(WatchNotice.joined);
+    _steerVoice();
     if (_inRoom && beat.seq < _seq) _offer();
     if (_inRoom) unawaited(tick());
     notifyListeners();
@@ -541,11 +673,13 @@ class WatchRoom extends ChangeNotifier {
     _partnerIn = false;
     _partnerWait = false;
     _partnerFail = false;
+    _partnerVoice = false;
   }
 
   void _partnerGone() {
     if (_inRoom && _partnerIn) _say(WatchNotice.left);
     _clearPartner();
+    _dropVoice();
     if (!_inRoom) {
       _url = null;
       _declined = null;
@@ -567,6 +701,8 @@ class WatchRoom extends ChangeNotifier {
     if (!_inRoom) return;
     if (!foreground) unawaited(_player?.pause());
     _beat();
+    _steerVoice();
+    notifyListeners();
     if (foreground) unawaited(tick());
   }
 
@@ -607,6 +743,7 @@ class WatchRoom extends ChangeNotifier {
     final changed = waiting != _waitingSent;
     _waitingSent = waiting;
     if (changed || now - _lastBeatAt >= beatMs) _beat();
+    _steerVoice();
     if (!_partnerIn && _url != null && now - _lastOfferAt >= offerMs) _offer();
     if (!_foreground) return;
     if (player == null || !player.ready) {
@@ -685,6 +822,7 @@ class WatchRoom extends ChangeNotifier {
       _inRoom = false;
       _beat();
     }
+    _dropVoice();
     _disposed = true;
     _stopTimer();
     _dropPlayer();

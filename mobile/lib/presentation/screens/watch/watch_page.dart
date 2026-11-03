@@ -35,6 +35,7 @@ abstract final class WatchKeys {
   static const Key straightThrough = ValueKey<String>('watch-straight-through');
   static const Key sayField = ValueKey<String>('watch-say-field');
   static const Key send = ValueKey<String>('watch-send');
+  static const Key voice = ValueKey<String>('watch-voice');
 
   static Key track(String id) => ValueKey<String>('watch-track-$id');
 }
@@ -243,6 +244,8 @@ class _WatchPageState extends State<WatchPage> {
     WatchNotice.moved => WatchCopy.moved(widget.partner),
     WatchNotice.joined => WatchCopy.joined(widget.partner),
     WatchNotice.left => WatchCopy.left(widget.partner),
+    WatchNotice.voiceAsked => WatchCopy.voiceAsked(widget.partner),
+    WatchNotice.voiceStopped => WatchCopy.voiceStopped(widget.partner),
     null => null,
   };
 
@@ -354,7 +357,18 @@ class _WatchPageState extends State<WatchPage> {
     if (_room.partnerFailed) return WatchCopy.partnerCantPlay(widget.partner);
     if (_room.outOfStep && _room.partnerIn) return WatchCopy.cantCatchUp(widget.partner);
     if (_room.partnerWaiting) return WatchCopy.catchingUp(widget.partner);
+    final voice = _voiceText();
+    if (voice != null) return voice;
     return _room.partnerIn ? WatchCopy.withPartner(widget.partner) : WatchCopy.waitingFor(widget.partner);
+  }
+
+  String? _voiceText() {
+    final trouble = _room.voiceTrouble;
+    if (trouble == WatchVoiceTrouble.noMic) return WatchCopy.voiceNoMic(widget.partner);
+    if (trouble == WatchVoiceTrouble.cantReach) return WatchCopy.voiceCantReach;
+    if (_room.talking) return WatchCopy.voiceOn(widget.partner);
+    if (_room.voiceWanted) return _room.partnerWantsVoice ? WatchCopy.voiceConnecting : WatchCopy.voiceWaiting(widget.partner);
+    return _room.partnerWantsVoice ? WatchCopy.voiceAsked(widget.partner) : null;
   }
 
   @override
@@ -520,7 +534,7 @@ class _WatchPageState extends State<WatchPage> {
       mainAxisSize: MainAxisSize.min,
       children: [
         const SizedBox(height: SkySpace.md),
-        _Controls(room: _room, player: player, full: false, onFull: _toggleFull),
+        _Controls(room: _room, player: player, partner: widget.partner, full: false, onFull: _toggleFull),
         const SizedBox(height: SkySpace.sm),
         Text(_statusText() ?? '', key: WatchKeys.status, textAlign: TextAlign.center, style: context.skyText.body),
         const SizedBox(height: SkySpace.sm),
@@ -700,7 +714,7 @@ class _WatchPageState extends State<WatchPage> {
                   Alignment.topCenter,
                   Padding(
                     padding: const EdgeInsets.fromLTRB(SkySpace.lg, SkySpace.xl, SkySpace.lg, SkySpace.xs),
-                    child: _Controls(room: _room, player: player, full: true, onFull: _toggleFull),
+                    child: _Controls(room: _room, player: player, partner: widget.partner, full: true, onFull: _toggleFull),
                   ),
                 ),
               ),
@@ -739,10 +753,11 @@ class _Pill extends StatelessWidget {
 }
 
 class _Controls extends StatefulWidget {
-  const _Controls({required this.room, required this.player, required this.full, required this.onFull});
+  const _Controls({required this.room, required this.player, required this.partner, required this.full, required this.onFull});
 
   final WatchRoom room;
   final WatchPlayer player;
+  final String partner;
   final bool full;
   final VoidCallback onFull;
 
@@ -841,18 +856,29 @@ class _ControlsState extends State<_Controls> {
         Row(
           children: [
             Expanded(
-              child: Align(
-                alignment: Alignment.centerRight,
-                child: player.audioTracks.length > 1
-                    ? SkyIconButton(
-                        key: WatchKeys.audio,
-                        icon: SkyIcons.audio,
-                        tone: tone,
-                        iconColor: iconColor,
-                        semanticLabel: WatchCopy.audio,
-                        onPressed: () => unawaited(_pickAudio(context, player)),
-                      )
-                    : const SizedBox.shrink(),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  SkyIconButton(
+                    key: WatchKeys.voice,
+                    icon: SkyIcons.mic,
+                    tone: room.voiceWanted || room.partnerWantsVoice ? SkyIconButtonTone.rose : tone,
+                    iconColor: room.voiceWanted || room.partnerWantsVoice ? null : iconColor,
+                    semanticLabel: room.voiceWanted ? WatchCopy.voiceStop : WatchCopy.voiceStart(widget.partner),
+                    onPressed: room.voiceWanted || room.partnerIn ? () => unawaited(room.toggleVoice()) : null,
+                  ),
+                  if (player.audioTracks.length > 1) ...[
+                    const SizedBox(width: SkySpace.md),
+                    SkyIconButton(
+                      key: WatchKeys.audio,
+                      icon: SkyIcons.audio,
+                      tone: tone,
+                      iconColor: iconColor,
+                      semanticLabel: WatchCopy.audio,
+                      onPressed: () => unawaited(_pickAudio(context, player)),
+                    ),
+                  ],
+                ],
               ),
             ),
             const SizedBox(width: SkySpace.md),

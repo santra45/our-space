@@ -5,7 +5,20 @@ import 'package:flutter_webrtc/flutter_webrtc.dart';
 
 import 'rtc.dart';
 
+final AndroidAudioConfiguration filmFriendlyAudio = AndroidAudioConfiguration(
+  manageAudioFocus: false,
+  androidAudioMode: AndroidAudioMode.normal,
+  androidAudioFocusMode: AndroidAudioFocusMode.gain,
+  androidAudioStreamType: AndroidAudioStreamType.music,
+  androidAudioAttributesUsageType: AndroidAudioAttributesUsageType.media,
+  androidAudioAttributesContentType: AndroidAudioAttributesContentType.speech,
+  forceHandleAudioRouting: false,
+);
+
+Future<void> prepareFilmFriendlyAudio() => WebRTC.initialize(options: {'androidAudioConfiguration': filmFriendlyAudio.toMap()});
+
 Future<RtcSession> createFlutterRtcSession(Map<String, Object?> configuration) async {
+  await prepareFilmFriendlyAudio();
   final pc = await createPeerConnection({...configuration, 'sdpSemantics': 'unified-plan'});
   return FlutterRtcSession(pc);
 }

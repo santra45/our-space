@@ -13,6 +13,10 @@ const int maxSkyNameRev = 2147483647;
 const int maxSkyWatchUrl = 8192;
 const int maxSkyWatchSeq = 2147483647;
 const int maxSkyWatchSay = 500;
+const int maxSkyVoiceText = 16 * 1024;
+const String skyVoiceOffer = 'offer';
+const String skyVoiceAnswer = 'answer';
+const String skyVoiceIce = 'ice';
 
 String? skyWatchUrl(Object? value) {
   if (value is! String) return null;
@@ -66,6 +70,7 @@ sealed class SkyTogetherEvent {
         'watchbeat' => SkyWatchBeatEvent._read(raw),
         'watchreact' => SkyWatchReactEvent._read(raw),
         'watchsay' => SkyWatchSayEvent._read(raw),
+        'watchvoice' => SkyWatchVoiceEvent._read(raw),
         _ => null,
       };
     } catch (_) {
@@ -414,26 +419,28 @@ final class SkyWatchEvent extends SkyTogetherEvent {
 }
 
 final class SkyWatchBeatEvent extends SkyTogetherEvent {
-  const SkyWatchBeatEvent({required this.on, required this.wait, required this.fail, required this.seq});
+  const SkyWatchBeatEvent({required this.on, required this.wait, required this.fail, required this.seq, this.voice = false});
 
   final bool on;
   final bool wait;
   final bool fail;
   final int seq;
+  final bool voice;
 
   @override
   String get kind => 'watchbeat';
 
   @override
-  Map<String, Object?> get body => {'on': on, 'wait': wait, 'fail': fail, 'seq': seq};
+  Map<String, Object?> get body => {'on': on, 'wait': wait, 'fail': fail, 'seq': seq, if (voice) 'voice': true};
 
   static SkyWatchBeatEvent? _read(Map<Object?, Object?> raw) {
     final on = _flag(raw['on']);
     final wait = _flag(raw['wait']);
     final fail = _flag(raw['fail']);
     final seq = skyInt(raw['seq'], max: maxSkyWatchSeq);
-    if (on == null || wait == null || fail == null || seq == null) return null;
-    return SkyWatchBeatEvent(on: on, wait: wait, fail: fail, seq: seq);
+    final voice = _flag(raw['voice'] ?? false);
+    if (on == null || wait == null || fail == null || seq == null || voice == null) return null;
+    return SkyWatchBeatEvent(on: on, wait: wait, fail: fail, seq: seq, voice: voice);
   }
 }
 
@@ -483,5 +490,40 @@ final class SkyWatchSayEvent extends SkyTogetherEvent {
     final clean = cleanSkyWatchSay(text);
     if (clean.isEmpty) return null;
     return SkyWatchSayEvent(id: id, text: clean, pos: pos, at: at, by: by);
+  }
+}
+
+final class SkyWatchVoiceEvent extends SkyTogetherEvent {
+  const SkyWatchVoiceEvent({required this.call, required this.what, required this.text, this.mid, this.line});
+
+  final String call;
+  final String what;
+  final String text;
+  final String? mid;
+  final int? line;
+
+  @override
+  String get kind => 'watchvoice';
+
+  @override
+  Map<String, Object?> get body => {
+    'call': call,
+    'what': what,
+    'text': text,
+    if (mid != null) 'mid': mid,
+    if (line != null) 'line': line,
+  };
+
+  static SkyWatchVoiceEvent? _read(Map<Object?, Object?> raw) {
+    final call = skyId(raw['call']);
+    final what = raw['what'];
+    final text = raw['text'];
+    final mid = raw['mid'];
+    final rawLine = raw['line'];
+    final line = skyInt(rawLine, max: 64);
+    if (call == null || (what != skyVoiceOffer && what != skyVoiceAnswer && what != skyVoiceIce)) return null;
+    if (text is! String || text.isEmpty || text.length > maxSkyVoiceText) return null;
+    if ((mid != null && (mid is! String || mid.length > 64)) || (rawLine != null && line == null)) return null;
+    return SkyWatchVoiceEvent(call: call, what: what as String, text: text, mid: mid as String?, line: line);
   }
 }

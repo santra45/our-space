@@ -4,7 +4,10 @@ import 'package:our_space_mobile/presentation/screens/watch/watch_player.dart';
 import 'package:our_space_mobile/presentation/screens/watch/watch_room.dart';
 
 import '../../support/fake_sky_together.dart';
+import 'package:our_space_mobile/presentation/screens/watch/watch_voice.dart';
+
 import 'support/fake_watch_player.dart';
+import 'support/fake_watch_voice.dart';
 
 const String movie = 'https://example.com/movies/our-film.mp4';
 const String other = 'https://example.com/movies/other-film.m3u8';
@@ -78,7 +81,11 @@ class Couch {
 }
 
 void main() {
-  tearDown(() => WatchPlayers.create = NativeWatchPlayer.new);
+  tearDown(() {
+    WatchPlayers.create = NativeWatchPlayer.new;
+    WatchVoices.create = NativeWatchVoice.new;
+    WatchVoices.askMic = NativeWatchVoice.askMic;
+  });
 
   group('starting and joining', () {
     test('only a real https link can start, and nothing goes out for a bad one', () async {
@@ -640,6 +647,197 @@ void main() {
       expect(couch.a.said.single.missed, isTrue);
       couch.pair.transportA.refuse = false;
       await couch.dispose();
+    });
+  });
+
+  group('talking out loud', () {
+    late List<FakeWatchVoice> voices;
+    late int asked;
+    late bool micAllowed;
+
+    Future<Couch> ready() async {
+      voices = [];
+      asked = 0;
+      micAllowed = true;
+      WatchVoices.create = () {
+        final voice = FakeWatchVoice();
+        voices.add(voice);
+        return voice;
+      };
+      WatchVoices.askMic = () async {
+        asked++;
+        return micAllowed;
+      };
+      final couch = Couch();
+      await couch.together();
+      return couch;
+    }
+
+    Future<void> bothTalk(Couch couch) async {
+      await couch.a.toggleVoice();
+      await couch.run(200);
+      await couch.b.toggleVoice();
+      await couch.run(500);
+    }
+
+    test('nothing touches the mic until someone taps, and wanting it alone opens nothing', () async {
+      final couch = await ready();
+      await couch.run(1000);
+      expect(asked, 0);
+      expect(voices, isEmpty);
+
+      await couch.a.toggleVoice();
+      await couch.run(200);
+      expect(asked, 1);
+      expect(couch.a.voiceWanted, isTrue);
+      expect(voices, isEmpty);
+      expect(couch.b.partnerWantsVoice, isTrue);
+      expect(couch.b.voiceWanted, isFalse);
+      expect(couch.b.notice, WatchNotice.voiceAsked);
+      await couch.dispose();
+    });
+
+    test('when both say yes one calls, the other answers, and they end up talking', () async {
+      final couch = await ready();
+      await bothTalk(couch);
+      expect(voices, hasLength(2));
+      final caller = voices.singleWhere((voice) => voice.offering == true);
+      final answerer = voices.singleWhere((voice) => voice.offering == false);
+      expect(answerer.heard.single.what, skyVoiceOffer);
+      expect(caller.heard.single.what, skyVoiceAnswer);
+      expect(couch.a.talking, isFalse);
+      caller.sendIce();
+      await couch.run(100);
+      expect(answerer.heard.last.what, skyVoiceIce);
+      caller.connect();
+      answerer.connect();
+      expect(couch.a.talking, isTrue);
+      expect(couch.b.talking, isTrue);
+      await couch.dispose();
+    });
+
+    test('tapping at the same moment still makes only one call', () async {
+      final couch = await ready();
+      await Future.wait([couch.a.toggleVoice(), couch.b.toggleVoice()]);
+      await couch.run(300);
+      expect(voices, hasLength(2));
+      expect(voices.where((voice) => voice.offering == true), hasLength(1));
+      await couch.dispose();
+    });
+
+    test('a refused mic stays off and says so, and nobody is told otherwise', () async {
+      final couch = await ready();
+      micAllowed = false;
+      await couch.a.toggleVoice();
+      await couch.run(200);
+      expect(couch.a.voiceWanted, isFalse);
+      expect(couch.a.voiceTrouble, WatchVoiceTrouble.noMic);
+      expect(couch.b.partnerWantsVoice, isFalse);
+      micAllowed = true;
+      await couch.a.toggleVoice();
+      expect(couch.a.voiceTrouble, isNull);
+      expect(couch.a.voiceWanted, isTrue);
+      await couch.dispose();
+    });
+
+    test('when one stops, the mic closes on both and the other is told', () async {
+      final couch = await ready();
+      await bothTalk(couch);
+      for (final voice in voices) {
+        voice.connect();
+      }
+      await couch.a.toggleVoice();
+      await couch.run(200);
+      expect(voices.every((voice) => voice.disposed), isTrue);
+      expect(couch.a.talking, isFalse);
+      expect(couch.b.talking, isFalse);
+      expect(couch.b.voiceWanted, isTrue);
+      expect(couch.b.notice, WatchNotice.voiceStopped);
+      await couch.dispose();
+    });
+
+    test('going to another app closes the mic, and coming back calls again', () async {
+      final couch = await ready();
+      await bothTalk(couch);
+      for (final voice in voices) {
+        voice.connect();
+      }
+      couch.pair.a.setForeground(false);
+      await couch.run(200);
+      expect(voices.every((voice) => voice.disposed), isTrue);
+      expect(couch.a.voiceWanted, isTrue);
+      couch.pair.a.setForeground(true);
+      await couch.run(300);
+      expect(voices, hasLength(4));
+      expect(voices.skip(2).where((voice) => voice.offering == true), hasLength(1));
+      expect(voices.skip(2).any((voice) => voice.disposed), isFalse);
+      await couch.dispose();
+    });
+
+    test('if the voices never meet it gives up and says so, instead of hanging forever', () async {
+      final couch = await ready();
+      await bothTalk(couch);
+      await couch.run(WatchRoom.voiceWaitMs + 1000, every: 1000);
+      expect(voices.every((voice) => voice.disposed), isTrue);
+      expect(couch.a.voiceWanted, isFalse);
+      expect(couch.b.voiceWanted, isFalse);
+      expect(couch.a.voiceTrouble, WatchVoiceTrouble.cantReach);
+      expect(couch.b.voiceTrouble, WatchVoiceTrouble.cantReach);
+      expect(voices, hasLength(2));
+      await couch.dispose();
+    });
+
+    test('a connection that fails says so too', () async {
+      final couch = await ready();
+      await bothTalk(couch);
+      voices.singleWhere((voice) => voice.offering == true).fail();
+      expect(couch.a.voiceTrouble, WatchVoiceTrouble.cantReach);
+      expect(couch.a.voiceWanted, isFalse);
+      await pumpEventQueue();
+      expect(voices.singleWhere((voice) => voice.offering == true).disposed, isTrue);
+      await couch.dispose();
+    });
+
+    test('a short drop while talking is waited out', () async {
+      final couch = await ready();
+      await bothTalk(couch);
+      for (final voice in voices) {
+        voice.connect();
+      }
+      await couch.run(WatchRoom.voiceWaitMs + 1000, every: 1000);
+      final caller = voices.singleWhere((voice) => voice.offering == true);
+      caller.lose();
+      await couch.run(5000, every: 1000);
+      expect(couch.a.voiceWanted, isTrue);
+      caller.connect();
+      expect(couch.a.talking, isTrue);
+      await couch.dispose();
+    });
+
+    test('leaving hangs up and forgets, and a signal from an old call is ignored', () async {
+      final couch = await ready();
+      await bothTalk(couch);
+      final answerer = voices.singleWhere((voice) => voice.offering == false);
+      final heardBefore = answerer.heard.length;
+      couch.pair.injectEvent(couch.pair.b, const SkyWatchVoiceEvent(call: 'call-old', what: skyVoiceIce, text: 'c'));
+      await pumpEventQueue();
+      expect(answerer.heard, hasLength(heardBefore));
+      couch.b.leave();
+      await couch.run(200);
+      expect(voices.every((voice) => voice.disposed), isTrue);
+      expect(couch.b.voiceWanted, isFalse);
+      await couch.dispose();
+    });
+
+    test('putting the room away closes the mic', () async {
+      final couch = await ready();
+      await bothTalk(couch);
+      couch.a.dispose();
+      await pumpEventQueue();
+      expect(voices.singleWhere((voice) => voice.offering == true).disposed, isTrue);
+      couch.b.dispose();
+      await pumpEventQueue();
+      couch.pair.dispose();
     });
   });
 

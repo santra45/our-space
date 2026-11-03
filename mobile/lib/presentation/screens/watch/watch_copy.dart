@@ -55,6 +55,8 @@ abstract final class WatchCopy {
   static const String skipBack = '10s back';
   static const String skipAhead = '10s ahead';
   static const String sayLabel = 'Send';
+  static const String voiceStop = 'Stop talking';
+  static const String voiceConnecting = 'Connecting your voices';
 
   static String leaveWith(String partner) => '$partner can keep watching without you.';
 
@@ -76,6 +78,20 @@ abstract final class WatchCopy {
     SkyReaction.tear => 'Send a tear',
     SkyReaction.fire => 'Send fire',
   };
+
+  static String voiceStart(String partner) => 'Talk to $partner';
+
+  static String voiceAsked(String partner) => '$partner wants to talk';
+
+  static String voiceWaiting(String partner) => 'Waiting for $partner to talk too';
+
+  static String voiceOn(String partner) => 'Talking with $partner. Earphones sound best.';
+
+  static String voiceStopped(String partner) => '$partner stopped talking';
+
+  static String voiceNoMic(String partner) => 'Allow the microphone so $partner can hear you';
+
+  static const String voiceCantReach = "Your voices couldn't reach each other. A phone call will work for now.";
 
   static String sayHint(String partner) => 'Say something to $partner';
 
