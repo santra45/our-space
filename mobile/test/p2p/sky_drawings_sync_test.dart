@@ -69,7 +69,7 @@ void main() {
     expect(await solo.side.engine.syncNow(), isTrue);
     await settle();
     final third = solo.lastSent(link, 'SYNC_MANIFEST')['manifest'] as Map;
-    expect(third.keys.toList(), syncedTables);
+    expect(third.keys.toList(), [...webSyncedTables, skyDrawingsTable, watchedFilmsTable]);
     expect((third[watchedFilmsTable] as List).single, containsPair('id', 'film-1'));
     await solo.close();
   });

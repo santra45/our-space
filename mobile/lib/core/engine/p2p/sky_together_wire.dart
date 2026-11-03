@@ -12,6 +12,7 @@ const int maxSkyHoldSeq = 2147483647;
 const int maxSkyNameRev = 2147483647;
 const int maxSkyWatchUrl = 8192;
 const int maxSkyWatchSeq = 2147483647;
+const int maxSkyWatchSay = 500;
 
 String? skyWatchUrl(Object? value) {
   if (value is! String) return null;
@@ -21,6 +22,13 @@ String? skyWatchUrl(Object? value) {
   if (uri == null || uri.scheme != 'https' || uri.host.isEmpty || uri.userInfo.isNotEmpty) return null;
   if (uri.host.contains('%')) return null;
   return url;
+}
+
+String cleanSkyWatchSay(String raw) {
+  final flat = skyWholeText(raw).replaceAll(RegExp(r'[\u0000-\u001F\u007F]'), ' ').replaceAll(RegExp(r'\s+'), ' ').trim();
+  final runes = flat.runes.toList(growable: false);
+  if (runes.length <= maxSkyWatchSay) return flat;
+  return String.fromCharCodes(runes.take(maxSkyWatchSay)).trim();
 }
 
 bool? _flag(Object? value) => value is bool ? value : null;
@@ -57,6 +65,7 @@ sealed class SkyTogetherEvent {
         'watch' => SkyWatchEvent._read(raw),
         'watchbeat' => SkyWatchBeatEvent._read(raw),
         'watchreact' => SkyWatchReactEvent._read(raw),
+        'watchsay' => SkyWatchSayEvent._read(raw),
         _ => null,
       };
     } catch (_) {
@@ -445,5 +454,34 @@ final class SkyWatchReactEvent extends SkyTogetherEvent {
     final name = raw['r'];
     final reaction = name is String ? SkyReaction.values.asNameMap()[name] : null;
     return reaction == null ? null : SkyWatchReactEvent(reaction);
+  }
+}
+
+final class SkyWatchSayEvent extends SkyTogetherEvent {
+  const SkyWatchSayEvent({required this.id, required this.text, required this.pos, required this.at, required this.by});
+
+  final String id;
+  final String text;
+  final int pos;
+  final int at;
+  final String by;
+
+  @override
+  String get kind => 'watchsay';
+
+  @override
+  Map<String, Object?> get body => {'id': id, 'text': text, 'pos': pos, 'at': at, 'by': by};
+
+  static SkyWatchSayEvent? _read(Map<Object?, Object?> raw) {
+    final id = skyId(raw['id']);
+    final text = raw['text'];
+    final pos = skyInt(raw['pos']);
+    final at = skyInt(raw['at']);
+    final by = skyOwner(raw['by']);
+    if (id == null || pos == null || at == null || by == null) return null;
+    if (text is! String || text.length > maxSkyWatchSay * 2 || skyHasLoneSurrogate(text)) return null;
+    final clean = cleanSkyWatchSay(text);
+    if (clean.isEmpty) return null;
+    return SkyWatchSayEvent(id: id, text: clean, pos: pos, at: at, by: by);
   }
 }

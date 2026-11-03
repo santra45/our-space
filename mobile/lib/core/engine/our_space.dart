@@ -46,6 +46,7 @@ class OurSpace {
     required this.roulette,
     required this.dateIdeas,
     required this.films,
+    required this.filmLines,
     required this.dailyQuestion,
     required this.loveBursts,
     required this.mailbox,
@@ -122,6 +123,7 @@ class OurSpace {
       roulette: RouletteRepository(store: store, vault: vault),
       dateIdeas: DateIdeasRepository(store: store, vault: vault),
       films: FilmsRepository(store: store, vault: vault),
+      filmLines: FilmLinesRepository(store: store, vault: vault),
       dailyQuestion: dailyQuestion,
       loveBursts: loveBursts,
       mailbox: mailbox,
@@ -155,6 +157,7 @@ class OurSpace {
   final RouletteRepository roulette;
   final DateIdeasRepository dateIdeas;
   final FilmsRepository films;
+  final FilmLinesRepository filmLines;
   final DailyQuestionService dailyQuestion;
   final LoveBurstService loveBursts;
   final Mailbox mailbox;

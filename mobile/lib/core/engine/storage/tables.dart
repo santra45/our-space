@@ -8,6 +8,7 @@ const String dailyAnswersTable = 'dailyAnswers';
 const String peopleTable = 'people';
 const String skyDrawingsTable = 'skyDrawings';
 const String watchedFilmsTable = 'watchedFilms';
+const String watchedFilmLinesTable = 'watchedFilmLines';
 const String vaultMetaTable = 'vaultMeta';
 
 const List<String> syncedTables = [
@@ -21,6 +22,7 @@ const List<String> syncedTables = [
   peopleTable,
   skyDrawingsTable,
   watchedFilmsTable,
+  watchedFilmLinesTable,
 ];
 
 const Set<String> importableTables = {
@@ -34,11 +36,12 @@ const Set<String> importableTables = {
   peopleTable,
   skyDrawingsTable,
   watchedFilmsTable,
+  watchedFilmLinesTable,
 };
 
 const List<String> exportedTables = [vaultMetaTable, ...syncedTables];
 
-const Set<String> appOnlyTables = {skyDrawingsTable, watchedFilmsTable};
+const Set<String> appOnlyTables = {skyDrawingsTable, watchedFilmsTable, watchedFilmLinesTable};
 
 const int maxBackupFileBytes = 150 * 1024 * 1024;
 

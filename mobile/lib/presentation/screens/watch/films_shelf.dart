@@ -5,8 +5,10 @@ import 'package:flutter/material.dart';
 import '../../../core/engine.dart';
 import '../../sky/sky.dart';
 import '../../space_scope.dart';
+import '../sky/together/sky_together_scope.dart';
 import '../us/us_copy.dart';
 import '../us/widgets/us_sheet_frame.dart';
+import 'watch_chat.dart';
 import 'watch_copy.dart';
 
 abstract final class FilmKeys {
@@ -14,12 +16,17 @@ abstract final class FilmKeys {
   static const Key title = ValueKey<String>('film-title');
   static const Key save = ValueKey<String>('film-save');
   static const Key remove = ValueKey<String>('film-remove');
+  static const Key said = ValueKey<String>('film-said');
 
   static Key film(String id) => ValueKey<String>('film-$id');
+
+  static Key line(String id) => ValueKey<String>('film-line-$id');
 }
 
 class FilmsShelf extends StatefulWidget {
-  const FilmsShelf({super.key = FilmKeys.shelf});
+  const FilmsShelf({super.key = FilmKeys.shelf, required this.partner});
+
+  final String partner;
 
   @override
   State<FilmsShelf> createState() => _FilmsShelfState();
@@ -45,10 +52,16 @@ class _FilmsShelfState extends State<FilmsShelf> {
 
   Future<void> _open(FilmRecord film) async {
     final films = context.space.films;
+    final filmLines = context.space.filmLines;
+    final me = SkyTogetherScope.maybeOf(context)?.owner;
+    final lines = filmLines.ofFilm(film.id).catchError((Object _) => const <FilmLineRecord>[]);
     final action = await showSkySheet<FilmAction>(
       context: context,
       builder: (_) => FilmSheet(
         film: film,
+        lines: lines,
+        me: me,
+        partner: widget.partner,
         onSave: (title) async {
           try {
             return await films.rename(film, title) == null ? SaveOutcome.skipped : SaveOutcome.saved;
@@ -58,7 +71,9 @@ class _FilmsShelfState extends State<FilmsShelf> {
         },
       ),
     );
-    if (action == FilmAction.removed) unawaited(films.remove(film.id).catchError((Object _) => null));
+    if (action != FilmAction.removed) return;
+    unawaited(films.remove(film.id).catchError((Object _) => null));
+    unawaited(filmLines.removeFilm(film.id).catchError((Object _) {}));
   }
 
   @override
@@ -119,10 +134,13 @@ class _FilmTicket extends StatelessWidget {
 enum FilmAction { saved, removed }
 
 class FilmSheet extends StatefulWidget {
-  const FilmSheet({super.key, required this.film, required this.onSave});
+  const FilmSheet({super.key, required this.film, required this.onSave, this.lines, this.me, this.partner = ''});
 
   final FilmRecord film;
   final Future<SaveOutcome> Function(String title) onSave;
+  final Future<List<FilmLineRecord>>? lines;
+  final String? me;
+  final String partner;
 
   @override
   State<FilmSheet> createState() => _FilmSheetState();
@@ -165,6 +183,17 @@ class _FilmSheetState extends State<FilmSheet> {
     Navigator.of(context).pop(FilmAction.removed);
   }
 
+  Widget _said(FilmLineRecord line) {
+    final mine = line.by == widget.me;
+    return WatchChatBubble(
+      key: FilmKeys.line(line.id),
+      text: line.text,
+      note: WatchCopy.clock(line.posMs),
+      mine: mine,
+      label: mine ? WatchCopy.youSaid(line.text) : WatchCopy.partnerSaid(widget.partner, line.text),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return UsSheetFrame(
@@ -183,6 +212,26 @@ class _FilmSheetState extends State<FilmSheet> {
             padding: EdgeInsets.only(top: SkySpace.lg),
             child: SkyNotice(text: WatchCopy.filmSaveFailed, tone: SkyNoticeTone.error),
           ),
+        FutureBuilder<List<FilmLineRecord>>(
+          future: widget.lines,
+          builder: (context, snapshot) {
+            final lines = snapshot.data ?? const <FilmLineRecord>[];
+            if (lines.isEmpty) return const SizedBox.shrink();
+            return Padding(
+              padding: const EdgeInsets.only(top: SkySpace.xl),
+              child: Column(
+                key: FilmKeys.said,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(WatchCopy.filmSaid, style: context.skyText.serifItem),
+                  const SizedBox(height: SkySpace.sm),
+                  for (final line in lines) _said(line),
+                ],
+              ),
+            );
+          },
+        ),
         UsSheetActions(
           primary: ListenableBuilder(
             listenable: _title,

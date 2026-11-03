@@ -172,7 +172,7 @@ class _UsPageState extends State<UsPage> {
                     WatchEntry(
                       onTap: () => unawaited(openWatchPage(context, room: watch, partner: identity.partnerName)),
                     ),
-                    const FilmsShelf(),
+                    FilmsShelf(partner: identity.partnerName),
                   ],
                 ),
               ),

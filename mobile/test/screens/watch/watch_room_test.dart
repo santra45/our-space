@@ -17,8 +17,8 @@ class Couch {
       made.add(player);
       return player;
     };
-    a = WatchRoom(link: this.pair.a, tickEvery: null, onWatched: keptA.add);
-    b = WatchRoom(link: this.pair.b, tickEvery: null, onWatched: keptB.add);
+    a = WatchRoom(link: this.pair.a, tickEvery: null, onWatched: keptA.add, onSaid: (film, line) => linesA.add((film, line)));
+    b = WatchRoom(link: this.pair.b, tickEvery: null, onWatched: keptB.add, onSaid: (film, line) => linesB.add((film, line)));
   }
 
   final FakeSkyPair pair;
@@ -26,6 +26,8 @@ class Couch {
   final List<FakeWatchPlayer> made = [];
   final List<WatchedFilm> keptA = [];
   final List<WatchedFilm> keptB = [];
+  final List<(String, WatchSaid)> linesA = [];
+  final List<(String, WatchSaid)> linesB = [];
   late final WatchRoom a;
   late final WatchRoom b;
 
@@ -494,6 +496,149 @@ void main() {
       couch.pair.injectEvent(couch.pair.b, const SkyWatchReactEvent(SkyReaction.heart));
       await pumpEventQueue();
       expect(onB, isEmpty);
+      await couch.dispose();
+    });
+  });
+
+  group('talking during the film', () {
+    test('a line reaches the partner with where the film was, and both sides keep it', () async {
+      final couch = Couch();
+      await couch.together();
+      couch.a.togglePlay();
+      await couch.run(5000);
+      final onB = <WatchSaid>[];
+      couch.b.heard.listen(onB.add);
+      expect(couch.a.say('  did you see that   door  '), isTrue);
+      await couch.run(200);
+      expect(couch.a.said.single.text, 'did you see that door');
+      expect(couch.a.said.single.mine, isTrue);
+      expect(couch.b.said.single.text, 'did you see that door');
+      expect(couch.b.said.single.mine, isFalse);
+      expect(couch.b.said.single.posMs, couch.a.said.single.posMs);
+      expect(couch.a.said.single.posMs, greaterThan(0));
+      expect(onB.single.text, 'did you see that door');
+      await couch.dispose();
+    });
+
+    test('nothing goes out when it is blank or the partner is not there', () async {
+      final couch = Couch();
+      await couch.meet();
+      couch.a.start(movie);
+      await couch.run(200);
+      expect(couch.a.canSay, isFalse);
+      expect(couch.a.say('anyone there?'), isFalse);
+      couch.b.join();
+      await couch.run(600);
+      expect(couch.a.canSay, isTrue);
+      expect(couch.a.say('   \n  '), isFalse);
+      expect(couch.a.said, isEmpty);
+      expect(couch.pair.transportA.sentOf('watchsay'), isEmpty);
+      await couch.dispose();
+    });
+
+    test('a very long line is cut, not refused, and new lines become spaces', () async {
+      final couch = Couch();
+      await couch.together();
+      expect(couch.a.say('one\ntwo'), isTrue);
+      expect(couch.a.said.single.text, 'one two');
+      expect(couch.a.say('x' * (maxSkyWatchSay + 50)), isTrue);
+      await couch.run(200);
+      expect(couch.a.said.last.text.length, maxSkyWatchSay);
+      expect(couch.b.said.last.text.length, maxSkyWatchSay);
+      await couch.dispose();
+    });
+
+    test('the same line heard twice shows once, and only someone in the room hears it', () async {
+      final couch = Couch();
+      await couch.meet();
+      couch.a.start(movie);
+      await couch.run(200);
+      const line = SkyWatchSayEvent(id: 'say-one', text: 'hello', pos: 10, at: 20, by: 'owner-aaaa1111');
+      couch.pair.injectEvent(couch.pair.b, line);
+      await pumpEventQueue();
+      expect(couch.b.said, isEmpty);
+      couch.b.join();
+      await couch.run(300);
+      couch.pair.injectEvent(couch.pair.b, line);
+      couch.pair.injectEvent(couch.pair.b, line);
+      await pumpEventQueue();
+      expect(couch.b.said, hasLength(1));
+      await couch.dispose();
+    });
+
+    test('a new film starts a new conversation, and only the last lines are kept', () async {
+      final couch = Couch();
+      await couch.together();
+      for (var i = 0; i < WatchRoom.mostSaid + 5; i++) {
+        couch.a.say('line $i');
+      }
+      expect(couch.a.said, hasLength(WatchRoom.mostSaid));
+      expect(couch.a.said.first.text, 'line 5');
+      await couch.run(200);
+      expect(couch.b.said, hasLength(WatchRoom.mostSaid));
+      couch.a.start(other);
+      await couch.run(200);
+      expect(couch.a.said, isEmpty);
+      expect(couch.b.said, isEmpty);
+      await couch.dispose();
+    });
+
+    test('nothing is kept until the film is, then everything so far and each new line', () async {
+      final couch = Couch();
+      await couch.together();
+      couch.a.togglePlay();
+      await couch.run(5000, every: 1000);
+      couch.a.say('first');
+      couch.pair.advance(const Duration(milliseconds: 100));
+      await pumpEventQueue();
+      couch.b.say('second');
+      await couch.run(200);
+      expect(couch.linesA, isEmpty);
+      expect(couch.linesB, isEmpty);
+
+      await couch.run(WatchRoom.keepAfterMs, every: 1000);
+      expect(couch.keptA, isNotEmpty);
+      expect(couch.linesA.map((kept) => kept.$2.text), ['first', 'second']);
+      expect(couch.linesB.map((kept) => kept.$2.text), ['first', 'second']);
+      expect(couch.linesA.first.$1, couch.keptA.first.id);
+
+      couch.a.say('third');
+      await couch.run(200);
+      expect(couch.linesA.map((kept) => kept.$2.text), ['first', 'second', 'third']);
+      expect(couch.linesB.last.$2.text, 'third');
+      expect(couch.linesB.last.$2.id, couch.linesA.last.$2.id);
+      expect(couch.linesA.last.$2.mine, isTrue);
+      expect(couch.linesB.last.$2.mine, isFalse);
+      expect(couch.linesB.last.$2.by, couch.linesA.last.$2.by);
+      expect(couch.linesB.last.$2.at, couch.linesA.last.$2.at);
+      await couch.dispose();
+    });
+
+    test('a film that never reached the shelf keeps none of its talk', () async {
+      final couch = Couch();
+      await couch.together();
+      couch.a.togglePlay();
+      await couch.run(2000);
+      couch.a.say('too soon');
+      await couch.run(200);
+      couch.a.leave();
+      couch.b.leave();
+      await couch.run(200);
+      expect(couch.keptA, isEmpty);
+      expect(couch.linesA, isEmpty);
+      expect(couch.linesB, isEmpty);
+      await couch.dispose();
+    });
+
+    test('a line that could not be sent says so and stays on screen', () async {
+      final couch = Couch();
+      await couch.together();
+      couch.pair.transportA.refuse = true;
+      expect(couch.a.say('are you there'), isTrue);
+      await couch.run(100);
+      expect(couch.a.said.single.text, 'are you there');
+      expect(couch.a.said.single.missed, isTrue);
+      couch.pair.transportA.refuse = false;
       await couch.dispose();
     });
   });

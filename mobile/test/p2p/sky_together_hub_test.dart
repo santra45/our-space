@@ -88,9 +88,12 @@ void main() {
     final skyA = a.hub.skyTogether;
     await waitFor(() => skyA.partnerSpeaksSky && b.hub.skyTogether.partnerSpeaksSky, reason: 'both to speak sky');
 
+    await a.space.filmLines.keep(id: 'say-live', film: 'film-live', text: 'look', by: 'owner-aaaa1111', posMs: 5, at: 6);
     await a.space.films.keep(id: 'film-live', title: 'Our film', togetherMs: 600000);
     await waitUntil(() async => (await b.space.films.load()).items.any((film) => film.id == 'film-live'),
         reason: 'the film to arrive live');
+    await waitUntil(() async => (await b.space.filmLines.ofFilm('film-live')).any((line) => line.text == 'look'),
+        reason: 'what we said to arrive live');
     await settle(40);
     expect(b.texts.where((t) => t.startsWith('Synced')), isEmpty);
     expect(b.notices.where((n) => n.kind == SyncNoticeKind.warning), isEmpty);

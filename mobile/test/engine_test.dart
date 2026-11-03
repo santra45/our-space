@@ -295,6 +295,27 @@ void main() {
 
       await space.films.remove('film-one');
       expect((await space.films.load()).items, isEmpty);
+
+      expect(await space.filmLines.ofFilm('film-one'), isEmpty);
+      await space.filmLines.keep(id: 'say-3', film: 'film-one', text: 'paused here too', by: 'owner-b', posMs: 900, at: 30);
+      await space.filmLines.keep(id: 'say-1', film: 'film-one', text: 'look', by: 'owner-a', posMs: 100, at: 40);
+      await space.filmLines.keep(id: 'say-2', film: 'film-one', text: 'paused here', by: 'owner-a', posMs: 900, at: 20);
+      await space.filmLines.keep(id: 'say-9', film: 'film-two', text: 'another film', by: 'owner-a', posMs: 1, at: 1);
+      expect((await space.filmLines.ofFilm('film-one')).map((line) => line.id), ['say-1', 'say-2', 'say-3']);
+      final first = (await space.filmLines.ofFilm('film-one')).first;
+      expect(first.text, 'look');
+      expect(first.by, 'owner-a');
+      expect(first.posMs, 100);
+      expect(first.at, 40);
+
+      expect(await space.filmLines.keep(id: 'say-1', film: 'film-one', text: 'changed', by: 'owner-a', posMs: 1, at: 1), isNull);
+      expect((await space.filmLines.ofFilm('film-one')).first.text, 'look');
+
+      await space.filmLines.removeFilm('film-one');
+      expect(await space.filmLines.ofFilm('film-one'), isEmpty);
+      expect((await space.filmLines.ofFilm('film-two')).single.id, 'say-9');
+      expect(await space.filmLines.keep(id: 'say-1', film: 'film-one', text: 'look', by: 'owner-a', posMs: 100, at: 40), isNull);
+      expect(await space.filmLines.ofFilm('film-one'), isEmpty);
       expect(await space.films.keep(id: 'film-one', title: 'Back again', togetherMs: 9000000), isNull);
       expect((await space.films.load()).items, isEmpty);
 

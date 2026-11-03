@@ -58,3 +58,52 @@ class FilmsRepository extends TableRepository<FilmRecord> {
     return clean.runes.length <= filmTitleLimit ? clean : String.fromCharCodes(clean.runes.take(filmTitleLimit));
   }
 }
+
+class FilmLinesRepository extends TableRepository<FilmLineRecord> {
+  FilmLinesRepository({required super.store, required super.vault}) : super(table: watchedFilmLinesTable);
+
+  @override
+  FilmLineRecord? fromPlain(Map<String, Object?> plain, Row row) {
+    final record = FilmLineRecord(stripInternalFields(plain));
+    return record.film.isEmpty || jsTrim(record.text).isEmpty ? null : record;
+  }
+
+  @override
+  int compare(FilmLineRecord a, FilmLineRecord b) {
+    final byFilmTime = a.posMs.compareTo(b.posMs);
+    if (byFilmTime != 0) return byFilmTime;
+    final bySaid = a.at.compareTo(b.at);
+    return bySaid != 0 ? bySaid : a.id.compareTo(b.id);
+  }
+
+  Future<Row?> keep({
+    required String id,
+    required String film,
+    required String text,
+    required String by,
+    required int posMs,
+    required int at,
+  }) async {
+    if (await store.getRow(table, id) != null) return null;
+    return write({
+      'id': id,
+      'film': film,
+      'text': text,
+      'by': by,
+      'posMs': posMs,
+      'at': at,
+      'updatedAt': stamp(),
+      'deleted': false,
+    });
+  }
+
+  Future<List<FilmLineRecord>> ofFilm(String film) async {
+    return [for (final line in await list()) if (line.film == film) line];
+  }
+
+  Future<void> removeFilm(String film) async {
+    for (final line in await ofFilm(film)) {
+      await delete(line.id);
+    }
+  }
+}

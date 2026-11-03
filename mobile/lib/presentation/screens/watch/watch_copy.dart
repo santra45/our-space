@@ -35,6 +35,7 @@ abstract final class WatchCopy {
   static const String filmRemoveNote = 'It will be gone for both of us.';
   static const String filmRemoveYes = 'Take it off';
   static const String filmKeep = 'Keep it';
+  static const String filmSaid = 'What we said';
 
   static String together(int ms) {
     final minutes = (ms / 60000).round();
@@ -53,6 +54,7 @@ abstract final class WatchCopy {
   static const String leaveStay = 'Keep watching';
   static const String skipBack = '10s back';
   static const String skipAhead = '10s ahead';
+  static const String sayLabel = 'Send';
 
   static String leaveWith(String partner) => '$partner can keep watching without you.';
 
@@ -74,6 +76,14 @@ abstract final class WatchCopy {
     SkyReaction.tear => 'Send a tear',
     SkyReaction.fire => 'Send fire',
   };
+
+  static String sayHint(String partner) => 'Say something to $partner';
+
+  static String sayMissed(String partner) => "This one didn't reach $partner";
+
+  static String youSaid(String text) => 'You said: $text';
+
+  static String partnerSaid(String partner, String text) => '$partner said: $text';
 
   static String track(int number) => 'Track $number';
 

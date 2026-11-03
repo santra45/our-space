@@ -24,6 +24,8 @@ class SkyTogetherScope extends InheritedWidget {
 
   static FilmsRepository? filmsOf(BuildContext context) => _space(context)?.films;
 
+  static FilmLinesRepository? filmLinesOf(BuildContext context) => _space(context)?.filmLines;
+
   static SkyDrawingService? drawingsOf(BuildContext context) =>
       _scope(context)?.drawings ?? _space(context)?.skyDrawings;
 

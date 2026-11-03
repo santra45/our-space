@@ -17,6 +17,27 @@ class WatchReactionSeen {
 }
 
 @immutable
+class WatchSaid {
+  const WatchSaid({
+    required this.id,
+    required this.text,
+    required this.mine,
+    required this.posMs,
+    required this.at,
+    required this.by,
+    this.missed = false,
+  });
+
+  final String id;
+  final String text;
+  final bool mine;
+  final int posMs;
+  final int at;
+  final String by;
+  final bool missed;
+}
+
+@immutable
 class WatchedFilm {
   const WatchedFilm({required this.id, required this.title, required this.togetherMs});
 
@@ -52,7 +73,7 @@ String? filmTitleFromLink(String url) {
 }
 
 class WatchRoom extends ChangeNotifier {
-  WatchRoom({required this.link, this.onWatched, this.unnamedFilm = 'A film together', this._tickEvery = const Duration(milliseconds: 200)}) {
+  WatchRoom({required this.link, this.onWatched, this.onSaid, this.unnamedFilm = 'A film together', this._tickEvery = const Duration(milliseconds: 200)}) {
     _foreground = link.foreground;
     link.addListener(_onLink);
     _events = link.events.listen(_hear);
@@ -75,9 +96,11 @@ class WatchRoom extends ChangeNotifier {
   static const int heardGapMs = 60;
   static const int keepAfterMs = 10 * 60 * 1000;
   static const int longestGapMs = 5000;
+  static const int mostSaid = 200;
 
   final SkyTogetherLink link;
   final void Function(WatchedFilm film)? onWatched;
+  final void Function(String film, WatchSaid line)? onSaid;
   final String unnamedFilm;
   final Duration? _tickEvery;
   final ValueNotifier<int> positionMs = ValueNotifier<int>(0);
@@ -85,6 +108,8 @@ class WatchRoom extends ChangeNotifier {
 
   late final StreamSubscription<SkyTogetherEvent> _events;
   final StreamController<WatchReactionSeen> _reactions = StreamController<WatchReactionSeen>.broadcast();
+  final StreamController<WatchSaid> _heard = StreamController<WatchSaid>.broadcast();
+  final List<WatchSaid> _said = [];
   int? _lastReact;
   int? _lastHeard;
   Timer? _timer;
@@ -168,6 +193,61 @@ class WatchRoom extends ChangeNotifier {
     _reactions.add(WatchReactionSeen(reaction, mine: false));
   }
 
+  Stream<WatchSaid> get heard => _heard.stream;
+
+  List<WatchSaid> get said => List<WatchSaid>.unmodifiable(_said);
+
+  bool get canSay => !_disposed && _inRoom && _url != null && _partnerIn && link.owner != null;
+
+  bool say(String raw) {
+    if (!canSay) return false;
+    final text = cleanSkyWatchSay(raw);
+    if (text.isEmpty) return false;
+    final line = WatchSaid(
+      id: 'say-${generateUrlSafeNonce(12)}',
+      text: text,
+      mine: true,
+      posMs: positionMs.value,
+      at: link.sharedNow(),
+      by: link.owner!,
+    );
+    _remember(line);
+    unawaited(
+      link.send(SkyWatchSayEvent(id: line.id, text: text, pos: line.posMs, at: line.at, by: line.by)).then((sent) {
+        if (!sent) _missed(line);
+      }),
+    );
+    notifyListeners();
+    return true;
+  }
+
+  void _remember(WatchSaid line) {
+    if (_said.length >= mostSaid) _said.removeAt(0);
+    _said.add(line);
+    if (_kept) _keepLine(line);
+  }
+
+  void _keepLine(WatchSaid line) {
+    final film = _film;
+    if (film != null) onSaid?.call(film, line);
+  }
+
+  void _missed(WatchSaid line) {
+    if (_disposed) return;
+    final index = _said.indexWhere((other) => other.id == line.id);
+    if (index < 0) return;
+    _said[index] = WatchSaid(id: line.id, text: line.text, mine: true, posMs: line.posMs, at: line.at, by: line.by, missed: true);
+    notifyListeners();
+  }
+
+  void _heardSay(SkyWatchSayEvent said) {
+    if (!_inRoom || _url == null || _said.any((line) => line.id == said.id)) return;
+    final line = WatchSaid(id: said.id, text: said.text, mine: false, posMs: said.pos, at: said.at, by: said.by);
+    _remember(line);
+    if (_foreground) _heard.add(line);
+    notifyListeners();
+  }
+
   void skip(int byMs) {
     final player = _player;
     if (player == null || !player.ready || player.live || !player.seekable) return;
@@ -191,6 +271,7 @@ class WatchRoom extends ChangeNotifier {
     if (id == _film) return;
     _keep();
     _film = id;
+    _said.clear();
     _togetherMs = 0;
     _countedAt = null;
     _kept = false;
@@ -213,6 +294,7 @@ class WatchRoom extends ChangeNotifier {
     if (_kept || _togetherMs < keepAfterMs) return;
     _kept = true;
     _keep();
+    _said.forEach(_keepLine);
   }
 
   void join() {
@@ -381,6 +463,8 @@ class WatchRoom extends ChangeNotifier {
         _hearBeat(beat);
       case SkyWatchReactEvent(:final reaction):
         _heardReaction(reaction);
+      case final SkyWatchSayEvent said:
+        _heardSay(said);
       default:
         return;
     }
@@ -607,6 +691,7 @@ class WatchRoom extends ChangeNotifier {
     link.removeListener(_onLink);
     unawaited(_events.cancel());
     unawaited(_reactions.close());
+    unawaited(_heard.close());
     positionMs.dispose();
     bufferedMs.dispose();
     super.dispose();

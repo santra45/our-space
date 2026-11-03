@@ -399,6 +399,41 @@ void main() {
     pair.dispose();
   });
 
+  test('a chat line crosses the wire, and a broken one is dropped', () async {
+    final pair = FakeSkyPair();
+    pair.settle();
+    await drain();
+    final toB = heard(pair.b);
+    expect(
+      await pair.a.send(const SkyWatchSayEvent(id: 'say-1', text: 'kitna sundar hai', pos: 4200, at: 90, by: 'owner-aaaa1111')),
+      isTrue,
+    );
+    pair.flush();
+    Map<String, Object?> line(Map<String, Object?> change) =>
+        {'v': 1, 'k': 'watchsay', 'id': 'say-2', 'text': 'hi', 'pos': 1, 'at': 1, 'by': 'owner-aaaa1111', ...change};
+    pair.inject(pair.b, line({'text': '   '}));
+    pair.inject(pair.b, line({'id': 'bad id'}));
+    pair.inject(pair.b, line({'text': 7}));
+    pair.inject(pair.b, line({'pos': -1}));
+    pair.inject(pair.b, line({'at': 'soon'}));
+    pair.inject(pair.b, line({'by': 'x'}));
+    pair.inject(pair.b, line({'text': 'x' * (maxSkyWatchSay * 2 + 1)}));
+    pair.inject(pair.b, line({'text': '\uD83D'}));
+    await drain();
+    final lines = toB.whereType<SkyWatchSayEvent>().toList();
+    expect(lines.single.text, 'kitna sundar hai');
+    expect(lines.single.pos, 4200);
+    expect(lines.single.at, 90);
+    expect(lines.single.by, 'owner-aaaa1111');
+    pair.dispose();
+  });
+
+  test('a chat line is tidied before it goes', () {
+    expect(cleanSkyWatchSay('  a\n\tb   c '), 'a b c');
+    expect(cleanSkyWatchSay('x' * (maxSkyWatchSay + 1)).length, maxSkyWatchSay);
+    expect(cleanSkyWatchSay(' \n '), isEmpty);
+  });
+
   test('a copied link with spaces in its name still works, and a long signed one fits', () {
     expect(skyWatchUrl('  https://a.workers.dev/8acf/My Film 2024.mkv \n'), 'https://a.workers.dev/8acf/My%20Film%202024.mkv');
     expect(skyWatchUrl('https://a.workers.dev/already%20fine.mkv'), 'https://a.workers.dev/already%20fine.mkv');

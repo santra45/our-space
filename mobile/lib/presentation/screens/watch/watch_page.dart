@@ -1,9 +1,12 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../../core/engine.dart';
 import '../../sky/sky.dart';
+import 'watch_chat.dart';
 import 'watch_copy.dart';
 import 'watch_player.dart';
 import 'watch_reactions.dart';
@@ -30,6 +33,8 @@ abstract final class WatchKeys {
   static const Key skip = ValueKey<String>('watch-skip');
   static const Key waiting = ValueKey<String>('watch-waiting');
   static const Key straightThrough = ValueKey<String>('watch-straight-through');
+  static const Key sayField = ValueKey<String>('watch-say-field');
+  static const Key send = ValueKey<String>('watch-send');
 
   static Key track(String id) => ValueKey<String>('watch-track-$id');
 }
@@ -145,9 +150,13 @@ class _WatchPageState extends State<WatchPage> {
   static const Duration _noticeFor = Duration(seconds: 3);
   static const Duration _skipFor = Duration(milliseconds: 700);
   static const Duration _slowAfter = Duration(seconds: 20);
+  static const double _filmShare = 0.45;
+  static const double _controlsShare = 0.8;
   static const Color _black = Color(0xFF000000);
 
   final TextEditingController _link = TextEditingController();
+  final TextEditingController _say = TextEditingController();
+  final FocusNode _sayFocus = FocusNode();
   String? _error;
   bool _controls = true;
   bool _full = false;
@@ -285,6 +294,8 @@ class _WatchPageState extends State<WatchPage> {
     _skipHide?.cancel();
     _slowTimer?.cancel();
     _link.dispose();
+    _say.dispose();
+    _sayFocus.dispose();
     final room = _room;
     scheduleMicrotask(room.leave);
     unawaited(WatchScreen.keepOn(false));
@@ -326,6 +337,12 @@ class _WatchPageState extends State<WatchPage> {
     setState(() => _error = null);
   }
 
+  void _send() {
+    if (!_room.say(_say.text)) return;
+    _say.clear();
+    if (_sayFocus.hasFocus) _sayFocus.requestFocus();
+  }
+
   String? _statusText() {
     final player = _room.player;
     if (player != null && player.failed) return WatchCopy.wontPlay;
@@ -355,30 +372,36 @@ class _WatchPageState extends State<WatchPage> {
           child: _full && watching
               ? _fullScreen(player)
               : SkyScaffold(
-                  body: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      SkyTopBar(
-                        kicker: WatchCopy.kicker,
-                        title: WatchCopy.title,
-                        leading: const SkyBackButton(semanticLabel: WatchCopy.back),
-                      ),
-                      Expanded(
-                        child: ListView(
-                          padding: const EdgeInsets.fromLTRB(
-                            SkySpace.gutter,
-                            SkySpace.md,
-                            SkySpace.gutter,
-                            SkySpace.gutter,
-                          ),
-                          children: watching ? _watching(player) : _before(),
+                  body: watching
+                      ? _watching(player)
+                      : Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            _topBar(),
+                            Expanded(
+                              child: ListView(
+                                padding: const EdgeInsets.fromLTRB(
+                                  SkySpace.gutter,
+                                  SkySpace.md,
+                                  SkySpace.gutter,
+                                  SkySpace.gutter,
+                                ),
+                                children: _before(),
+                              ),
+                            ),
+                          ],
                         ),
-                      ),
-                    ],
-                  ),
                 ),
         );
       },
+    );
+  }
+
+  Widget _topBar() {
+    return const SkyTopBar(
+      kicker: WatchCopy.kicker,
+      title: WatchCopy.title,
+      leading: SkyBackButton(semanticLabel: WatchCopy.back),
     );
   }
 
@@ -432,21 +455,107 @@ class _WatchPageState extends State<WatchPage> {
     ];
   }
 
-  List<Widget> _watching(WatchPlayer player) {
-    return [
-      ClipRRect(
-        borderRadius: SkyRadii.all(SkyRadii.card),
-        child: LayoutBuilder(
-          builder: (context, box) => _gestures(width: box.maxWidth, child: _video(player)),
+  Widget _watching(WatchPlayer player) {
+    final keyboard = MediaQuery.viewInsetsOf(context).bottom;
+    final typing = keyboard > 0;
+    final bottom = typing ? SkySpace.xs : math.max(MediaQuery.viewPaddingOf(context).bottom, SkySpace.xs);
+    return Padding(
+      padding: EdgeInsets.only(bottom: keyboard),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (typing) SizedBox(height: MediaQuery.viewPaddingOf(context).top + SkySpace.xs) else _topBar(),
+          Padding(
+            padding: EdgeInsets.fromLTRB(SkySpace.gutter, typing ? 0 : SkySpace.md, SkySpace.gutter, 0),
+            child: _film(player, (MediaQuery.sizeOf(context).height - keyboard) * _filmShare),
+          ),
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: SkySpace.gutter),
+              child: LayoutBuilder(
+                builder: (context, box) => Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    if (!typing)
+                      ConstrainedBox(
+                        constraints: BoxConstraints(maxHeight: box.maxHeight * _controlsShare),
+                        child: SingleChildScrollView(child: _underFilm(player)),
+                      ),
+                    Expanded(child: WatchChatList(lines: _room.said, partner: widget.partner)),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          Padding(
+            padding: EdgeInsets.fromLTRB(SkySpace.gutter, SkySpace.xs, SkySpace.gutter, bottom),
+            child: _sayBar(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _film(WatchPlayer player, double most) {
+    return ConstrainedBox(
+      constraints: BoxConstraints(maxHeight: most),
+      child: Center(
+        heightFactor: 1,
+        child: ClipRRect(
+          borderRadius: SkyRadii.all(SkyRadii.card),
+          child: LayoutBuilder(
+            builder: (context, box) {
+              final aspect = player.aspect > 0 ? player.aspect : 16 / 9;
+              return _gestures(width: math.min(box.maxWidth, box.maxHeight * aspect), child: _video(player));
+            },
+          ),
         ),
       ),
-      const SizedBox(height: SkySpace.md),
-      _Controls(room: _room, player: player, full: false, onFull: _toggleFull),
-      const SizedBox(height: SkySpace.md),
-      Text(_statusText() ?? '', key: WatchKeys.status, textAlign: TextAlign.center, style: context.skyText.body),
-      const SizedBox(height: SkySpace.lg),
-      Center(child: WatchReactionButtons(room: _room)),
-    ];
+    );
+  }
+
+  Widget _underFilm(WatchPlayer player) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const SizedBox(height: SkySpace.md),
+        _Controls(room: _room, player: player, full: false, onFull: _toggleFull),
+        const SizedBox(height: SkySpace.sm),
+        Text(_statusText() ?? '', key: WatchKeys.status, textAlign: TextAlign.center, style: context.skyText.body),
+        const SizedBox(height: SkySpace.sm),
+        Center(child: WatchReactionButtons(room: _room)),
+      ],
+    );
+  }
+
+  Widget _sayBar() {
+    return Row(
+      children: [
+        Expanded(
+          child: SkyTextField(
+            key: WatchKeys.sayField,
+            controller: _say,
+            focusNode: _sayFocus,
+            hint: WatchCopy.sayHint(widget.partner),
+            maxLength: maxSkyWatchSay,
+            textInputAction: TextInputAction.send,
+            onSubmitted: (_) => _send(),
+          ),
+        ),
+        const SizedBox(width: SkySpace.sm),
+        ListenableBuilder(
+          listenable: _say,
+          builder: (context, _) => SkyIconButton(
+            key: WatchKeys.send,
+            icon: SkyIcons.send,
+            tone: SkyIconButtonTone.rose,
+            semanticLabel: WatchCopy.sayLabel,
+            onPressed: _room.canSay && _say.text.trim().isNotEmpty ? _send : null,
+          ),
+        ),
+      ],
+    );
   }
 
   Widget _gestures({required double width, required Widget child, VoidCallback? onTap}) {
@@ -478,6 +587,7 @@ class _WatchPageState extends State<WatchPage> {
                 children: [
                   player.view(),
                   WatchReactionLayer(room: _room),
+                  if (_full) WatchSayLayer(room: _room, partner: widget.partner),
                   if (player.cues.isNotEmpty) _Cues(lines: player.cues, lift: lift),
                   if (player.buffering || _room.held)
                     const IgnorePointer(

@@ -6,6 +6,7 @@ import 'package:our_space_mobile/presentation/app_shell.dart';
 import 'package:our_space_mobile/presentation/home_shell.dart';
 import 'package:our_space_mobile/presentation/screens/sky/together/sky_together_scope.dart';
 import 'package:our_space_mobile/presentation/screens/watch/films_shelf.dart';
+import 'package:our_space_mobile/presentation/screens/watch/watch_chat.dart';
 import 'package:our_space_mobile/presentation/screens/watch/watch_copy.dart';
 import 'package:our_space_mobile/presentation/screens/watch/watch_page.dart';
 import 'package:our_space_mobile/presentation/screens/watch/watch_player.dart';
@@ -89,6 +90,11 @@ Future<Sofa> onUs(WidgetTester tester, {FakeWatchPlayer Function()? player}) asy
   return sofa;
 }
 
+class TallFakeWatchPlayer extends FakeWatchPlayer {
+  @override
+  double get aspect => 9 / 16;
+}
+
 void main() {
   test('every word in the room stays warm and plain', () {
     final copy = [
@@ -145,6 +151,12 @@ void main() {
       WatchCopy.loadingLong,
       WatchCopy.loadingFully,
       WatchCopy.straightThrough,
+      WatchCopy.sayLabel,
+      WatchCopy.filmSaid,
+      WatchCopy.sayHint('Alex'),
+      WatchCopy.sayMissed('Alex'),
+      WatchCopy.youSaid('hi'),
+      WatchCopy.partnerSaid('Alex', 'hi'),
       WatchCopy.cantCatchUp('Alex'),
       WatchCopy.catchingUpMine,
       WatchCopy.invited('Alex'),
@@ -504,6 +516,114 @@ void main() {
     await sofa.close();
   });
 
+  Future<Sofa> talking(WidgetTester tester, {FakeWatchPlayer Function()? player}) async {
+    final sofa = await onUs(tester, player: player);
+    await sofa.openPage();
+    await tester.enterText(find.descendant(of: find.byKey(WatchKeys.linkField), matching: find.byType(EditableText)), movie);
+    await tester.tap(find.byKey(WatchKeys.start));
+    await sofa.run(beat * 3);
+    sofa.other.join();
+    await sofa.run(beat * 6);
+    return sofa;
+  }
+
+  Finder sayBox() => find.descendant(of: find.byKey(WatchKeys.sayField), matching: find.byType(EditableText));
+
+  testWidgets('a line typed under the film reaches them, and theirs shows up too', (tester) async {
+    final sofa = await talking(tester);
+    expect(find.byKey(WatchKeys.video), findsOneWidget);
+    expect(find.byKey(WatchKeys.playPause), findsOneWidget);
+    await tester.enterText(sayBox(), 'look at the light');
+    await tester.pump();
+    await tester.tap(find.byKey(WatchKeys.send));
+    await sofa.run(beat * 3);
+    expect(find.text('look at the light'), findsOneWidget);
+    expect(sofa.other.said.single.text, 'look at the light');
+    expect(tester.widget<EditableText>(sayBox()).controller.text, isEmpty);
+
+    sofa.other.say('i know');
+    await sofa.run(beat * 3);
+    expect(find.text('i know'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await sofa.close();
+  });
+
+  testWidgets('send stays quiet until there is someone to hear it and something to say', (tester) async {
+    final sofa = await onUs(tester);
+    await sofa.openPage();
+    await tester.enterText(find.descendant(of: find.byKey(WatchKeys.linkField), matching: find.byType(EditableText)), movie);
+    await tester.tap(find.byKey(WatchKeys.start));
+    await sofa.run(beat * 3);
+    SkyIconButton send() => tester.widget<SkyIconButton>(find.byKey(WatchKeys.send));
+    await tester.enterText(sayBox(), 'hello?');
+    await tester.pump();
+    expect(send().onPressed, isNull);
+    sofa.other.join();
+    await sofa.run(beat * 6);
+    expect(send().onPressed, isNotNull);
+    await tester.enterText(sayBox(), '   ');
+    await tester.pump();
+    expect(send().onPressed, isNull);
+    await sofa.close();
+  });
+
+  testWidgets('with the keyboard up the film and the talk stay, and nothing spills over', (tester) async {
+    final sofa = await talking(tester);
+    tester.view.viewInsets = const FakeViewPadding(bottom: 300 * 3);
+    addTearDown(tester.view.resetViewInsets);
+    await tester.pump();
+    expect(find.byType(SkyTopBar), findsNothing);
+    expect(find.byKey(WatchKeys.playPause), findsNothing);
+    expect(find.byKey(WatchKeys.video), findsOneWidget);
+    expect(find.byKey(WatchKeys.sayField), findsOneWidget);
+    expect(tester.getBottomLeft(find.byKey(WatchKeys.sayField)).dy, lessThanOrEqualTo(844 - 300));
+    expect(tester.takeException(), isNull);
+    tester.view.resetViewInsets();
+    await tester.pump();
+    expect(find.byKey(WatchKeys.playPause), findsOneWidget);
+    await sofa.close();
+  });
+
+  testWidgets('sending from the keyboard keeps it open for the next line', (tester) async {
+    final sofa = await talking(tester);
+    await tester.tap(sayBox());
+    await tester.pump();
+    await tester.enterText(sayBox(), 'first');
+    await tester.testTextInput.receiveAction(TextInputAction.send);
+    await sofa.run(beat * 2);
+    expect(sofa.other.said.single.text, 'first');
+    expect(tester.testTextInput.isVisible, isTrue);
+    expect(tester.takeException(), isNull);
+    await sofa.close();
+  });
+
+  testWidgets('in full screen there is no box to type in, and their words float by and go', (tester) async {
+    final sofa = await talking(tester);
+    tester.view.physicalSize = const Size(2532, 1170);
+    addTearDown(tester.view.reset);
+    await tester.pump();
+    expect(find.byKey(WatchKeys.sayField), findsNothing);
+    expect(find.byKey(WatchChatKeys.floating), findsNothing);
+    sofa.other.say('this part');
+    await sofa.run(beat * 2);
+    expect(find.text('this part'), findsOneWidget);
+    expect(find.byKey(WatchChatKeys.floating), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await tester.pump(const Duration(seconds: 8));
+    expect(find.text('this part'), findsNothing);
+    await sofa.close();
+  });
+
+  testWidgets('a tall film stays on screen and leaves room for the rest', (tester) async {
+    final sofa = await talking(tester, player: () => TallFakeWatchPlayer());
+    final video = tester.getRect(find.byKey(WatchKeys.video));
+    expect(video.height, lessThanOrEqualTo(844 * 0.45 + 0.5));
+    expect(video.width / video.height, closeTo(9 / 16, 0.01));
+    expect(find.byKey(WatchKeys.sayField), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await sofa.close();
+  });
+
   testWidgets('a link that cannot jump has no seek bar or skips, and says it plays straight through', (tester) async {
     final sofa = await onUs(
       tester,
@@ -725,6 +845,67 @@ void main() {
     await settle(tester, sofa.space);
     await untilGone(tester, ticket);
     expect((await drive(tester, sofa.space.films.load)).items, isEmpty);
+    expect(tester.takeException(), isNull);
+    await sofa.close();
+  });
+
+  testWidgets('what we said stays with the film, in the order of the film, and leaves with it', (tester) async {
+    final sofa = await onUs(tester);
+    final room = WatchScope.maybeOf(tester.element(find.byKey(WatchKeys.entry)))!;
+    final mine = sofa.pair.a.owner!;
+    final theirs = sofa.pair.ownerB!;
+    room.onWatched!(const WatchedFilm(id: 'film-one', title: 'Our First Film', togetherMs: 7500000));
+    room.onSaid!(
+      'film-one',
+      WatchSaid(id: 'say-b', text: 'then this', mine: false, posMs: 4_351_000, at: 2, by: theirs),
+    );
+    room.onSaid!(
+      'film-one',
+      WatchSaid(id: 'say-a', text: 'look at the light', mine: true, posMs: 65_000, at: 1, by: mine),
+    );
+    await settle(tester, sofa.space);
+    final ticket = find.byKey(FilmKeys.film('film-one'));
+    await untilFound(tester, ticket);
+    await reveal(tester, ticket);
+    await tester.tap(ticket);
+    await settleRoute(tester);
+    await settle(tester, sofa.space);
+    await untilFound(tester, find.byKey(FilmKeys.said));
+    expect(find.text(WatchCopy.filmSaid), findsOneWidget);
+    expect(find.text('1:05'), findsOneWidget);
+    expect(find.text('1:12:31'), findsOneWidget);
+    final a = tester.getTopLeft(find.text('look at the light'));
+    final b = tester.getTopLeft(find.text('then this'));
+    expect(a.dy, lessThan(b.dy));
+    expect(tester.getCenter(find.byKey(FilmKeys.line('say-a'))).dx, greaterThanOrEqualTo(tester.getCenter(find.byKey(FilmKeys.line('say-b'))).dx));
+    expect(tester.getTopRight(find.text('look at the light')).dx, greaterThan(tester.getTopRight(find.text('then this')).dx));
+
+    await reveal(tester, find.byKey(FilmKeys.remove));
+    await tester.tap(find.byKey(FilmKeys.remove));
+    await settleRoute(tester);
+    await tester.tap(find.text(WatchCopy.filmRemoveYes));
+    await settleRoute(tester);
+    await settle(tester, sofa.space);
+    await untilGone(tester, ticket);
+    await settle(tester, sofa.space);
+    expect(await drive(tester, () => sofa.space.filmLines.ofFilm('film-one')), isEmpty);
+    expect(tester.takeException(), isNull);
+    await sofa.close();
+  });
+
+  testWidgets('a film with no talk opens the same as ever', (tester) async {
+    final sofa = await onUs(tester);
+    final room = WatchScope.maybeOf(tester.element(find.byKey(WatchKeys.entry)))!;
+    room.onWatched!(const WatchedFilm(id: 'film-quiet', title: 'A quiet one', togetherMs: 700000));
+    await settle(tester, sofa.space);
+    final ticket = find.byKey(FilmKeys.film('film-quiet'));
+    await untilFound(tester, ticket);
+    await reveal(tester, ticket);
+    await tester.tap(ticket);
+    await settleRoute(tester);
+    await settle(tester, sofa.space);
+    expect(find.byKey(FilmKeys.title), findsOneWidget);
+    expect(find.byKey(FilmKeys.said), findsNothing);
     expect(tester.takeException(), isNull);
     await sofa.close();
   });
