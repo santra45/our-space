@@ -1,353 +1,48 @@
-# Our Space 💕
+# Our Space
 
-A private, offline-first web app for two people. Photos, letters, milestones, a shared
-bucket list and a date-night scratch card — all encrypted on the phone with a passphrase
-only the two of you know, and synced directly between your devices.
+A private app for two people. I made it for the two of us.
 
-There is no server, no account, no database and no analytics. Nothing you write is ever
-uploaded anywhere.
+Letters, photos, milestones, a bucket list, date ideas, a question to answer every day, and a way to watch a film together from two phones. Everything is encrypted on the phone with a passphrase only the two of you know. No accounts, no ads, no analytics.
 
----
+## What's in it
 
-## What's inside
+The Android app in `mobile/` has everything:
 
-| Screen | What it does |
-| --- | --- |
-| **Countdown** | Live counter since the day you started, plus milestones you add yourself |
-| **Scrapbook** | Polaroid-style photo wall with captions, compressed and encrypted on device |
-| **Date Roulette** | Scratch-off card that picks a date idea, with confetti |
-| **Capsule** | Love letters, optionally sealed until a future date |
-| **Bucket List** | Shared checklist with progress, ticked from either phone |
-| **Daily question** | One question a day for both of you — neither answer shows until both are written |
-| **Love Burst** | A tap that sets off confetti on the other phone, saved until they open it |
+- Sky: today's star, the daily question and the moon
+- Letters: send one now or seal it until a date
+- Memories: your photos
+- Us: your story, dreams and date night
+- Watch Together: paste a stream link and both phones play in sync, with chat and voice
 
-Plus a **Sync Hub** for pairing the two phones, fingerprint unlock on each device, and an
-encrypted `.vault` backup you can save anywhere.
+The web version in `src/` is smaller: countdown, photos, letters, bucket list, date roulette, the daily question and love bursts.
 
-The app learns both your names the first time you open it, so it says *"Noor answered
-already"* rather than *"your partner"*. That also fixes something less visible: whose
-answer is whose used to be decided by a tag in browser storage, which Safari discards after
-about a week idle - taking the daily-question archive with it. It is a record in the vault
-now, so losing that storage costs one tap on your own name.
+## Running it
 
----
-
-## Quick start
+Web:
 
 ```bash
 npm install
 npm run dev
+npm test
 ```
 
-Then open the printed URL. `npm run dev` binds to your network so you can also load it on
-a phone on the same Wi-Fi — but see [Testing on a phone](#testing-on-a-phone), because
-plain HTTP will not work.
+On a phone it needs HTTPS, so use a tunnel or a dev certificate. `npm run build` gives you static files you can host anywhere, and `vercel.json` has the security headers.
+
+Android: put `VITE_MAILBOX_URL` and `VITE_MAILBOX_TOKEN` in `.env`, add your own `google-services.json` to `mobile/android/app/`, then:
 
 ```bash
-npm run build     # production build into dist/
-npm run preview   # serve the built output
-npm test          # crypto + sync test suite (411 assertions, plain node, no browser)
+bash mobile/tool/build_release.sh
 ```
 
----
+`bash mobile/tool/build_test.sh` builds a separate test app that installs next to the real one and doesn't need Firebase.
 
-## How it works
+Run the app's tests from `mobile/` with `flutter test`.
 
-Everything lives in the browser. Records are encrypted with **AES-GCM-256** and stored in
-IndexedDB via Dexie; the key is derived from your passphrase with **PBKDF2-HMAC-SHA-256**.
-React renders it, Framer Motion animates it, and that is the whole stack.
+## Connecting two phones
 
-The two phones talk to each other over **WebRTC**, peer to peer. A public PeerJS broker
-introduces them — it sees IP addresses and random peer IDs while connecting, and nothing
-else. Once the data channel opens, everything flows directly between the devices, already
-encrypted before it leaves.
+Send an invite link or scan the QR code in the app. The phones sync directly when both are online. The rest of the time there's a mailbox, a small Cloudflare Worker, and your letters and photos are encrypted before they get there. Setup is in [worker/README.md](worker/README.md).
 
-When a direct route is impossible — both phones on mobile data behind carrier-grade NAT,
-which is the normal case for a couple who are apart — it falls back to a **TURN relay**.
-That is a free public one by default, requiring no account and no setup. A relay only
-forwards; the traffic is already encrypted with your key before it gets there. Point the
-app at your own relay with the variables in `.env.example` if you would rather not share
-the public quota.
+## Worth knowing
 
-Sync is last-write-wins on a per-record timestamp, and it converges from both directions:
-each phone sends the other a manifest of what it has, and asks only for what it is missing
-or has an older copy of. Deletions travel as tombstones, so removing a photo on one phone
-removes it on the other.
-
-The optional **mailbox** reuses that same manifest diff rather than inventing a second one,
-so a record syncs identically whether it travelled over a live connection or sat on a relay
-waiting. See *Sync while you are apart*.
-
----
-
-## Security model
-
-**What's encrypted.** The contents of every record — captions, letter bodies, milestone
-titles, bucket-list text, photo bytes — plus the metadata that used to sit in the clear:
-dates, categories, completion flags, unlock dates.
-
-**What isn't.** Three fields stay readable so that two phones can compare notes without
-unlocking anything: the record's random `id`, its `updatedAt` timestamp, and whether it is
-deleted. Someone with access to the raw database learns how many records exist and roughly
-when they changed — not what any of them say.
-
-**The passphrase.** Minimum 16 characters, and it never leaves memory. It is not written
-to `localStorage`, `sessionStorage`, a cookie or a log, and it is never sent over the
-network. Both phones must type the *same* passphrase — that is what makes them able to
-read each other's records.
-
-The derived key is a non-extractable `CryptoKey` held only in memory. The practical
-consequence: **reloading the page asks for the passphrase again.** That is the cost of not
-storing it anywhere, and it is deliberate.
-
-Each phone can opt out of the retyping on its own terms — see [Opening it with a
-fingerprint](#opening-it-with-a-fingerprint). That stores a sealed copy of the *key*, never
-the passphrase, and only that phone can unseal it.
-
-Keys derive at 600,000 PBKDF2 iterations. The count is recorded on the vault itself rather
-than assumed, so it can be raised later without locking an existing vault out.
-
-**Time-locked letters.** A sealed letter's body is wrapped under a key derived from its
-unlock date, so the app genuinely cannot open it early and editing the stored date breaks
-the letter rather than unlocking it.
-
-It is still a guardrail, not a vault. Anyone who knows the passphrase can move their
-phone's clock forward, or call the unseal function from the browser console. A real
-non-interactive time lock needs an external beacon, which a zero-server app does not have.
-Treat it as a promise you're both keeping, not a lock you couldn't pick.
-
-**What this does not protect against.** A compromised phone — if someone has your unlocked
-device, they have your memories. A weak passphrase, since it is the only secret. And each
-other: this is an app for two people who trust one another, not a system with two mutually
-suspicious parties.
-
-**No recovery.** Lose the passphrase and the data is gone. Not "email support" gone —
-mathematically gone. Nobody can reset it, including you. Keep a `.vault` backup somewhere
-safe, and remember it needs *two* passphrases to restore: the one you set on the file, and
-the vault passphrase the records inside were written with.
-
----
-
-## Pairing the two phones
-
-Both phones need the same passphrase, then one of:
-
-- **Share a link.** Sync Hub → *Share Pairing Link*. Send it over WhatsApp or anything
-  else; opening it on the other phone offers to connect.
-- **Scan a QR code.** One phone shows its code in the Sync Hub, the other taps *Scan* and
-  points the camera at it. Best when you're together.
-- **Type the code.** Every phone has a short pairing code you can read out loud.
-
-The app asks before connecting to a link someone sent you, because connecting reveals your
-IP address to whoever is on the other end. Only accept links from your partner.
-
-The app reconnects on its own when you unlock your phone or come back onto Wi-Fi.
-
-Phone-to-phone needs both of you there at once. If that does not suit you - different time
-zones, different hours - set up a **mailbox** and it stops mattering. See below.
-
----
-
-## Opening it with a fingerprint
-
-Retyping a 16-character passphrase every time the browser drops the tab gets old fast, and
-a phone drops tabs constantly. So each device can keep the key behind its own fingerprint
-or face check instead.
-
-Sync Hub → **Open with a touch** → *Set it up*, and type the passphrase once more. After
-that the lock screen leads with a single button, with the passphrase still one tap away
-whenever you want it.
-
-It is per-device and entirely optional. Turning it off forgets the sealed key and asks
-your password manager to drop the passkey that went with it, so nothing dead is left
-behind for you to clean up by hand.
-
-**What it costs.** Anyone who can unlock that phone can open your space. That is the whole
-trade — if it is not one you want on a particular device, do not turn it on there.
-
-**What gets stored.** Ciphertext, and nothing else. Unsealing it needs the phone to run a
-real fingerprint or face check first, so copying the browser storage somewhere else gets
-nothing on its own. The passphrase is still never written down, in any form.
-
-**Where the passkey ends up is the platform’s call, not the app’s.** Android hands it to
-Google Password Manager, iOS to iCloud Keychain, and both of those sync across your
-account — so that half is tied to the account rather than the handset. The sealed half
-stays in one browser on one device and syncs nowhere, and you need both to get in. It is
-an account boundary, not a hardware one.
-
-**It needs a recent browser.** This rides on the WebAuthn PRF extension: Chrome 116+, or
-Safari on iOS 18+. Where it is missing the option simply is not shown and nothing changes.
-Setting it up asks for the check twice on Chrome — the browser will not hand over the key
-material during registration, so a second prompt has to ask for it. Unlocking is one touch.
-
----
-
-## Deploying
-
-The build is static files, so anything that serves a folder works — Vercel, Cloudflare
-Pages, GitHub Pages, Netlify:
-
-```bash
-npm run build   # → dist/
-```
-
-`vercel.json` ships the security headers (CSP, `frame-ancestors`, HSTS, referrer policy).
-**If you deploy somewhere else, port those headers across** — `index.html` carries a
-fallback CSP meta tag, but `frame-ancestors` cannot be expressed in a meta tag and only
-works as a real header.
-
-**HTTPS is required**, not optional. The Web Crypto API and the camera are both
-unavailable on plain HTTP, so the app cannot unlock or scan a QR code without it.
-
-### Install as an app
-
-Open the deployed URL on Android, then browser menu → *Add to Home screen*. You get a
-standalone window with no address bar, and a service worker caches the app shell so it
-starts offline. Your records were always local; the worker just means the app itself loads
-without a connection.
-
-Once your space is open, the app asks the browser to keep its storage instead of treating
-it as disposable, so a phone that runs low on space does not quietly throw the vault away.
-Clearing the browser's site data on purpose still erases it. If that happens, the installed
-app opens on *Join* rather than *Create*: paste your partner's invite link and everything
-you have shared comes back. Open invite links in your real browser, not inside Instagram or
-Facebook. Their built-in browsers keep separate storage, and the lock screen says so if you
-land in one.
-
-### Testing on a phone
-
-`npm run dev` serves over `http://<your-ip>:5173`, and that is **not** a secure context, so
-crypto and the camera will both fail. Either use a tunnel that terminates TLS (`ngrok`,
-`cloudflared`), or add a dev certificate via `@vitejs/plugin-basic-ssl`.
-
----
-
-## Sync while you are apart
-
-Phone-to-phone sync is direct and needs no server, which is lovely right up until you are
-two people in different time zones trying to have both apps open at the same second.
-
-The **mailbox** removes that. It is a Cloudflare Worker that stores sealed envelopes and
-hands them back, and it cannot read one. Whatever either of you writes is waiting for the
-other next time they open the app.
-
-It is optional. With none configured the app behaves exactly as it always did.
-
-```bash
-cd worker
-npx wrangler login
-npx wrangler kv namespace create MAILBOX
-# paste the printed id into wrangler.toml, then:
-npx wrangler secret put MAILBOX_TOKEN
-npx wrangler deploy
-```
-
-It stores things in **Workers KV**, which is on the Workers free plan and needs
-no payment method. (R2 has a bigger free tier and works here too, but Cloudflare
-wants a card to activate it even for free.)
-
-Then set `VITE_MAILBOX_URL` and `VITE_MAILBOX_TOKEN` on the app and redeploy. Full
-instructions are in [`worker/README.md`](worker/README.md).
-
-**What it can see: nothing.** Everything stored is an AES-GCM envelope sealed on a phone,
-and the manifest that lists them is encrypted too, so the relay cannot even count your
-records or tell when one changed. The mailbox address is a 256-bit id derived from your
-passphrase, and the Worker has no route that lists anything.
-
-The token is compiled into the browser bundle, so treat it as public. It guards your
-request quota, not your letters. The address is what keeps them private.
-
-**It is a mirror, not a queue.** Each phone publishes its current state and overwrites in
-place, so reading twice is free and nothing has to be deleted on delivery. That matters
-more than it sounds: a queue would need an acknowledgement, and a missing acknowledgement
-either erases something that was never applied or delivers it twice. Deleting a letter
-travels as a tombstone that gets *written*, which is why the Worker implements no `DELETE`
-at all — removing the object would mean the other phone never learned the letter died, and
-it would come back on the next sync.
-
-Nothing here is given any trust. Records arriving from the mailbox go through the same
-checks as a restored backup and a live partner — sealed headers, table binding, photo
-digests, last-write-wins — so the worst a broken or hostile relay manages is going quiet.
-
-Free at two people's scale, with no card: 100,000 Worker requests a day, 1GB of storage,
-1,000 writes a day. A publish only uploads what actually changed, so ordinary use is a
-handful of writes. Storage is the one to watch — a photo record can be 12MB, so about a
-hundred photos fills it, after which photos stop publishing and everything else carries on.
-Photos still sync phone-to-phone regardless.
-
----
-
-## Known limits
-
-- **A relayed connection goes through a third party.** When the two phones cannot reach
-  each other directly they fall back to a public relay, which forwards the traffic without
-  being able to read it — records are already encrypted before they leave, and WebRTC wraps
-  that again. It does see that two addresses are talking. The free relay also shares a
-  20GB monthly pool with everyone else using it.
-- **A reload asks for the passphrase again** unless that phone has fingerprint unlock
-  turned on. The key is memory-only by design.
-- **Both phones must be online together** to sync, unless you set up a mailbox. Even with
-  one, nothing buzzes: the other person finds out when they next open the app. Real push
-  notifications need a signing key and a subscription, and they hand a push service the
-  timing of every message you send.
-- **App icons are SVG only.** iOS ignores SVG icons, so a home-screen install there falls
-  back to a screenshot. Generating a PNG set (192/512, plus a maskable variant with ~20%
-  padding) would fix it.
-- **Photos are capped** at 9 MB after compression, derived from the sync frame size so
-  that anything the app accepts is guaranteed to reach the other phone.
-
----
-
-## Project layout
-
-```
-src/
-  services/
-    crypto.js           Encryption, key derivation, record envelopes, time-lock sealing
-    peerSync.js         WebRTC transport, pairing handshake, replication protocol
-    iceServers.js       How the two phones find a route, including the relay fallback
-    vaultKey.js         In-memory key holder
-    biometricUnlock.js  Fingerprint unlock — seals the key behind the phone sensor
-    loveBursts.js       Love burst tallies, so one sent to a closed app still lands
-    dailyQuestion.js    Picks the day’s question and gates the answers
-    mailbox.js          Optional relay sync, for when you are never online together
-    people.js           The two of you - names, pronouns, and whose record is whose
-    deviceId.js         Which of the two devices wrote a record
-    limits.js           Size ceilings shared by storage and the wire
-    persistentStorage.js  Asks the browser not to evict the vault
-  db/index.js         Dexie schema, backup import/export, record integrity gates
-  context/            VaultContext (lock/unlock), SyncContext (pairing lifecycle)
-  components/         One folder per screen, plus layout/ common/ sync/
-  utils/              Dates, image compression, invite links, which window the app runs
-                      in, and which form the lock screen opens on
-worker/               The optional mailbox - a Cloudflare Worker that cannot read a word
-test-crypto.mjs       Test suite — runs in plain node, no browser needed
-```
-
----
-
-## Notes for contributors
-
-`npm test` runs the whole suite in node with no browser. It exercises the real shipped
-functions rather than reimplementations — the database methods are bound to an in-memory
-store so the actual merge and integrity code runs.
-
-A few invariants the tests hold in place, worth knowing before changing anything in
-`services/` or `db/`:
-
-- **Reads name their table.** `decryptRecord()` takes the table it is reading so a record
-  sealed for one list cannot be presented as another. The suite scans the source and fails
-  if any caller omits it, because the parameter is legitimately optional for older records
-  and nothing else can tell "forgot" from "hasn't got one".
-- **A record may be created freely, but may only overwrite or delete an existing one if it
-  is fully sealed** — header, table and photo bytes all bound to the ciphertext. This is
-  what lets an old backup restore while stopping a hand-built file from erasing anything.
-- **Timestamps only move forward.** Records are stamped from a monotonic clock rather than
-  raw `Date.now()`, so a phone with a slow clock can still win a merge and a phone whose
-  clock jumped into the future recovers instead of poisoning every write.
-- **A key is not trusted just because the sensor accepted it.** Fingerprint unlock unseals
-  a stored key, and that key still has to open the vault canary before it is adopted.
-  Without that step a key left over from an older vault would be taken as working and then
-  fail on every record it touched.
-
-Stack: React 18, Vite, Tailwind, Dexie, PeerJS, Framer Motion. No backend to run.
+- Forget the passphrase and everything is gone. Nobody can reset it, so keep a backup.
+- A sealed letter can be opened early by moving the phone's clock forward. It's more of a promise than a lock.
