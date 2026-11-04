@@ -75,12 +75,15 @@ const Set<String> stillSyncingPeerStates = {'connecting', 'handshaking', 'author
 
 bool partnerIsSettling(SyncService sync) => stillSyncingPeerStates.contains(sync.peer?.status.state);
 
+bool partnerOwesUsNames(SyncService sync) => sync.peer?.waitingOnPartnerSync ?? false;
+
 PeopleSetupView peopleSetupView({
   required IdentityStatus status,
   required bool mailboxSettled,
   required bool waitedOut,
   required bool dismissed,
   bool partnerSettling = false,
+  bool waitingForPartner = false,
 }) {
   switch (status) {
     case IdentityStatus.loading:
@@ -90,15 +93,16 @@ PeopleSetupView peopleSetupView({
     case IdentityStatus.unclaimed:
       return PeopleSetupView.claim;
     case IdentityStatus.empty:
-      final stillLooking = !waitedOut && (!mailboxSettled || partnerSettling);
+      final stillLooking = waitingForPartner || (!waitedOut && (!mailboxSettled || partnerSettling));
       return dismissed || stillLooking ? PeopleSetupView.hidden : PeopleSetupView.name;
   }
 }
 
 class PeopleSetup extends StatefulWidget {
-  const PeopleSetup({super.key, this.wait = namesWait});
+  const PeopleSetup({super.key, this.wait = namesWait, this.owes = partnerOwesUsNames});
 
   final Duration wait;
+  final bool Function(SyncService sync) owes;
 
   @override
   State<PeopleSetup> createState() => _PeopleSetupState();
@@ -116,6 +120,8 @@ class _PeopleSetupState extends State<PeopleSetup> {
   String? _claiming;
   bool _waitedOut = false;
   Timer? _wait;
+  Timer? _afterSync;
+  bool? _seenOwed;
 
   IdentityStatus? _seenStatus;
   bool? _seenSettled;
@@ -123,6 +129,7 @@ class _PeopleSetupState extends State<PeopleSetup> {
   @override
   void dispose() {
     _wait?.cancel();
+    _afterSync?.cancel();
     _myName.dispose();
     _theirName.dispose();
     _theirFocus.dispose();
@@ -130,6 +137,16 @@ class _PeopleSetupState extends State<PeopleSetup> {
   }
 
   bool get _canSave => _myName.text.trim().isNotEmpty && _theirName.text.trim().isNotEmpty;
+
+  void _followPartner(bool owed) {
+    if (_seenOwed == true && !owed) {
+      _afterSync?.cancel();
+      _afterSync = Timer(widget.wait, () {
+        if (mounted) setState(() => _afterSync = null);
+      });
+    }
+    _seenOwed = owed;
+  }
 
   void _follow(IdentityController identity, IdentityStatus status, bool settled) {
     final statusChanged = status != _seenStatus;
@@ -203,6 +220,8 @@ class _PeopleSetupState extends State<PeopleSetup> {
     final settled = mailboxIsSettled(sync);
     final status = identity.status;
     _follow(identity, status, settled);
+    final owed = widget.owes(sync);
+    _followPartner(owed);
 
     final view = peopleSetupView(
       status: status,
@@ -210,6 +229,7 @@ class _PeopleSetupState extends State<PeopleSetup> {
       waitedOut: _waitedOut,
       dismissed: _dismissed,
       partnerSettling: partnerIsSettling(sync),
+      waitingForPartner: owed || _afterSync != null,
     );
     final visible = view != PeopleSetupView.hidden;
     return PeopleSetupFrame(

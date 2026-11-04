@@ -140,6 +140,29 @@ void main() {
       await space.close();
     });
 
+    test('a phone still owed its first sync never asks for names, however long it waits', () {
+      PeopleSetupView view({required bool waiting, required bool waited}) => peopleSetupView(
+            status: IdentityStatus.empty,
+            mailboxSettled: true,
+            waitedOut: waited,
+            dismissed: false,
+            waitingForPartner: waiting,
+          );
+      expect(view(waiting: true, waited: false), PeopleSetupView.hidden);
+      expect(view(waiting: true, waited: true), PeopleSetupView.hidden);
+      expect(view(waiting: false, waited: true), PeopleSetupView.name);
+      expect(
+        peopleSetupView(
+          status: IdentityStatus.unclaimed,
+          mailboxSettled: true,
+          waitedOut: true,
+          dismissed: false,
+          waitingForPartner: true,
+        ),
+        PeopleSetupView.claim,
+      );
+    });
+
     test('the mailbox counts as settled when it is off or has had its look', () async {
       final off = await openPeopleSpace();
       expect(mailboxIsSettled(off.sync), isTrue);
@@ -291,6 +314,69 @@ void main() {
     expect(find.text(PeopleSetupCopy.nameTitle), findsNothing);
     await tester.pump(const Duration(seconds: 1));
     expect(find.text(PeopleSetupCopy.nameTitle), findsOneWidget);
+  });
+
+  testWidgets('a joining phone waits out its first sync and a little more before asking for names', (tester) async {
+    final space = await real(tester, openPeopleSpace);
+    final identity = ScriptedIdentity(
+      space,
+      scripted: IdentityStatus.empty,
+      cast: [person('p-1', 'Alex', pronoun: 'he'), person('p-2', 'Sam', pronoun: 'she')],
+    );
+    addTearDown(identity.dispose);
+    var owed = true;
+    await tester.pumpWidget(MaterialApp(
+      home: MultiProvider(
+        providers: [
+          ChangeNotifierProvider<IdentityController>.value(value: identity),
+          ChangeNotifierProvider<SyncService>.value(value: space.sync),
+        ],
+        child: Scaffold(body: Stack(fit: StackFit.expand, children: [PeopleSetup(owes: (_) => owed)])),
+      ),
+    ));
+    await tester.pump();
+    await tester.pump(namesWait + const Duration(seconds: 1));
+    expect(find.text(PeopleSetupCopy.nameTitle), findsNothing);
+    await tester.pump(const Duration(minutes: 5));
+    expect(find.text(PeopleSetupCopy.nameTitle), findsNothing);
+
+    owed = false;
+    identity.become(IdentityStatus.empty);
+    await tester.pump();
+    expect(find.text(PeopleSetupCopy.nameTitle), findsNothing);
+    await tester.pump(namesWait - const Duration(seconds: 1));
+    expect(find.text(PeopleSetupCopy.nameTitle), findsNothing);
+    await tester.pump(const Duration(seconds: 2));
+    await tester.pump(const Duration(milliseconds: 600));
+    expect(find.text(PeopleSetupCopy.nameTitle), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('names that land while waiting go straight to choosing, with no names form in between', (tester) async {
+    final space = await real(tester, openPeopleSpace);
+    final identity = ScriptedIdentity(
+      space,
+      scripted: IdentityStatus.empty,
+      cast: [person('p-1', 'Alex', pronoun: 'he'), person('p-2', 'Sam', pronoun: 'she')],
+    );
+    addTearDown(identity.dispose);
+    await tester.pumpWidget(MaterialApp(
+      home: MultiProvider(
+        providers: [
+          ChangeNotifierProvider<IdentityController>.value(value: identity),
+          ChangeNotifierProvider<SyncService>.value(value: space.sync),
+        ],
+        child: Scaffold(body: Stack(fit: StackFit.expand, children: [PeopleSetup(owes: (_) => true)])),
+      ),
+    ));
+    await tester.pump();
+    await tester.pump(namesWait + const Duration(seconds: 1));
+    expect(find.text(PeopleSetupCopy.nameTitle), findsNothing);
+    identity.become(IdentityStatus.unclaimed);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 600));
+    expect(find.text(PeopleSetupCopy.nameTitle), findsNothing);
+    expect(find.text(PeopleSetupCopy.claimTitle), findsOneWidget);
   });
 
   testWidgets('asks as soon as the mailbox has had its look', (tester) async {

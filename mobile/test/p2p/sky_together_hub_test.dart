@@ -82,6 +82,35 @@ void main() {
     await b.close();
   });
 
+  test('a phone that joined is owed a first sync until it is done, and then the names are there', () async {
+    final network = FakeNetwork();
+    final (a, b) = await pairedPhones(network);
+    expect(a.hub.waitingOnPartnerSync, isFalse);
+    expect(await a.space.identity.createCouple(myName: 'Ash', partnerName: 'Bee'), isTrue);
+    expect(b.hub.waitingOnPartnerSync, isTrue);
+    b.hub.confirmPendingInvite();
+    await waitFor(() => !b.hub.waitingOnPartnerSync, reason: 'the first sync');
+    expect(b.hub.engine.isSyncing, isFalse);
+    await waitUntil(
+      () async => (await b.space.peopleService.listPeople(b.space.vault.key)).length == 2,
+      reason: 'the names to arrive',
+    );
+    expect(b.hub.waitingOnPartnerSync, isFalse);
+    await a.close();
+    await b.close();
+  });
+
+  test('a phone with no partner is owed nothing, and turning an invite down lets it go', () async {
+    final network = FakeNetwork();
+    final (a, b) = await pairedPhones(network);
+    expect(a.hub.waitingOnPartnerSync, isFalse);
+    expect(b.hub.waitingOnPartnerSync, isTrue);
+    b.hub.declinePendingInvite();
+    expect(b.hub.waitingOnPartnerSync, isFalse);
+    await a.close();
+    await b.close();
+  });
+
   test('a film kept on one phone reaches the other live and quietly', () async {
     final network = FakeNetwork();
     final (a, b) = await linkedPhones(network);

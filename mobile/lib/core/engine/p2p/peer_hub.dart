@@ -82,6 +82,7 @@ class PeerSyncHub extends ChangeNotifier {
   PendingPeerInvite? _pendingInvite;
   int? _lastConnectedAt;
   String? _pendingConnect;
+  bool _syncedOnce = false;
   Timer? _dialTimer;
   Timer? _connectedTicker;
   int _resumeGuard = 0;
@@ -90,6 +91,8 @@ class PeerSyncHub extends ChangeNotifier {
 
   String? get myPeerId => _myPeerId;
   String? get partnerId => _partnerId;
+
+  bool get waitingOnPartnerSync => (_partnerId != null || _pendingConnect != null) && (!_syncedOnce || engine.isSyncing);
   PeerStatus get status => _status;
   PeerSyncError? get syncError => _syncError;
   String? get connectionType => _connectionType;
@@ -238,6 +241,7 @@ class PeerSyncHub extends ChangeNotifier {
   void _handleStatus(PeerStatus status) {
     if (_disposed || !_active) return;
     _status = status;
+    if (status.code == 'sync_complete') _syncedOnce = true;
     if (!_statuses.isClosed) _statuses.add(status);
 
     final peerId = status.peerId;
