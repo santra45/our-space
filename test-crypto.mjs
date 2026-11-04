@@ -4619,6 +4619,40 @@ async function run() {
       outbound.length === 1 && JSON.parse(outbound[0].init.body).message.fid === HIS_TOKEN
     );
 
+    const askToWatch = (owner, name = 'watch', method = 'PUT', env = pushEnv) =>
+      worker.fetch(wkReq(method, `/m/${WK_ID}/${owner}/ring/${name}`), env);
+
+    outbound.length = 0;
+    const asked = await askToWatch(PUSH_HIS);
+    const askedBody = await asked.json();
+    const askedCalls = outbound.filter((c) => c.url.startsWith('https://fcm.googleapis.com/'));
+    check('asking her to watch says how many phones it reached', asked.status === 200 && askedBody.rang === 1);
+    const askedSent = JSON.parse(askedCalls[0].init.body).message;
+    check('it rings her installation, never his own', askedCalls.length === 1 && askedSent.fid === HER_TOKEN);
+    check(
+      'it uses only the words the Worker chooses',
+      askedSent.notification.title === 'Our Space 💕' && askedSent.notification.body === 'Come watch something with me.'
+    );
+    const askedText = JSON.stringify(askedSent);
+    check('and carries nothing about the mailbox or who asked', !askedText.includes(WK_ID) && !askedText.includes(PUSH_HIS));
+    check(
+      'asking again replaces the note, and never replaces a something-new note',
+      askedSent.android.collapse_key === 'our-space-watch' && askedSent.android.notification.tag === 'our-space-watch'
+    );
+    check('an old invitation goes stale after half an hour', askedSent.android.ttl === '1800s' && askedSent.data.kind === 'watch');
+    check('a ring nobody defined is a flat 404', (await askToWatch(PUSH_HIS, 'nope')).status === 404);
+    check('even one named like a built-in', (await askToWatch(PUSH_HIS, 'constructor')).status === 404);
+    check('only PUT can ring', (await askToWatch(PUSH_HIS, 'watch', 'DELETE')).status === 405);
+    check('a ring stores nothing', !wkKv.has(`${WK_ID}/${PUSH_HIS}/ring/watch`));
+
+    fcmStatus = 500;
+    check('a ring Google refuses is reported as a failure', (await askToWatch(PUSH_HIS)).status === 502);
+    fcmStatus = 200;
+    fcmThrows = true;
+    check('so is a ring that cannot reach Google', (await askToWatch(PUSH_HIS)).status === 502);
+    fcmThrows = false;
+    check('and one with no service account', (await askToWatch(PUSH_HIS, 'watch', 'PUT', wkEnv)).status === 502);
+
     outbound.length = 0;
     fcmStatus = 404;
     await ringOnce(PUSH_HIS);
@@ -4631,6 +4665,9 @@ async function run() {
     fcmThrows = true;
     check('a broken doorbell never breaks publishing', (await ringOnce(PUSH_HER)).status === 204);
     fcmThrows = false;
+
+    const nobody = await askToWatch(PUSH_HIS);
+    check('asking when her phone has no address says it reached nobody', nobody.status === 200 && (await nobody.json()).rang === 0);
 
     outbound.length = 0;
     await ringOnce(PUSH_HER, wkEnv);

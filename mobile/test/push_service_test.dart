@@ -98,6 +98,23 @@ void main() {
 
   tearDown(() => space.close());
 
+  test('asking to watch rings the other phones through the mailbox and says how many', () async {
+    await setUpCouple(space);
+    await eventually(() => worker.pushes.isNotEmpty, reason: 'registered');
+    final owner = space.identity.myOwnerId!;
+    expect(space.push.canAskToWatch, isTrue);
+
+    expect(await space.push.askToWatch(), 0);
+    expect(worker.rings, ['$owner/watch']);
+
+    final mailboxId = deriveMailboxId(space.vault.requireKey());
+    worker.pushes['push/$mailboxId/other-owner-1/phone-0001'] = 'fid-her';
+    expect(await space.push.askToWatch(), 1);
+
+    worker.failRings = true;
+    expect(await space.push.askToWatch(), isNull);
+  });
+
   test('once she knows who she is, the phone asks once and leaves its address', () async {
     expect(worker.pushes, isEmpty);
     await setUpCouple(space);

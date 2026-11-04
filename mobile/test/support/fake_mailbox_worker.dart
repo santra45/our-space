@@ -13,7 +13,7 @@ class FakeMailboxWorker extends http.BaseClient {
   static const int maxObjectBytes = 16 * 1024 * 1024;
 
   static final RegExp path = RegExp(
-    r'^/m/([0-9a-f]{32,64})/([A-Za-z0-9_-]{8,64})/(manifest|rec/[A-Za-z0-9]{1,32}/[A-Za-z0-9_-]{1,255}|push/[A-Za-z0-9_-]{8,64})$',
+    r'^/m/([0-9a-f]{32,64})/([A-Za-z0-9_-]{8,64})/(manifest|rec/[A-Za-z0-9]{1,32}/[A-Za-z0-9_-]{1,255}|push/[A-Za-z0-9_-]{8,64}|ring/[a-z]{1,16})$',
   );
 
   final String token;
@@ -24,6 +24,8 @@ class FakeMailboxWorker extends http.BaseClient {
   final Set<String> failPuts = {};
   final Set<String> failGets = {};
   final Map<String, String> pushes = {};
+  final List<String> rings = [];
+  bool failRings = false;
 
   static FakeMailboxWorker fromKvDump(Map<String, Object?> dump, {required String token}) {
     final seed = <String, Uint8List>{};
@@ -91,6 +93,15 @@ class FakeMailboxWorker extends http.BaseClient {
       if (token is! String || token.isEmpty) return _reply(400);
       pushes[pushKey] = token;
       return _reply(204);
+    }
+    if (tail.startsWith('ring/')) {
+      if (method != 'PUT') return _reply(405);
+      final name = tail.substring(5);
+      if (name != 'watch') return _reply(404);
+      rings.add('${match.group(2)}/$name');
+      if (failRings) return _reply(502);
+      final others = pushes.keys.where((pushKey) => pushKey.split('/')[2] != match.group(2)).length;
+      return _reply(200, utf8.encode(jsonEncode({'rang': others})));
     }
     final key = '${match.group(1)}/${match.group(2)}/$tail';
 

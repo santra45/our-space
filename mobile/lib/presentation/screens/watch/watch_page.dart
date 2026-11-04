@@ -36,6 +36,8 @@ abstract final class WatchKeys {
   static const Key sayField = ValueKey<String>('watch-say-field');
   static const Key send = ValueKey<String>('watch-send');
   static const Key voice = ValueKey<String>('watch-voice');
+  static const Key call = ValueKey<String>('watch-call');
+  static const Key callResult = ValueKey<String>('watch-call-result');
 
   static Key track(String id) => ValueKey<String>('watch-track-$id');
 }
@@ -362,6 +364,13 @@ class _WatchPageState extends State<WatchPage> {
     return _room.partnerIn ? WatchCopy.withPartner(widget.partner) : WatchCopy.waitingFor(widget.partner);
   }
 
+  String? _callText() => switch (_room.callResult) {
+    WatchCallResult.sent => WatchCopy.callSent(widget.partner),
+    WatchCallResult.nobody => WatchCopy.callNobody(widget.partner),
+    WatchCallResult.failed => WatchCopy.callFailed,
+    null => null,
+  };
+
   String? _voiceText() {
     final trouble = _room.voiceTrouble;
     if (trouble == WatchVoiceTrouble.noMic) return WatchCopy.voiceNoMic(widget.partner);
@@ -537,6 +546,27 @@ class _WatchPageState extends State<WatchPage> {
         _Controls(room: _room, player: player, partner: widget.partner, full: false, onFull: _toggleFull),
         const SizedBox(height: SkySpace.sm),
         Text(_statusText() ?? '', key: WatchKeys.status, textAlign: TextAlign.center, style: context.skyText.body),
+        if (_room.canCallPartner) ...[
+          const SizedBox(height: SkySpace.sm),
+          SkyButton(
+            key: WatchKeys.call,
+            label: WatchCopy.callPartner(widget.partner),
+            icon: SkyIcons.bell,
+            variant: SkyButtonVariant.ghost,
+            busy: _room.calling,
+            onPressed: _room.callReady ? () => unawaited(_room.callPartner()) : null,
+          ),
+          if (_callText() case final text?)
+            Padding(
+              padding: const EdgeInsets.only(top: SkySpace.xs),
+              child: Text(
+                text,
+                key: WatchKeys.callResult,
+                textAlign: TextAlign.center,
+                style: context.skyText.bodySmall.copyWith(color: context.sky.muted),
+              ),
+            ),
+        ],
         const SizedBox(height: SkySpace.sm),
         Center(child: WatchReactionButtons(room: _room)),
       ],

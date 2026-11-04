@@ -134,6 +134,7 @@ class _HomeShellState extends State<HomeShell> {
       _watch?.dispose();
       final films = SkyTogetherScope.filmsOf(context);
       final filmLines = SkyTogetherScope.filmLinesOf(context);
+      final push = SkyTogetherScope.pushOf(context);
       _watch = sky == null
           ? null
           : WatchRoom(
@@ -142,6 +143,7 @@ class _HomeShellState extends State<HomeShell> {
               onWatched: (film) => unawaited(
                 films?.keep(id: film.id, title: film.title, togetherMs: film.togetherMs).catchError((Object _) => null),
               ),
+              onCallPartner: push != null && push.canAskToWatch ? push.askToWatch : null,
               onSaid: (film, line) => unawaited(
                 filmLines
                     ?.keep(id: line.id, film: film, text: line.text, by: line.by, posMs: line.posMs, at: line.at)

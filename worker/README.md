@@ -24,6 +24,10 @@ if that phone turned notifications on: the token Google issues so a message
 can wake it. It says nothing about either of you, it is stored apart from
 the sealed objects under `push/`, and there is no route that reads it back.
 
+A phone can also ask for a fixed ring, such as `PUT /m/<id>/<owner>/ring/watch`.
+The Worker picks the words from its own short list, so a ring never carries a
+name, a film or a link, and it answers with how many phones it reached.
+
 `MAILBOX_TOKEN` gets compiled into the browser bundle, so treat it as public.
 It stops a passer-by burning your request quota; it is not a password, and it
 should not be one you use anywhere else.

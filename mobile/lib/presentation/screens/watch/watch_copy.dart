@@ -56,6 +56,7 @@ abstract final class WatchCopy {
   static const String skipAhead = '10s ahead';
   static const String sayLabel = 'Send';
   static const String voiceStop = 'Stop talking';
+  static const String callFailed = "That didn't go through. Try again in a moment.";
   static const String voiceConnecting = 'Connecting your voices';
 
   static String leaveWith(String partner) => '$partner can keep watching without you.';
@@ -78,6 +79,12 @@ abstract final class WatchCopy {
     SkyReaction.tear => 'Send a tear',
     SkyReaction.fire => 'Send fire',
   };
+
+  static String callPartner(String partner) => 'Let $partner know';
+
+  static String callSent(String partner) => '$partner will get a notification';
+
+  static String callNobody(String partner) => "$partner's phone can't get notifications yet";
 
   static String voiceStart(String partner) => 'Talk to $partner';
 

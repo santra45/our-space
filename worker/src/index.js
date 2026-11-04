@@ -3,7 +3,7 @@ const MAX_OBJECT_BYTES = 16 * 1024 * 1024;
 const MAX_PUSH_TOKEN_CHARS = 4096;
 
 const PATH =
-  /^\/m\/([0-9a-f]{32,64})\/([A-Za-z0-9_-]{8,64})\/(manifest|rec\/[A-Za-z0-9]{1,32}\/[A-Za-z0-9_-]{1,255}|push\/[A-Za-z0-9_-]{8,64})$/;
+  /^\/m\/([0-9a-f]{32,64})\/([A-Za-z0-9_-]{8,64})\/(manifest|rec\/[A-Za-z0-9]{1,32}\/[A-Za-z0-9_-]{1,255}|push\/[A-Za-z0-9_-]{8,64}|ring\/[a-z]{1,16})$/;
 
 const PUSH_TOKEN = /^[A-Za-z0-9_:.-]+$/;
 
@@ -11,6 +11,18 @@ const PUSH_MESSAGE = {
   title: 'Our Space 💕',
   body: 'Something new is waiting for you.',
   tag: 'our-space-new',
+  ttl: '86400s',
+  kind: 'mailbox',
+};
+
+const RINGS = {
+  watch: {
+    title: 'Our Space 💕',
+    body: 'Come watch something with me.',
+    tag: 'our-space-watch',
+    ttl: '1800s',
+    kind: 'watch',
+  },
 };
 
 const OAUTH_URL = 'https://oauth2.googleapis.com/token';
@@ -151,32 +163,34 @@ async function accessToken(account) {
   return cachedAccess.token;
 }
 
-function pushMessage(address) {
+function pushMessage(address, ring) {
   return {
     message: {
       fid: address,
-      notification: { title: PUSH_MESSAGE.title, body: PUSH_MESSAGE.body },
+      notification: { title: ring.title, body: ring.body },
       android: {
         priority: 'HIGH',
-        ttl: '86400s',
-        collapse_key: PUSH_MESSAGE.tag,
-        notification: { tag: PUSH_MESSAGE.tag },
+        ttl: ring.ttl,
+        collapse_key: ring.tag,
+        notification: { tag: ring.tag },
       },
-      data: { kind: 'mailbox' },
+      data: { kind: ring.kind },
     },
   };
 }
 
-async function ringOthers(env, mailboxId, writer) {
-  if (!env.FCM_SERVICE_ACCOUNT) return;
+async function ringOthers(env, mailboxId, writer, ring = PUSH_MESSAGE) {
+  if (!env.FCM_SERVICE_ACCOUNT) return null;
   try {
     const keys = await listKeys(env.MAILBOX, `push/${mailboxId}/`);
     const targets = keys.filter((key) => key.split('/')[2] !== writer);
-    if (targets.length === 0) return;
+    if (targets.length === 0) return 0;
 
     const account = JSON.parse(env.FCM_SERVICE_ACCOUNT);
     const access = await accessToken(account);
     const endpoint = `https://fcm.googleapis.com/v1/projects/${account.project_id}/messages:send`;
+    let rang = 0;
+    let failed = 0;
 
     await Promise.all(
       targets.map(async (key) => {
@@ -190,13 +204,25 @@ async function ringOthers(env, mailboxId, writer) {
         const response = await fetch(endpoint, {
           method: 'POST',
           headers: { Authorization: `Bearer ${access}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify(pushMessage(token)),
+          body: JSON.stringify(pushMessage(token, ring)),
         });
-        if (response.status === 404) await env.MAILBOX.delete(key);
+        if (response.ok) rang += 1;
+        else if (response.status === 404) await env.MAILBOX.delete(key);
+        else failed += 1;
       })
     );
+    return rang === 0 && failed > 0 ? null : rang;
   } catch {
+    return null;
   }
+}
+
+async function handleRing(request, env, cors, mailboxId, owner, name) {
+  if (request.method !== 'PUT') return reply(405, null, cors);
+  if (!Object.prototype.hasOwnProperty.call(RINGS, name)) return reply(404, null, cors);
+  const rang = await ringOthers(env, mailboxId, owner, RINGS[name]);
+  if (rang === null) return reply(502, null, cors);
+  return reply(200, JSON.stringify({ rang }), { ...cors, 'Content-Type': 'application/json' });
 }
 
 async function handlePush(request, env, cors, key) {
@@ -252,6 +278,10 @@ export default {
 
     if (tail.startsWith('push/')) {
       return handlePush(request, env, cors, `push/${mailboxId}/${owner}/${tail.slice(5)}`);
+    }
+
+    if (tail.startsWith('ring/')) {
+      return handleRing(request, env, cors, mailboxId, owner, tail.slice(5));
     }
 
     const key = `${mailboxId}/${owner}/${tail}`;

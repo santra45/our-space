@@ -11,6 +11,8 @@ enum WatchNotice { paused, played, moved, joined, left, voiceAsked, voiceStopped
 
 enum WatchVoiceTrouble { noMic, cantReach }
 
+enum WatchCallResult { sent, nobody, failed }
+
 @immutable
 class WatchReactionSeen {
   const WatchReactionSeen(this.reaction, {required this.mine});
@@ -76,7 +78,7 @@ String? filmTitleFromLink(String url) {
 }
 
 class WatchRoom extends ChangeNotifier {
-  WatchRoom({required this.link, this.onWatched, this.onSaid, this.unnamedFilm = 'A film together', this._tickEvery = const Duration(milliseconds: 200)}) {
+  WatchRoom({required this.link, this.onWatched, this.onSaid, this.onCallPartner, this.unnamedFilm = 'A film together', this._tickEvery = const Duration(milliseconds: 200)}) {
     _foreground = link.foreground;
     link.addListener(_onLink);
     _events = link.events.listen(_hear);
@@ -101,10 +103,12 @@ class WatchRoom extends ChangeNotifier {
   static const int longestGapMs = 5000;
   static const int mostSaid = 200;
   static const int voiceWaitMs = 25000;
+  static const int callGapMs = 60000;
 
   final SkyTogetherLink link;
   final void Function(WatchedFilm film)? onWatched;
   final void Function(String film, WatchSaid line)? onSaid;
+  final Future<int?> Function()? onCallPartner;
   final String unnamedFilm;
   final Duration? _tickEvery;
   final ValueNotifier<int> positionMs = ValueNotifier<int>(0);
@@ -121,6 +125,10 @@ class WatchRoom extends ChangeNotifier {
   bool _askingMic = false;
   int _voiceAt = 0;
   WatchVoiceTrouble? _voiceTrouble;
+  bool _calling = false;
+  bool _callWasReady = true;
+  int? _calledAt;
+  WatchCallResult? _callResult;
   int? _lastReact;
   int? _lastHeard;
   Timer? _timer;
@@ -259,6 +267,47 @@ class WatchRoom extends ChangeNotifier {
     notifyListeners();
   }
 
+  bool get canCallPartner => onCallPartner != null && _inRoom && _url != null && !_partnerIn;
+
+  bool get calling => _calling;
+
+  bool get callReady {
+    if (_calling) return false;
+    final at = _calledAt;
+    if (at == null) return true;
+    final since = link.now() - at;
+    return since < 0 || since >= callGapMs;
+  }
+
+  WatchCallResult? get callResult => _callResult;
+
+  Future<void> callPartner() async {
+    final call = onCallPartner;
+    if (call == null || !canCallPartner || !callReady) return;
+    _calling = true;
+    _callResult = null;
+    notifyListeners();
+    int? rang;
+    try {
+      rang = await call();
+    } catch (_) {
+      rang = null;
+    }
+    _calling = false;
+    if (_disposed) return;
+    if (rang != null && rang > 0) _calledAt = link.now();
+    _callWasReady = callReady;
+    _callResult = rang == null ? WatchCallResult.failed : (rang > 0 ? WatchCallResult.sent : WatchCallResult.nobody);
+    notifyListeners();
+  }
+
+  void _forgetCall() {
+    _calling = false;
+    _calledAt = null;
+    _callWasReady = true;
+    _callResult = null;
+  }
+
   bool get voiceWanted => _voiceWanted;
 
   bool get partnerWantsVoice => _partnerVoice;
@@ -387,6 +436,7 @@ class WatchRoom extends ChangeNotifier {
     _keep();
     _film = id;
     _said.clear();
+    _forgetCall();
     _togetherMs = 0;
     _countedAt = null;
     _kept = false;
@@ -431,6 +481,7 @@ class WatchRoom extends ChangeNotifier {
     _voiceWanted = false;
     _voiceTrouble = null;
     _dropVoice();
+    _forgetCall();
     _dropPlayer();
     _beat();
     if (_partnerIn) {
@@ -744,6 +795,11 @@ class WatchRoom extends ChangeNotifier {
     _waitingSent = waiting;
     if (changed || now - _lastBeatAt >= beatMs) _beat();
     _steerVoice();
+    final ready = callReady;
+    if (ready != _callWasReady) {
+      _callWasReady = ready;
+      notifyListeners();
+    }
     if (!_partnerIn && _url != null && now - _lastOfferAt >= offerMs) _offer();
     if (!_foreground) return;
     if (player == null || !player.ready) {

@@ -156,6 +156,10 @@ void main() {
       WatchCopy.loadingFully,
       WatchCopy.straightThrough,
       WatchCopy.sayLabel,
+      WatchCopy.callFailed,
+      WatchCopy.callPartner('Alex'),
+      WatchCopy.callSent('Alex'),
+      WatchCopy.callNobody('Alex'),
       WatchCopy.voiceStop,
       WatchCopy.voiceConnecting,
       WatchCopy.voiceCantReach,
@@ -596,6 +600,67 @@ void main() {
     expect(tester.takeException(), isNull);
     await tester.pump(const Duration(seconds: 5));
     await sofa.close();
+  });
+
+  testWidgets('with no way to ring, there is no button to let them know', (tester) async {
+    final sofa = await watching(tester);
+    expect(find.byKey(WatchKeys.call), findsNothing);
+    await sofa.close();
+  });
+
+  testWidgets('waiting alone you can let them know, and it says what came of it', (tester) async {
+    calm(tester);
+    final space = await coupleSpace(tester);
+    final pair = FakeSkyPair();
+    addTearDown(pair.dispose);
+    WatchPlayers.create = FakeWatchPlayer.new;
+    addTearDown(() => WatchPlayers.create = NativeWatchPlayer.new);
+    WatchScreen.keepOn = (_) async {};
+    int? answer = 1;
+    var calls = 0;
+    final room = WatchRoom(
+      link: pair.a,
+      tickEvery: null,
+      onCallPartner: () async {
+        calls++;
+        return answer;
+      },
+    );
+    addTearDown(room.dispose);
+    await pumpNight(tester, space, shell: WatchPage(room: room, partner: 'Alex'));
+    for (var i = 0; i < 4; i++) {
+      pair.settle();
+      await tester.pump();
+    }
+    await tester.enterText(find.descendant(of: find.byKey(WatchKeys.linkField), matching: find.byType(EditableText)), movie);
+    await tester.tap(find.byKey(WatchKeys.start));
+    await tester.pump();
+    expect(find.text(WatchCopy.callPartner('Alex')), findsOneWidget);
+    expect(find.byKey(WatchKeys.callResult), findsNothing);
+
+    answer = null;
+    await tester.tap(find.byKey(WatchKeys.call));
+    await tester.pump();
+    await tester.pump();
+    expect(calls, 1);
+    expect(find.text(WatchCopy.callFailed), findsOneWidget);
+
+    answer = 0;
+    await tester.tap(find.byKey(WatchKeys.call));
+    await tester.pump();
+    await tester.pump();
+    expect(find.text(WatchCopy.callNobody('Alex')), findsOneWidget);
+
+    answer = 1;
+    await tester.tap(find.byKey(WatchKeys.call));
+    await tester.pump();
+    await tester.pump();
+    expect(find.text(WatchCopy.callSent('Alex')), findsOneWidget);
+    expect(tester.widget<SkyButton>(find.byKey(WatchKeys.call)).onPressed, isNull);
+    expect(tester.takeException(), isNull);
+
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump(const Duration(milliseconds: 50));
   });
 
   testWidgets('with nobody there the talk button rests', (tester) async {

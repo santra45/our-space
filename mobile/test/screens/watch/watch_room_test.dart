@@ -13,19 +13,26 @@ const String movie = 'https://example.com/movies/our-film.mp4';
 const String other = 'https://example.com/movies/other-film.m3u8';
 
 class Couch {
-  Couch({FakeSkyPair? pair, this.makePlayer})
+  Couch({FakeSkyPair? pair, this.makePlayer, this.callAnswer})
     : pair = pair ?? FakeSkyPair(offsetB: 2500, latency: const Duration(milliseconds: 40)) {
     WatchPlayers.create = () {
       final player = makePlayer?.call() ?? FakeWatchPlayer();
       made.add(player);
       return player;
     };
-    a = WatchRoom(link: this.pair.a, tickEvery: null, onWatched: keptA.add, onSaid: (film, line) => linesA.add((film, line)));
+    a = WatchRoom(
+      link: this.pair.a,
+      tickEvery: null,
+      onWatched: keptA.add,
+      onSaid: (film, line) => linesA.add((film, line)),
+      onCallPartner: callAnswer,
+    );
     b = WatchRoom(link: this.pair.b, tickEvery: null, onWatched: keptB.add, onSaid: (film, line) => linesB.add((film, line)));
   }
 
   final FakeSkyPair pair;
   final FakeWatchPlayer Function()? makePlayer;
+  final Future<int?> Function()? callAnswer;
   final List<FakeWatchPlayer> made = [];
   final List<WatchedFilm> keptA = [];
   final List<WatchedFilm> keptB = [];
@@ -646,6 +653,98 @@ void main() {
       expect(couch.a.said.single.text, 'are you there');
       expect(couch.a.said.single.missed, isTrue);
       couch.pair.transportA.refuse = false;
+      await couch.dispose();
+    });
+  });
+
+  group('letting the partner know', () {
+    test('a call goes out only while waiting for them, and says what came of it', () async {
+      var calls = 0;
+      int? answer = 1;
+      final couch = Couch(
+        callAnswer: () async {
+          calls++;
+          return answer;
+        },
+      );
+      await couch.meet();
+      expect(couch.a.canCallPartner, isFalse);
+      couch.a.start(movie);
+      await couch.run(100);
+      expect(couch.a.canCallPartner, isTrue);
+
+      answer = null;
+      await couch.a.callPartner();
+      expect(calls, 1);
+      expect(couch.a.callResult, WatchCallResult.failed);
+      expect(couch.a.callReady, isTrue);
+
+      answer = 0;
+      await couch.a.callPartner();
+      expect(couch.a.callResult, WatchCallResult.nobody);
+      expect(couch.a.callReady, isTrue);
+
+      answer = 1;
+      await couch.a.callPartner();
+      expect(couch.a.callResult, WatchCallResult.sent);
+      expect(calls, 3);
+
+      couch.b.join();
+      await couch.run(300);
+      expect(couch.a.canCallPartner, isFalse);
+      await couch.a.callPartner();
+      expect(calls, 3);
+      await couch.dispose();
+    });
+
+    test('a call that landed rests for a minute so nobody buzzes their phone over and over', () async {
+      var calls = 0;
+      final couch = Couch(
+        callAnswer: () async {
+          calls++;
+          return 1;
+        },
+      );
+      await couch.meet();
+      couch.a.start(movie);
+      await couch.run(100);
+      await couch.a.callPartner();
+      expect(couch.a.callReady, isFalse);
+      await couch.a.callPartner();
+      expect(calls, 1);
+
+      var heard = 0;
+      couch.a.addListener(() => heard++);
+      await couch.run(WatchRoom.callGapMs + 500, every: 1000);
+      expect(couch.a.callReady, isTrue);
+      expect(heard, greaterThan(0));
+      await couch.a.callPartner();
+      expect(calls, 2);
+      await couch.dispose();
+    });
+
+    test('a call that throws counts as failed, and leaving or a new film wipes the slate', () async {
+      final couch = Couch(callAnswer: () async => throw StateError('no'));
+      await couch.meet();
+      couch.a.start(movie);
+      await couch.run(100);
+      await couch.a.callPartner();
+      expect(couch.a.callResult, WatchCallResult.failed);
+      couch.a.start(other);
+      expect(couch.a.callResult, isNull);
+      await couch.a.callPartner();
+      couch.a.leave();
+      expect(couch.a.callResult, isNull);
+      expect(couch.a.canCallPartner, isFalse);
+      await couch.dispose();
+    });
+
+    test('with no way to ring there is nothing to offer', () async {
+      final couch = Couch();
+      await couch.meet();
+      couch.a.start(movie);
+      await couch.run(100);
+      expect(couch.a.canCallPartner, isFalse);
       await couch.dispose();
     });
   });

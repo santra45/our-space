@@ -428,5 +428,19 @@ class Mailbox {
     }
   }
 
+  Future<int?> ring({required VaultKey? key, required String? ownerId, required String name}) async {
+    final cfg = config;
+    if (cfg == null || key == null || ownerId == null || ownerId.isEmpty) return null;
+    try {
+      final response = await _request(cfg, 'PUT', '/m/${deriveMailboxId(key)}/$ownerId/ring/$name');
+      if (!_ok(response)) return null;
+      final decoded = jsonDecode(response.body);
+      final rang = decoded is Map ? decoded['rang'] : null;
+      return rang is int ? rang : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
   void close() => _client.close();
 }

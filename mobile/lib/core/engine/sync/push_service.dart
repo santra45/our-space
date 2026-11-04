@@ -59,6 +59,10 @@ class PushService {
 
   bool get available => platform != null && mailbox.isEnabled;
 
+  bool get canAskToWatch => mailbox.isEnabled;
+
+  Future<int?> askToWatch() => mailbox.ring(key: vault.key, ownerId: identity.myOwnerId, name: 'watch');
+
   String get _device {
     final stored = settings.getItem(pushDeviceKey);
     if (stored != null && stored.length >= 8) return stored;
