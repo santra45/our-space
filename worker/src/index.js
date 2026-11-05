@@ -8,18 +8,20 @@ const PATH =
 const PUSH_TOKEN = /^[A-Za-z0-9_:.-]+$/;
 
 const PUSH_MESSAGE = {
-  title: 'Our Space 💕',
-  body: 'Something new is waiting for you.',
+  title: 'I was just in here',
+  body: 'Come see what changed.',
   tag: 'our-space-new',
+  channel: 'our_space_little_things',
   ttl: '86400s',
   kind: 'mailbox',
 };
 
 const RINGS = {
   watch: {
-    title: 'Our Space 💕',
-    body: 'Come watch something with me.',
+    title: 'Come watch with me',
+    body: "I'm already here, waiting for you.",
     tag: 'our-space-watch',
+    channel: 'our_space_film_invites',
     ttl: '1800s',
     kind: 'watch',
   },
@@ -172,7 +174,7 @@ function pushMessage(address, ring) {
         priority: 'HIGH',
         ttl: ring.ttl,
         collapse_key: ring.tag,
-        notification: { tag: ring.tag },
+        notification: { tag: ring.tag, channel_id: ring.channel },
       },
       data: { kind: ring.kind },
     },

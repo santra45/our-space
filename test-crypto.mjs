@@ -4574,8 +4574,14 @@ async function run() {
     const sent = JSON.parse(fcmCalls[0].init.body).message;
     check('it rings her installation, never his own', sent.fid === HER_TOKEN && sent.token === undefined);
     check(
-      'the ring says only that something is waiting',
-      sent.notification.title === 'Our Space 💕' && sent.notification.body === 'Something new is waiting for you.'
+      'the ring says only that one of us was here',
+      sent.notification.title === 'I was just in here' && sent.notification.body === 'Come see what changed.'
+    );
+    const channelNames = readFileSync('mobile/android/app/src/main/res/values/notification_channels.xml', 'utf8');
+    check(
+      'it lands in the quiet channel the app makes',
+      sent.android.notification.channel_id === 'our_space_little_things' &&
+        channelNames.includes('>our_space_little_things<')
     );
     const sentText = JSON.stringify(sent);
     check(
@@ -4631,7 +4637,13 @@ async function run() {
     check('it rings her installation, never his own', askedCalls.length === 1 && askedSent.fid === HER_TOKEN);
     check(
       'it uses only the words the Worker chooses',
-      askedSent.notification.title === 'Our Space 💕' && askedSent.notification.body === 'Come watch something with me.'
+      askedSent.notification.title === 'Come watch with me' &&
+        askedSent.notification.body === "I'm already here, waiting for you."
+    );
+    check(
+      'an invitation lands in the channel that pops up',
+      askedSent.android.notification.channel_id === 'our_space_film_invites' &&
+        channelNames.includes('>our_space_film_invites<')
     );
     const askedText = JSON.stringify(askedSent);
     check('and carries nothing about the mailbox or who asked', !askedText.includes(WK_ID) && !askedText.includes(PUSH_HIS));

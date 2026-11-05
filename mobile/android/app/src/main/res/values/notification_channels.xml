@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="notification_channel_little_things" translatable="false">our_space_little_things</string>
+    <string name="notification_channel_film_invites" translatable="false">our_space_film_invites</string>
+    <string name="notification_little_things_name">Little things</string>
+    <string name="notification_little_things_description">When one of you changes something in your space</string>
+    <string name="notification_film_invites_name">Film invites</string>
+    <string name="notification_film_invites_description">When one of you is waiting to watch something together</string>
+</resources>

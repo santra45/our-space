@@ -8,6 +8,7 @@ class MainActivity : FlutterFragmentActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        NotificationChannels.create(this)
         QuickUnlockChannel(this, flutterEngine.dartExecutor.binaryMessenger)
         SystemSettingsChannel(this, flutterEngine.dartExecutor.binaryMessenger)
         watchPlayers = WatchPlayerChannel(this, flutterEngine.dartExecutor.binaryMessenger, flutterEngine.renderer)
