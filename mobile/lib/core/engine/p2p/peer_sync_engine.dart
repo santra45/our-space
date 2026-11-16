@@ -54,6 +54,8 @@ const int routeProbeIntervalMs = 1500;
 const int routeProbeMaxAttempts = 12;
 
 const int unavailableIdRetryMs = 1200;
+const int unavailableIdRetryMaxMs = 20000;
+const int unavailableIdGiveUpMs = 3 * 60 * 1000;
 const int offloadCryptoChars = 256 * 1024;
 const int signalReconnectMaxMs = 30000;
 
@@ -200,6 +202,7 @@ class PeerSyncEngine {
   String? dialingPeerId;
 
   String? _knownPartnerId;
+  String? get knownPartnerId => _knownPartnerId;
   final Map<String, _Admission> _admission = <String, _Admission>{};
   List<int> _unknownAdmissions = <int>[];
   bool _slotKnown = false;
@@ -230,7 +233,8 @@ class PeerSyncEngine {
   Future<void> _sendTail = Future<void>.value();
   Future<void> _inboundTail = Future<void>.value();
 
-  bool _hasRetriedUnavailableId = false;
+  int? _unavailableSince;
+  int _unavailableRetries = 0;
   Completer<String>? _initCompleter;
   Timer? _unavailableRetryTimer;
   Timer? _signalReconnectTimer;
@@ -389,7 +393,8 @@ class PeerSyncEngine {
 
     created.onOpen = (id) {
       myPeerId = id;
-      _hasRetriedUnavailableId = false;
+      _unavailableSince = null;
+      _unavailableRetries = 0;
       _signalDrops = 0;
       _setStoredDevicePeerId(id);
       if (identical(_initCompleter, completer)) _initCompleter = null;
@@ -410,10 +415,16 @@ class PeerSyncEngine {
     created.onError = (err) {
       if (!identical(peer, created)) return;
       if (err.type == PeerError.unavailableId) {
-        if (!_hasRetriedUnavailableId) {
-          _hasRetriedUnavailableId = true;
+        final now = _clock.now();
+        final since = _unavailableSince ??= now;
+        if (now - since < unavailableIdGiveUpMs) {
+          final wait = math.min(
+            unavailableIdRetryMs * math.pow(2, _unavailableRetries).toInt(),
+            unavailableIdRetryMaxMs,
+          );
+          _unavailableRetries++;
           _unavailableRetryTimer?.cancel();
-          _unavailableRetryTimer = _clock.after(const Duration(milliseconds: unavailableIdRetryMs), () {
+          _unavailableRetryTimer = _clock.after(Duration(milliseconds: wait), () {
             _unavailableRetryTimer = null;
             if (!identical(peer, created)) return;
             _closeActiveConnection();
@@ -426,7 +437,8 @@ class PeerSyncEngine {
           });
           return;
         }
-        _hasRetriedUnavailableId = false;
+        _unavailableSince = null;
+        _unavailableRetries = 0;
         final freshId = _newPeerId();
         _setStoredDevicePeerId(freshId);
         _closeActiveConnection();
@@ -1894,6 +1906,8 @@ class PeerSyncEngine {
   void releaseTransport() {
     _unavailableRetryTimer?.cancel();
     _unavailableRetryTimer = null;
+    _unavailableSince = null;
+    _unavailableRetries = 0;
     _signalReconnectTimer?.cancel();
     _signalReconnectTimer = null;
     _signalDrops = 0;

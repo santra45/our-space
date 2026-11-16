@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:our_space_mobile/core/engine/crypto/aes_gcm.dart';
 import 'package:our_space_mobile/core/engine/crypto/base64.dart';
@@ -603,7 +605,8 @@ void main() {
   });
 
   group('signalling', () {
-    test('a taken id is retried once after 1.2 seconds, then replaced with a fresh one', () async {
+    test('a taken id keeps being retried with growing waits for three minutes, then is replaced with a fresh one',
+        () async {
       final solo = await Solo.open(autoOpenServer: false);
       String? opened;
       final pending = solo.side.engine.init(solo.key, myId).then((id) => opened = id);
@@ -615,9 +618,30 @@ void main() {
       await solo.advance(1);
       expect(solo.network.created, hasLength(2));
       expect(solo.network.created.last.requestedId, myId);
+
+      final waits = <int>[];
+      var elapsed = 1200;
+      var wait = 2400;
+      while (elapsed < unavailableIdGiveUpMs) {
+        solo.network.created.last.serverError(PeerError.unavailableId);
+        final before = solo.network.created.length;
+        await solo.advance(wait - 1);
+        expect(solo.network.created, hasLength(before));
+        await solo.advance(1);
+        expect(solo.network.created, hasLength(before + 1));
+        expect(solo.network.created.last.requestedId, myId);
+        waits.add(wait);
+        elapsed += wait;
+        wait = math.min(wait * 2, unavailableIdRetryMaxMs);
+      }
+      expect(waits.take(4), [2400, 4800, 9600, 19200]);
+      expect(waits.skip(4), everyElement(unavailableIdRetryMaxMs));
+      expect(solo.side.store.settings.getItem(localPeerIdKey), anyOf(isNull, myId));
+
+      final before = solo.network.created.length;
       solo.network.created.last.serverError(PeerError.unavailableId);
       await settle();
-      expect(solo.network.created, hasLength(3));
+      expect(solo.network.created, hasLength(before + 1));
       final fresh = solo.network.created.last.requestedId;
       expect(fresh, isNot(myId));
       expect(fresh, startsWith('love-'));

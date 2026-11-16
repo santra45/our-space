@@ -79,6 +79,39 @@ void main() {
       await her.close();
     });
 
+    test('a phone leaves its pairing code sealed beside its records, without touching the manifest', () async {
+      final mine = mailboxFor(his, worker);
+      final theirs = mailboxFor(her, worker);
+      final mailboxId = deriveMailboxId(key);
+      const code = 'love-abcdefghjkmn';
+
+      expect(await mine.leavePeerCode(key: key, ownerId: hisBox, code: code), isTrue);
+      final stored = worker.objects['$mailboxId/$hisBox/$peerCodeRecord']!;
+      expect(utf8.decode(stored), isNot(contains(code)));
+      expect(worker.objects.keys.where((k) => k.endsWith('/manifest')), isEmpty);
+      expect(worker.rings, isEmpty);
+
+      final read = await theirs.readPeerCode(key: key, ownerId: hisBox);
+      expect(read!.peerId, code);
+      expect(read.at, greaterThan(0));
+      expect(await theirs.readPeerCode(key: key, ownerId: herBox), isNull);
+
+      final stranger = await deriveKeyFromPassphrase('someone-elses-passphrase-entirely', generateSalt(), iterations: 2000);
+      worker.objects['${deriveMailboxId(stranger)}/$hisBox/$peerCodeRecord'] = stored;
+      expect(await theirs.readPeerCode(key: stranger, ownerId: hisBox), isNull);
+
+      worker.objects['$mailboxId/$herBox/$peerCodeRecord'] =
+          utf8.encode(jsonStringify(encryptJson({'peerId': 'no!', 'at': 1}, key).toJson()));
+      expect(await theirs.readPeerCode(key: key, ownerId: herBox), isNull);
+
+      final callsBefore = worker.calls.length;
+      expect(await mine.leavePeerCode(key: key, ownerId: hisBox, code: 'no!'), isFalse);
+      expect(await mine.leavePeerCode(key: null, ownerId: hisBox, code: code), isFalse);
+      expect(await mine.leavePeerCode(key: key, ownerId: null, code: code), isFalse);
+      expect(await Mailbox(store: his, config: null, client: worker).leavePeerCode(key: key, ownerId: hisBox, code: code), isFalse);
+      expect(worker.calls, hasLength(callsBefore));
+    });
+
     test('disabled, locked and ownerless runs are no-ops', () async {
       final off = Mailbox(store: his, config: null, client: worker);
       expect((await off.publish(key: key, ownerId: hisBox)).reason, 'disabled');

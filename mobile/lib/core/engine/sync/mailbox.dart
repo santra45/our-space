@@ -9,6 +9,7 @@ import '../crypto/derived_ids.dart';
 import '../crypto/envelope.dart';
 import '../crypto/js_compat.dart';
 import '../domain/limits.dart';
+import '../invite/invite.dart' show peerIdRegex;
 import '../storage/tables.dart';
 import '../storage/vault_store.dart';
 import 'manifest_diff.dart';
@@ -154,6 +155,15 @@ class MailboxSyncResult {
 
   bool get ok => failure == null;
 }
+
+class PeerCode {
+  const PeerCode(this.peerId, this.at);
+
+  final String peerId;
+  final int at;
+}
+
+const String peerCodeRecord = 'rec/peer/code';
 
 typedef _ManifestRead = ({Map<String, Object?>? manifest, String? failure});
 
@@ -437,6 +447,39 @@ class Mailbox {
       final decoded = jsonDecode(response.body);
       final rang = decoded is Map ? decoded['rang'] : null;
       return rang is int ? rang : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<bool> leavePeerCode({required VaultKey? key, required String? ownerId, required String code}) async {
+    final cfg = config;
+    if (cfg == null || key == null || ownerId == null || ownerId.isEmpty || !peerIdRegex.hasMatch(code)) return false;
+    try {
+      final sealed = encryptJson({'peerId': code, 'at': store.now()}, key);
+      final path = '/m/${deriveMailboxId(key)}/$ownerId/$peerCodeRecord';
+      return _ok(await _request(cfg, 'PUT', path, jsonStringify(sealed.toJson())));
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<PeerCode?> readPeerCode({required VaultKey? key, required String? ownerId}) async {
+    final cfg = config;
+    if (cfg == null || key == null || ownerId == null || ownerId.isEmpty) return null;
+    try {
+      final response = await _request(cfg, 'GET', '/m/${deriveMailboxId(key)}/$ownerId/$peerCodeRecord');
+      if (!_ok(response)) return null;
+      final sealed = asStringMap(jsonDecode(utf8.decode(response.bodyBytes, allowMalformed: true)));
+      final ciphertext = sealed?['ciphertext'];
+      final iv = sealed?['iv'];
+      if (ciphertext is! String || iv is! String) return null;
+      final note = decryptJson(ciphertext, iv, key);
+      if (note is! Map) return null;
+      final peerId = note['peerId'];
+      final at = note['at'];
+      if (peerId is! String || !peerIdRegex.hasMatch(peerId) || at is! num) return null;
+      return PeerCode(peerId, at.toInt());
     } catch (_) {
       return null;
     }

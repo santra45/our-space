@@ -1,5 +1,9 @@
+import 'dart:math' as math;
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:our_space_mobile/core/engine/p2p/peer_endpoint.dart';
+import 'package:our_space_mobile/core/engine/p2p/peer_sync_engine.dart'
+    show unavailableIdGiveUpMs, unavailableIdRetryMaxMs, unavailableIdRetryMs;
 import 'package:our_space_mobile/core/engine/p2p/peerjs.dart';
 import 'package:our_space_mobile/core/engine/p2p/signal_socket.dart';
 import 'package:our_space_mobile/core/engine/storage/tables.dart';
@@ -66,7 +70,8 @@ void main() {
     await server.close();
   });
 
-  test('a taken id is retried, then replaced, and a missing partner is reported, all over the socket', () async {
+  test('a taken id is retried with growing waits, then replaced, and a missing partner is reported, all over the socket',
+      () async {
     final server = await LocalPeerServer.start();
     final rtc = LoopbackRtc();
     final now = DateTime.now().millisecondsSinceEpoch;
@@ -79,10 +84,17 @@ void main() {
     String? opened;
     final pending = late.engine.init(key, 'love-taken000000').then((id) => opened = id);
     await waitFor(() => server.connections.length == 2, reason: 'the second connection');
-    await waitFor(() => late.engine.peer?.destroyed ?? false, reason: 'the taken id');
-    clock.advance(const Duration(milliseconds: 1200));
-    await waitFor(() => server.connections.length == 3, reason: 'the retry with the same id');
-    expect(server.connections[2].queryParameters['id'], 'love-taken000000');
+    var elapsed = 0;
+    var wait = unavailableIdRetryMs;
+    while (elapsed < unavailableIdGiveUpMs) {
+      final seen = server.connections.length;
+      await waitFor(() => late.engine.peer?.destroyed ?? false, reason: 'the taken id');
+      clock.advance(Duration(milliseconds: wait));
+      await waitFor(() => server.connections.length == seen + 1, reason: 'the retry with the same id');
+      expect(server.connections.last.queryParameters['id'], 'love-taken000000');
+      elapsed += wait;
+      wait = math.min(wait * 2, unavailableIdRetryMaxMs);
+    }
     await pending.timeout(const Duration(seconds: 10));
     expect(opened, isNot('love-taken000000'));
     expect(opened, startsWith('love-'));

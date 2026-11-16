@@ -1,10 +1,16 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:our_space_mobile/core/engine.dart';
+import 'package:our_space_mobile/core/engine/crypto/derived_ids.dart';
+import 'package:our_space_mobile/core/engine/p2p/peer_endpoint.dart';
 import 'package:our_space_mobile/core/engine/p2p/peer_hub.dart';
+import 'package:our_space_mobile/core/engine/sync/mailbox.dart' show peerCodeRecord;
 
+import '../support/fake_mailbox_worker.dart';
 import '../support/harness.dart';
 import 'support/engine_harness.dart';
 import 'support/fake_peer.dart';
@@ -15,12 +21,20 @@ const String passphrase = 'correct horse battery staple 2026';
 class Phone {
   Phone._(this.space, this.notices, this.subscription);
 
-  static Future<Phone> open(FakeNetwork network) async {
+  static Future<Phone> open(FakeNetwork network, {FakeMailboxWorker? mailbox}) async {
     final dir = Directory.systemTemp.createTempSync('our_space_p2p_');
     final space = await OurSpace.open(
       databaseFactory: testDatabaseFactory(),
       databasePath: '${dir.path}${Platform.pathSeparator}space.sqlite',
       useEnvironmentMailbox: false,
+      mailboxConfig: mailbox == null
+          ? null
+          : MailboxConfig.resolve(
+              url: 'https://mailbox.example.workers.dev',
+              token: mailbox.token,
+              origin: 'https://sameskytonight.vercel.app',
+            ),
+      httpClient: mailbox,
       autoSync: false,
       peerToPeer: true,
       peerEndpoints: network.create,
@@ -125,6 +139,73 @@ void main() {
     expect(a.hub.status.code, 'peer_closed');
 
     await sub.cancel();
+    await a.close();
+    await b.close();
+  });
+
+  test('a dead invite link heals: both phones leave their codes in the mailbox and the inviter dials the joiner',
+      () async {
+    final network = FakeNetwork();
+    final worker = FakeMailboxWorker(token: 'test-token-for-the-mailbox');
+    final a = await Phone.open(network, mailbox: worker);
+    final b = await Phone.open(network, mailbox: worker);
+    expect((await a.space.vault.create(passphrase: passphrase, coupleNames: 'Ash & Bee', iterations: 1000)).ok, isTrue);
+    await waitFor(() => a.hub.myPeerId != null, reason: 'the first phone to reach the server');
+
+    final key = a.space.vault.key!;
+    final slots = derivePersonSlots(key);
+    final mailboxId = deriveMailboxId(key);
+    if (a.space.identity.myOwnerId != slots[0]) expect(await a.space.identity.claimPerson(slots[0]), isTrue);
+    await waitFor(() => worker.objects.containsKey('$mailboxId/${slots[0]}/$peerCodeRecord'),
+        reason: 'the first phone to leave its code');
+
+    final invite = parseInvite(a.space.vault.buildInviteLink()!)!;
+    const dead = 'love-thiscodeisgone';
+    b.hub.acceptInvite(Invite(
+      partnerPeerId: dead,
+      salt: invite.salt,
+      startDate: invite.startDate,
+      coupleNames: invite.coupleNames,
+      canary: null,
+      canaryIv: null,
+    ));
+    final joined = await b.space.vault.joinWithSalt(
+      passphrase: passphrase,
+      salt: invite.salt!,
+      startDate: invite.startDate,
+      coupleNames: invite.coupleNames,
+      iterations: 1000,
+    );
+    expect(joined.ok, isTrue);
+    await waitFor(() => b.hub.pendingInvite != null, reason: 'the invite to wait for a yes');
+    b.hub.confirmPendingInvite();
+    await waitFor(() => b.hub.engine.dialingPeerId == dead, reason: 'the dial to the dead code');
+    network.endpoints[b.hub.myPeerId]!.serverError(PeerError.peerUnavailable);
+    await waitFor(() => b.hub.engine.dialingPeerId == null, reason: 'the server to say nobody is there');
+    expect(a.hub.partnerId, isNull);
+
+    expect(await b.space.identity.claimPerson(slots[1]), isTrue);
+    final herCode = '$mailboxId/${slots[1]}/$peerCodeRecord';
+    await waitFor(() => worker.objects.containsKey(herCode), reason: 'the joining phone to leave its code');
+    expect(utf8.decode(worker.objects[herCode]!), isNot(contains(b.hub.myPeerId!)));
+
+    expect(await a.hub.lookForPartner(), isTrue);
+    await waitFor(() => a.hub.isAuthorized && b.hub.isAuthorized, reason: 'the inviter dialling the joiner');
+    expect(a.hub.partnerId, b.hub.myPeerId);
+    expect(a.space.store.settings.getItem(trustedPartnerKey), b.hub.myPeerId);
+    expect(b.space.store.settings.getItem(trustedPartnerKey), a.hub.myPeerId);
+    expect(a.hub.engine.knownPartnerId, b.hub.myPeerId);
+    expect(b.hub.engine.knownPartnerId, a.hub.myPeerId);
+    expect(worker.objects.keys.where((k) => k.endsWith('/manifest')), isEmpty);
+    expect(worker.rings, isEmpty);
+    expect(await a.hub.lookForPartner(), isFalse);
+
+    await waitFor(() => !a.hub.engine.isSyncing && !b.hub.engine.isSyncing, reason: 'the first sync');
+    b.hub.unpairPartner();
+    await waitFor(() => !a.hub.isAuthorized && !b.hub.isAuthorized, reason: 'the unpair to close the link');
+    expect(await b.hub.lookForPartner(), isFalse);
+    expect(b.hub.partnerId, isNull);
+
     await a.close();
     await b.close();
   });

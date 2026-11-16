@@ -17,10 +17,19 @@ import 'sky_together_link.dart';
 const String trustedPartnerKey = 'sweetheart_trusted_partner_id';
 const String pairedPartnerKey = 'sweetheart_paired_partner_id';
 const String lastConnectedKey = 'sweetheart_last_connected_at';
+const String partnerSetAsideKey = 'sweetheart_partner_set_aside';
 
 const int trustedDialDelayMs = 800;
 const int resumeCooldownMs = 5000;
 const int lastConnectedTickMs = 30000;
+const int partnerRetryTickMs = 30000;
+const int partnerLookCooldownMs = 15000;
+
+abstract class PartnerCodes {
+  Future<bool> leave(String myCode);
+
+  Future<List<String>> find();
+}
 
 const String partnerSyncProblemPrefix = 'Your partner reported a sync problem: ';
 
@@ -38,6 +47,7 @@ class PeerSyncHub extends ChangeNotifier {
     required this.identity,
     required this.store,
     this.autoStart = true,
+    this.partnerCodes,
     this._clock = const SystemPeerClock(),
   }) {
     _partnerId = _read(pairedPartnerKey);
@@ -47,6 +57,7 @@ class PeerSyncHub extends ChangeNotifier {
     engine.addDataListener(_handleDataUpdated);
     engine.addConfigListener(_handleConfigSynced);
     vault.addListener(_onVault);
+    identity.addListener(_leaveMyCode);
     _rowsSub = store.localRows.listen(_onLocalRow);
     skyTogether = SkyTogetherLink(
       transport: _HubSkyTransport(this),
@@ -62,6 +73,7 @@ class PeerSyncHub extends ChangeNotifier {
   final IdentityController identity;
   final VaultStore store;
   final bool autoStart;
+  final PartnerCodes? partnerCodes;
   final PeerClock _clock;
 
   late final StreamSubscription<SealedWrite> _rowsSub;
@@ -88,6 +100,12 @@ class PeerSyncHub extends ChangeNotifier {
   int _resumeGuard = 0;
   PeerLinkState _lastLinkState = PeerLinkState.disconnected;
   int _lastSentConfigAt = -1;
+  Timer? _retryTicker;
+  bool _foreground = true;
+  String? _leftAs;
+  bool _leaving = false;
+  bool _looking = false;
+  int? _lastLookAt;
 
   String? get myPeerId => _myPeerId;
   String? get partnerId => _partnerId;
@@ -122,6 +140,15 @@ class PeerSyncHub extends ChangeNotifier {
   void _write(String key, String value) => unawaited(store.settings.setItem(key, value));
 
   void _remove(String key) => unawaited(store.settings.removeItem(key));
+
+  void _setAside(bool aside) {
+    if ((_read(partnerSetAsideKey) != null) == aside) return;
+    if (aside) {
+      _write(partnerSetAsideKey, '1');
+    } else {
+      _remove(partnerSetAsideKey);
+    }
+  }
 
   @override
   void notifyListeners() {
@@ -161,6 +188,7 @@ class PeerSyncHub extends ChangeNotifier {
     final clean = jsTrim(peerId);
     if (clean.isEmpty) return;
     _write(pairedPartnerKey, clean);
+    if (clean != _myPeerId) _setAside(false);
     final id = _myPeerId;
     if (_active && _ready && id != null) {
       _pendingConnect = null;
@@ -184,15 +212,76 @@ class PeerSyncHub extends ChangeNotifier {
       _ready = true;
       _myPeerId = id;
       notifyListeners();
+      _leaveMyCode();
 
       final invited = _pendingConnect;
       _pendingConnect = null;
       final target = invited ?? _read(pairedPartnerKey);
-      if (target == null) return;
-      _offer(target, id, fromLink: invited != null);
+      if (target != null) _offer(target, id, fromLink: invited != null);
+      unawaited(lookForPartner());
     }, onError: (Object _) {});
 
+    _retryTicker?.cancel();
+    _retryTicker = _clock.every(const Duration(milliseconds: partnerRetryTickMs), _retryTick);
+
     _maybeResume();
+  }
+
+  void _leaveMyCode() {
+    final codes = partnerCodes;
+    final id = _myPeerId;
+    final owner = identity.myOwnerId;
+    if (codes == null || _disposed || !_active || !_ready || _leaving || id == null || owner == null) return;
+    final mark = '$owner|$id';
+    if (mark == _leftAs) return;
+    _leaving = true;
+    codes.leave(id).then((ok) {
+      if (ok) _leftAs = mark;
+    }, onError: (Object _) {}).whenComplete(() => _leaving = false);
+  }
+
+  Future<bool> lookForPartner() async {
+    final codes = partnerCodes;
+    if (codes == null || _disposed || !_active || !_ready || _looking) return false;
+    if (_pendingInvite != null || isAuthorized || _read(partnerSetAsideKey) != null) return false;
+    _looking = true;
+    _lastLookAt = _clock.now();
+    try {
+      final found = await codes.find();
+      if (_disposed || !_active || isAuthorized || _pendingInvite != null) return false;
+      if (_read(partnerSetAsideKey) != null) return false;
+      final mine = _myPeerId;
+      for (final code in found) {
+        if (code == mine || !peerIdRegex.hasMatch(code)) continue;
+        _adoptPartnerCode(code);
+        return true;
+      }
+      return false;
+    } catch (_) {
+      return false;
+    } finally {
+      _looking = false;
+    }
+  }
+
+  void _adoptPartnerCode(String code) {
+    if (_read(trustedPartnerKey) != code) _write(trustedPartnerKey, code);
+    if (_read(pairedPartnerKey) != code) _write(pairedPartnerKey, code);
+    if (engine.knownPartnerId != code) engine.noteAdmissionSuccess(code);
+    _partnerId = code;
+    notifyListeners();
+    _dialQuietly(code);
+  }
+
+  void _retryTick() {
+    if (_disposed || !_active || !_ready || !_foreground) return;
+    _leaveMyCode();
+    if (isAuthorized || _pendingInvite != null) return;
+    unawaited(lookForPartner().then((adopted) {
+      if (adopted || _disposed || !_active || isAuthorized || _pendingInvite != null) return;
+      final target = _read(trustedPartnerKey);
+      if (target != null && target != _myPeerId) _dialQuietly(target);
+    }));
   }
 
   void _offer(String target, String id, {required bool fromLink}) {
@@ -204,7 +293,7 @@ class PeerSyncHub extends ChangeNotifier {
       _dialTimer?.cancel();
       _dialTimer = _clock.after(const Duration(milliseconds: trustedDialDelayMs), () {
         _dialTimer = null;
-        if (!_active) return;
+        if (!_active || _read(trustedPartnerKey) != target) return;
         _dialQuietly(target);
       });
       notifyListeners();
@@ -220,6 +309,8 @@ class PeerSyncHub extends ChangeNotifier {
     _ready = false;
     _dialTimer?.cancel();
     _dialTimer = null;
+    _retryTicker?.cancel();
+    _retryTicker = null;
     _stopConnectedTicker();
     engine.destroy();
     _myPeerId = null;
@@ -246,12 +337,16 @@ class PeerSyncHub extends ChangeNotifier {
 
     final peerId = status.peerId;
     if (peerId != null) _myPeerId = peerId;
+    if (status.code == 'peer_ready') _leaveMyCode();
 
     final partner = status.partnerId;
     final authorized = authorizedPeerStates.contains(status.state);
     if (partner != null && authorized) {
       _partnerId = partner;
       _write(pairedPartnerKey, partner);
+      if (_read(trustedPartnerKey) != partner) _write(trustedPartnerKey, partner);
+      _setAside(false);
+      if (engine.knownPartnerId != partner) engine.noteAdmissionSuccess(partner);
     }
 
     if (status.state == 'connecting') _syncError = null;
@@ -384,6 +479,7 @@ class PeerSyncHub extends ChangeNotifier {
     }
     _write(trustedPartnerKey, clean);
     _write(pairedPartnerKey, clean);
+    _setAside(false);
     _partnerId = clean;
     _syncError = null;
     notifyListeners();
@@ -414,6 +510,7 @@ class PeerSyncHub extends ChangeNotifier {
     if (_read(pairedPartnerKey) == declined) _remove(pairedPartnerKey);
     if (_read(trustedPartnerKey) == declined) _remove(trustedPartnerKey);
     if (_partnerId == declined) _partnerId = null;
+    _setAside(true);
     notifyListeners();
   }
 
@@ -426,6 +523,7 @@ class PeerSyncHub extends ChangeNotifier {
   void unpairPartner() {
     _remove(pairedPartnerKey);
     _remove(trustedPartnerKey);
+    _setAside(true);
     _pendingConnect = null;
     _partnerId = null;
     _pendingInvite = null;
@@ -451,18 +549,25 @@ class PeerSyncHub extends ChangeNotifier {
   }
 
   void onForeground() {
+    _foreground = true;
     skyTogether.setForeground(true);
     if (!_active) return;
     engine.onForeground();
     _maybeResume();
   }
 
-  void onBackground() => skyTogether.setForeground(false);
+  void onBackground() {
+    _foreground = false;
+    skyTogether.setForeground(false);
+  }
 
   void _maybeResume() {
     if (!_active) return;
     if (_pendingInvite != null) return;
     if (authorizedPeerStates.contains(_status.state) || isAuthorized) return;
+
+    final lastLook = _lastLookAt;
+    if (lastLook == null || _clock.now() - lastLook >= partnerLookCooldownMs) unawaited(lookForPartner());
 
     final target = _read(trustedPartnerKey);
     if (target == null || target == _myPeerId) return;
@@ -481,8 +586,11 @@ class PeerSyncHub extends ChangeNotifier {
     _active = false;
     _ready = false;
     _dialTimer?.cancel();
+    _retryTicker?.cancel();
+    _retryTicker = null;
     _stopConnectedTicker();
     vault.removeListener(_onVault);
+    identity.removeListener(_leaveMyCode);
     engine.removeStatusListener(_handleStatus);
     engine.removeDataListener(_handleDataUpdated);
     engine.removeConfigListener(_handleConfigSynced);

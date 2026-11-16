@@ -26,6 +26,7 @@ import 'repositories/roulette_repository.dart';
 import 'storage/vault_store.dart';
 import 'sync/backup_service.dart';
 import 'sync/mailbox.dart';
+import 'sync/mailbox_partner_codes.dart';
 import 'sync/push_service.dart';
 import 'sync/sync_service.dart';
 import 'vault/quick_unlock.dart';
@@ -99,6 +100,7 @@ class OurSpace {
       identity: identity,
       store: store,
       autoStart: peerToPeer ?? autoSync,
+      partnerCodes: mailbox.isEnabled ? MailboxPartnerCodes(mailbox: mailbox, vault: vault, identity: identity) : null,
     );
     final sync = SyncService(
       store: store,
