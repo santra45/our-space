@@ -20,6 +20,7 @@ import 'widgets/names_sheet.dart';
 import 'widgets/reminders_row.dart';
 import 'widgets/settings_row.dart';
 import 'widgets/sheet_parts.dart';
+import 'widgets/update_row.dart';
 
 abstract final class SettingsCopy {
   static const String title = 'Settings';
@@ -57,6 +58,7 @@ class SettingsPage extends StatefulWidget {
   static const Key connectionKey = ValueKey<String>('settings-connection');
   static const Key saveCopyKey = ValueKey<String>('settings-save-copy');
   static const Key bringInKey = ValueKey<String>('settings-bring-in');
+  static const Key updateKey = ValueKey<String>('settings-update');
 
   static const SkyScene scene = SkyScene(
     stars: 50,
@@ -231,6 +233,7 @@ class _SettingsPageState extends State<SettingsPage> {
     final notices = context.watch<AppNotices>();
     final peer = context.watch<PeerLink?>();
     final link = peer?.state ?? PeerLinkView.offline;
+    final updates = space.peer.appUpdate;
     final sky = SkyModeScope.maybeOf(context);
     _queueStars(identity.myOwnerId);
 
@@ -369,15 +372,21 @@ class _SettingsPageState extends State<SettingsPage> {
           title: title,
           subtitle: subtitle,
         ),
-        _section(
-          label: SettingsCopy.thisPhone,
-          rows: thisPhone,
-          below: [
-            SettingsNotes(
-              notes: [if (_phoneNote != null) _phoneNote!],
-              onDismiss: (_) => setState(() => _phoneNote = null),
-            ),
-          ],
+        ListenableBuilder(
+          listenable: updates,
+          builder: (context, _) => _section(
+            label: SettingsCopy.thisPhone,
+            rows: [
+              if (updates.visible) UpdateRow(key: SettingsPage.updateKey, link: updates, partner: identity.partnerName),
+              ...thisPhone,
+            ],
+            below: [
+              SettingsNotes(
+                notes: [if (_phoneNote != null) _phoneNote!],
+                onDismiss: (_) => setState(() => _phoneNote = null),
+              ),
+            ],
+          ),
         ),
         _section(
           label: SettingsCopy.twoOfUs,

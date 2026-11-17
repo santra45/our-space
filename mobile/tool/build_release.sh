@@ -20,7 +20,14 @@ if [[ -z "$url" || -z "$token" ]]; then
   exit 1
 fi
 
+build_number="$(git rev-list --count HEAD)"
+if [[ -z "$build_number" ]]; then
+  echo "Could not count commits for the build number." >&2
+  exit 1
+fi
+
 flutter build apk --release --split-per-abi --target-platform android-arm64 \
+  --build-number="$build_number" \
   --dart-define="VITE_MAILBOX_URL=$url" \
   --dart-define="VITE_MAILBOX_TOKEN=$token" \
   "$@"

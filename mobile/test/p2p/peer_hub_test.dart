@@ -21,7 +21,7 @@ const String passphrase = 'correct horse battery staple 2026';
 class Phone {
   Phone._(this.space, this.notices, this.subscription);
 
-  static Future<Phone> open(FakeNetwork network, {FakeMailboxWorker? mailbox}) async {
+  static Future<Phone> open(FakeNetwork network, {FakeMailboxWorker? mailbox, AppUpdatePlatform? updates}) async {
     final dir = Directory.systemTemp.createTempSync('our_space_p2p_');
     final space = await OurSpace.open(
       databaseFactory: testDatabaseFactory(),
@@ -38,6 +38,7 @@ class Phone {
       autoSync: false,
       peerToPeer: true,
       peerEndpoints: network.create,
+      appUpdatePlatform: updates,
     );
     final notices = <SyncNotice>[];
     final subscription = space.sync.notices.listen(notices.add);
@@ -58,9 +59,13 @@ class Phone {
   }
 }
 
-Future<(Phone, Phone)> pairedPhones(FakeNetwork network) async {
-  final a = await Phone.open(network);
-  final b = await Phone.open(network);
+Future<(Phone, Phone)> pairedPhones(
+  FakeNetwork network, {
+  AppUpdatePlatform? updatesA,
+  AppUpdatePlatform? updatesB,
+}) async {
+  final a = await Phone.open(network, updates: updatesA);
+  final b = await Phone.open(network, updates: updatesB);
   expect((await a.space.vault.create(passphrase: passphrase, coupleNames: 'Ash & Bee', iterations: 1000)).ok, isTrue);
   await waitFor(() => a.hub.myPeerId != null, reason: 'the first phone to reach the server');
   final link = a.space.vault.buildInviteLink()!;

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:isolate';
 import 'dart:math' as math;
+import 'dart:typed_data';
 
 import '../crypto/aes_gcm.dart';
 import '../crypto/base64.dart';
@@ -73,6 +74,11 @@ const String knownPartnerKey = 'sweetheart_known_partner_peer';
 const String skyTogetherMessageType = 'SKY_TOGETHER';
 const int maxSkyTogetherChars = 32 * 1024;
 
+const String appUpdateMessageType = 'APP_UPDATE';
+const int maxAppUpdateChars = 4 * 1024;
+const String appPieceProtocolId = 'SWEETHEART_PIECE_1';
+const int maxAppPieceBytes = 1024 * 1024 + 64;
+
 const Set<String> allowedPeerMessageTypes = {
   'CHALLENGE',
   'CHALLENGE_RESPONSE',
@@ -87,7 +93,18 @@ const Set<String> allowedPeerMessageTypes = {
   'PING',
   'PONG',
   skyTogetherMessageType,
+  appUpdateMessageType,
 };
+
+Future<Uint8List> sealAppPiece(Uint8List piece, VaultKey key) {
+  if (piece.length < offloadCryptoChars) return Future<Uint8List>.value(encryptBlob(piece, key));
+  return Isolate.run(() => encryptBlob(piece, key));
+}
+
+Future<Uint8List> openAppPiece(Uint8List sealed, VaultKey key) {
+  if (sealed.length < offloadCryptoChars) return Future<Uint8List>.sync(() => decryptBlob(sealed, key));
+  return Isolate.run(() => decryptBlob(sealed, key));
+}
 
 final Set<String> allowedPeerTables = syncedTables.where((name) => name != vaultMetaTable).toSet();
 
@@ -245,6 +262,8 @@ class PeerSyncEngine {
   final List<void Function(PeerConfigUpdate config)> _configListeners = [];
   final List<void Function(String table, String id)> _localRecordListeners = [];
   final List<void Function(Object? event)> _skyTogetherListeners = [];
+  final List<void Function(Object? event)> _appUpdateListeners = [];
+  final List<void Function(Uint8List piece)> _appPieceListeners = [];
 
   PeerStatus _lastStatus = PeerStatus.initial;
 
@@ -274,6 +293,10 @@ class PeerSyncEngine {
       _localRecordListeners.remove(listener);
   void addSkyTogetherListener(void Function(Object? event) listener) => _skyTogetherListeners.add(listener);
   void removeSkyTogetherListener(void Function(Object? event) listener) => _skyTogetherListeners.remove(listener);
+  void addAppUpdateListener(void Function(Object? event) listener) => _appUpdateListeners.add(listener);
+  void removeAppUpdateListener(void Function(Object? event) listener) => _appUpdateListeners.remove(listener);
+  void addAppPieceListener(void Function(Uint8List piece) listener) => _appPieceListeners.add(listener);
+  void removeAppPieceListener(void Function(Uint8List piece) listener) => _appPieceListeners.remove(listener);
 
   String? _storedKnownPartnerId() {
     final id = settings.getItem(knownPartnerKey);
@@ -976,6 +999,10 @@ class PeerSyncEngine {
 
   Future<void> _handleMessage(Object? msg) async {
     if (msg is! Map) return;
+    if (msg['protocol'] == appPieceProtocolId) {
+      await _onAppPiece(msg['payload']);
+      return;
+    }
     final payload = msg['payload'];
     if (payload == null || payload is! Map && payload is! List) return;
 
@@ -1062,6 +1089,8 @@ class PeerSyncEngine {
         await _applySingleLiveRecord(message['record']);
       case skyTogetherMessageType:
         _emitSkyTogether(message['event']);
+      case appUpdateMessageType:
+        _emitAppUpdate(message['event']);
       default:
         break;
     }
@@ -1852,6 +1881,76 @@ class PeerSyncEngine {
       return true;
     } catch (_) {
       return false;
+    }
+  }
+
+  Future<bool> sendAppUpdate(Map<String, Object?> event) async {
+    final conn = activeConnection;
+    if (!isConnected || !isAuthorized || conn == null || !conn.open || cryptoKey == null) return false;
+    try {
+      if (jsonStringify(event).length > maxAppUpdateChars) return false;
+      await _send({'type': appUpdateMessageType, 'event': event});
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<bool> sendAppPiece(Uint8List piece) async {
+    final conn = activeConnection;
+    final key = cryptoKey;
+    if (!isConnected || !isAuthorized || conn == null || !conn.open || key == null) return false;
+    if (piece.isEmpty || piece.length > maxAppPieceBytes) return false;
+    final run = _sendTail.then((_) async {
+      final sealed = await sealAppPiece(piece, key);
+      if (!identical(activeConnection, conn) || !conn.open) {
+        throw PeerSyncFailure('No open connection to your partner');
+      }
+      conn.send({'protocol': appPieceProtocolId, 'payload': sealed});
+    });
+    _sendTail = run.then((_) {}, onError: (Object _) {});
+    try {
+      await run;
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<void> _onAppPiece(Object? payload) async {
+    if (!isAuthorized || payload is! List<int>) return;
+    if (payload.length > maxAppPieceBytes + ivLengthBytes + gcmTagLengthBytes) return;
+    final key = cryptoKey;
+    if (key == null) return;
+    final sealed = payload is Uint8List ? payload : Uint8List.fromList(payload);
+    final done = Completer<void>();
+    _inboundTail = _inboundTail.then((_) async {
+      try {
+        final plain = await openAppPiece(sealed, key);
+        lastPongAt = _clock.now();
+        if (isAuthorized) _emitAppPiece(plain);
+      } catch (_) {
+      } finally {
+        done.complete();
+      }
+    });
+    await done.future;
+  }
+
+  void _emitAppUpdate(Object? event) {
+    if (event is! Map) return;
+    for (final listener in [..._appUpdateListeners]) {
+      try {
+        listener(event);
+      } catch (_) {}
+    }
+  }
+
+  void _emitAppPiece(Uint8List piece) {
+    for (final listener in [..._appPieceListeners]) {
+      try {
+        listener(piece);
+      } catch (_) {}
     }
   }
 

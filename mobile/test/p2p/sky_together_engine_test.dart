@@ -23,8 +23,9 @@ const Map<String, Object?> presence = {
 int warnings(EngineSide side) => side.statuses.where((s) => s.warning != null || s.error != null).length;
 
 void main() {
-  test('SKY_TOGETHER is on the allowlist next to the existing types, which stay as they were', () {
+  test('SKY_TOGETHER and APP_UPDATE are on the allowlist next to the existing types, which stay as they were', () {
     expect(skyTogetherMessageType, 'SKY_TOGETHER');
+    expect(appUpdateMessageType, 'APP_UPDATE');
     expect(allowedPeerMessageTypes, {
       'CHALLENGE',
       'CHALLENGE_RESPONSE',
@@ -39,6 +40,7 @@ void main() {
       'PING',
       'PONG',
       'SKY_TOGETHER',
+      'APP_UPDATE',
     });
   });
 

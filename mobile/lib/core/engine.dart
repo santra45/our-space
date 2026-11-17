@@ -28,6 +28,7 @@ export 'engine/identity/people.dart'
 export 'engine/identity/people_repair.dart' show PeopleRepair, SwapResult, tradedPlacesAt;
 export 'engine/invite/invite.dart' show Invite, parseInvite, buildInviteUrl, defaultInviteBaseUrl, peerIdRegex;
 export 'engine/our_space.dart';
+export 'engine/p2p/app_update_link.dart' show AppUpdateLink, AppUpdatePlatform, AppUpdateStage, InstalledApp, MethodChannelAppUpdate;
 export 'engine/p2p/peer_hub.dart' show PeerSyncHub, PeerNotice;
 export 'engine/p2p/peer_status.dart';
 export 'engine/p2p/sky_together_link.dart';

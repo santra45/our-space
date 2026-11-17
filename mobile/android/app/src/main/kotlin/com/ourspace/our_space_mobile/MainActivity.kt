@@ -11,6 +11,7 @@ class MainActivity : FlutterFragmentActivity() {
         NotificationChannels.create(this)
         QuickUnlockChannel(this, flutterEngine.dartExecutor.binaryMessenger)
         SystemSettingsChannel(this, flutterEngine.dartExecutor.binaryMessenger)
+        AppUpdateChannel(this, flutterEngine.dartExecutor.binaryMessenger)
         watchPlayers = WatchPlayerChannel(this, flutterEngine.dartExecutor.binaryMessenger, flutterEngine.renderer)
     }
 

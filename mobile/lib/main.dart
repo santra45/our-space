@@ -50,7 +50,10 @@ Stream<LicenseEntry> bundledLicenses() async* {
   yield LicenseEntryWithLineBreaks(['DM Sans'], await rootBundle.loadString('assets/fonts/dm_sans/OFL.txt'));
 }
 
-Future<OurSpace> openOurSpace() async => OurSpace.open(pushPlatform: await FirebasePushPlatform.start());
+Future<OurSpace> openOurSpace() async => OurSpace.open(
+      pushPlatform: await FirebasePushPlatform.start(),
+      appUpdatePlatform: const MethodChannelAppUpdate(),
+    );
 
 Widget vaultGate(BuildContext context, Widget shell) => InviteLinkGate(shell: shell);
 

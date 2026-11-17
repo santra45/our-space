@@ -4,6 +4,7 @@ import 'package:flutter/widgets.dart';
 import 'package:provider/provider.dart';
 
 import '../core/engine.dart';
+import 'screens/settings/widgets/update_row.dart' show UpdateCopy;
 import 'screens/sync/notice_copy.dart';
 import 'screens/sync/peer_link.dart';
 import 'sky/sky.dart';
@@ -15,6 +16,8 @@ class AppNotices extends ChangeNotifier {
     _bursts = sync.loveBurstArrivals.listen(_onBursts);
     _wasUnlocked = vault.isUnlocked;
     vault.addListener(_onVault);
+    _updates = sync.peer?.appUpdate;
+    _updates?.addListener(_onUpdate);
   }
 
   final VaultService vault;
@@ -30,6 +33,8 @@ class AppNotices extends ChangeNotifier {
   String? _vaultWarning;
   int _pendingCelebrations = 0;
   bool _disposed = false;
+  AppUpdateLink? _updates;
+  int? _toldAboutUpdate;
 
   String? get syncWarning => _syncWarning;
   String? get vaultWarning => _vaultWarning;
@@ -52,6 +57,15 @@ class AppNotices extends ChangeNotifier {
       return;
     }
     toast.show(text);
+  }
+
+  void _onUpdate() {
+    final updates = _updates;
+    if (updates == null || updates.stage != AppUpdateStage.available || !vault.isUnlocked) return;
+    final code = updates.partnerCode;
+    if (code == null || code == _toldAboutUpdate) return;
+    _toldAboutUpdate = code;
+    toast.show(UpdateCopy.arrived(sync.identity.partnerName));
   }
 
   void _onBursts(int total) {
@@ -104,6 +118,7 @@ class AppNotices extends ChangeNotifier {
     _disposed = true;
     _warningTimer?.cancel();
     vault.removeListener(_onVault);
+    _updates?.removeListener(_onUpdate);
     unawaited(_notices.cancel());
     unawaited(_bursts.cancel());
     toast.dispose();

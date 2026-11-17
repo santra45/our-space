@@ -9,6 +9,7 @@ import '../invite/invite.dart';
 import '../storage/tables.dart';
 import '../storage/vault_store.dart';
 import '../vault/vault_service.dart';
+import 'app_update_link.dart';
 import 'peer_clock.dart';
 import 'peer_status.dart';
 import 'peer_sync_engine.dart';
@@ -48,6 +49,7 @@ class PeerSyncHub extends ChangeNotifier {
     required this.store,
     this.autoStart = true,
     this.partnerCodes,
+    AppUpdatePlatform? updatePlatform,
     this._clock = const SystemPeerClock(),
   }) {
     _partnerId = _read(pairedPartnerKey);
@@ -64,6 +66,7 @@ class PeerSyncHub extends ChangeNotifier {
       owner: () => identity.myOwnerId ?? identity.people.device.deviceId,
       clock: _clock,
     );
+    appUpdate = AppUpdateLink(transport: _HubUpdateTransport(this), platform: updatePlatform, clock: _clock);
     _lastKey = vault.key;
     if (_lastKey != null && autoStart) start();
   }
@@ -78,6 +81,7 @@ class PeerSyncHub extends ChangeNotifier {
 
   late final StreamSubscription<SealedWrite> _rowsSub;
   late final SkyTogetherLink skyTogether;
+  late final AppUpdateLink appUpdate;
   final StreamController<PeerNotice> _notices = StreamController<PeerNotice>.broadcast();
   final StreamController<PeerLinkState> _linkStates = StreamController<PeerLinkState>.broadcast();
   final StreamController<PeerStatus> _statuses = StreamController<PeerStatus>.broadcast();
@@ -551,6 +555,7 @@ class PeerSyncHub extends ChangeNotifier {
   void onForeground() {
     _foreground = true;
     skyTogether.setForeground(true);
+    appUpdate.onForeground();
     if (!_active) return;
     engine.onForeground();
     _maybeResume();
@@ -582,6 +587,7 @@ class PeerSyncHub extends ChangeNotifier {
   @override
   void dispose() {
     skyTogether.dispose();
+    appUpdate.dispose();
     _disposed = true;
     _active = false;
     _ready = false;
@@ -638,4 +644,58 @@ class _HubSkyTransport implements SkyTogetherTransport {
   @override
   Future<bool> send(Map<String, Object?> event) =>
       ready ? _hub.engine.sendSkyTogether(event) : Future<bool>.value(false);
+}
+
+class _HubUpdateTransport implements AppUpdateTransport {
+  _HubUpdateTransport(this._hub);
+
+  final PeerSyncHub _hub;
+  void Function()? _onReadiness;
+  void Function(Object? event)? _onEvent;
+  void Function(Uint8List piece)? _onPiece;
+
+  @override
+  bool get ready => _hub._active && !_hub._disposed && _hub.isAuthorized;
+
+  @override
+  void attach({
+    required void Function() onReadiness,
+    required void Function(Object? event) onEvent,
+    required void Function(Uint8List piece) onPiece,
+  }) {
+    _onReadiness = onReadiness;
+    _onEvent = onEvent;
+    _onPiece = onPiece;
+    _hub.addListener(_readiness);
+    _hub.engine.addAppUpdateListener(_event);
+    _hub.engine.addAppPieceListener(_piece);
+  }
+
+  void _readiness() => _onReadiness?.call();
+
+  void _event(Object? event) {
+    if (ready) _onEvent?.call(event);
+  }
+
+  void _piece(Uint8List piece) {
+    if (ready) _onPiece?.call(piece);
+  }
+
+  @override
+  void detach() {
+    _hub.removeListener(_readiness);
+    _hub.engine.removeAppUpdateListener(_event);
+    _hub.engine.removeAppPieceListener(_piece);
+    _onReadiness = null;
+    _onEvent = null;
+    _onPiece = null;
+  }
+
+  @override
+  Future<bool> send(Map<String, Object?> event) =>
+      ready ? _hub.engine.sendAppUpdate(event) : Future<bool>.value(false);
+
+  @override
+  Future<bool> sendPiece(Uint8List piece) =>
+      ready ? _hub.engine.sendAppPiece(piece) : Future<bool>.value(false);
 }

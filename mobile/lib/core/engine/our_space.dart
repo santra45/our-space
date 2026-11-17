@@ -9,6 +9,7 @@ import 'identity/device_id.dart';
 import 'identity/identity_controller.dart';
 import 'identity/people.dart';
 import 'identity/people_repair.dart';
+import 'p2p/app_update_link.dart';
 import 'p2p/flutter_rtc.dart';
 import 'p2p/peer_endpoint.dart';
 import 'p2p/peer_hub.dart';
@@ -70,6 +71,7 @@ class OurSpace {
     bool? peerToPeer,
     QuickUnlockPlatform? quickUnlockPlatform,
     PushPlatform? pushPlatform,
+    AppUpdatePlatform? appUpdatePlatform,
   }) async {
     final store = await VaultStore.open(factory: databaseFactory, path: databasePath, now: now);
     final device = DeviceIdentity(store.settings);
@@ -101,6 +103,7 @@ class OurSpace {
       store: store,
       autoStart: peerToPeer ?? autoSync,
       partnerCodes: mailbox.isEnabled ? MailboxPartnerCodes(mailbox: mailbox, vault: vault, identity: identity) : null,
+      updatePlatform: appUpdatePlatform,
     );
     final sync = SyncService(
       store: store,
