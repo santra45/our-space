@@ -63,6 +63,7 @@ class BucketListRepository extends TableRepository<BucketListRecord> {
   Future<Row?> add({required String text, required String category}) async {
     final trimmed = jsTrim(text);
     if (trimmed.isEmpty) return null;
+    store.ringNotes.note('dream');
     return write({
       'id': newItemId(),
       'text': trimmed,
@@ -77,6 +78,7 @@ class BucketListRepository extends TableRepository<BucketListRecord> {
 
   Future<Row> toggleComplete(BucketListRecord item) {
     final nowCompleted = !item.completed;
+    if (nowCompleted) store.ringNotes.note('done');
     return write({
       ...item.toFields(),
       'completed': nowCompleted,

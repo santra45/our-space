@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 
 import '../core/engine.dart';
 import 'app_shell.dart';
+import 'route_requests.dart';
 import 'screens/love/love_sheet.dart';
 import 'screens/people/people_setup.dart';
 import 'screens/sky/together/sky_together_scope.dart';
@@ -16,6 +17,14 @@ import 'sky/sky.dart';
 import 'space_scope.dart';
 import 'widgets/app_haptics.dart';
 import 'widgets/confetti_burst.dart';
+
+SkyTab? tabForRoute(String route) {
+  if (route.startsWith('letters/')) return SkyTab.letters;
+  if (route.startsWith('memories/')) return SkyTab.memories;
+  if (route == 'us' || route.startsWith('us/')) return SkyTab.us;
+  if (route == 'daily') return SkyTab.sky;
+  return null;
+}
 
 PartnerPresence partnerPresenceFor(IdentityController identity, {int? now, bool together = false}) {
   final name = identity.partner == null ? null : identity.partnerName;
@@ -105,6 +114,8 @@ class _HomeShellState extends State<HomeShell> {
   PeerLink? _peer;
   WatchRoom? _watch;
   bool _askingInvite = false;
+  RouteRequests? _routes;
+  final GlobalKey<SkyShellState> _shell = GlobalKey<SkyShellState>();
 
   @override
   void initState() {
@@ -122,6 +133,12 @@ class _HomeShellState extends State<HomeShell> {
       _notices?.removeListener(_onNotices);
       _notices = notices..addListener(_onNotices);
       _onNotices();
+    }
+    final routes = context.read<RouteRequests?>();
+    if (!identical(routes, _routes)) {
+      _routes?.removeListener(_onRoute);
+      _routes = routes?..addListener(_onRoute);
+      _onRoute();
     }
     final peer = context.read<PeerLink?>();
     if (!identical(peer, _peer)) {
@@ -151,6 +168,23 @@ class _HomeShellState extends State<HomeShell> {
               ),
             );
     }
+  }
+
+  void _onRoute() {
+    final routes = _routes;
+    final route = routes?.pending;
+    if (routes == null || route == null) return;
+    if (routes.takeWhere((r) => r == 'love') != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) unawaited(showLoveSheet(context));
+      });
+      return;
+    }
+    final tab = tabForRoute(route);
+    if (tab == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _shell.currentState?.selectTab(tab);
+    });
   }
 
   void _onPeer() {
@@ -191,6 +225,7 @@ class _HomeShellState extends State<HomeShell> {
     _clock?.cancel();
     _notices?.removeListener(_onNotices);
     _peer?.removeListener(_onPeer);
+    _routes?.removeListener(_onRoute);
     _watch?.dispose();
     super.dispose();
   }
@@ -208,6 +243,7 @@ class _HomeShellState extends State<HomeShell> {
     return WatchScope(
       room: watch,
       child: SkyShell(
+        key: _shell,
         initialTab: widget.initialTab,
         pageBuilder: widget.pageBuilder ?? skyTabPage,
         toastController: notices.toast,

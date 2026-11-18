@@ -182,6 +182,7 @@ class DailyQuestionService {
     final answers = _foldAnswers(rows.where((row) => row['month'] == month), ids.contains);
     answers[day] = {'questionId': questionId, 'text': body, 'answeredAt': store.now()};
 
+    store.ringNotes.note('answer');
     return store.putEncrypted(
       answerTable,
       {

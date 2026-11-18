@@ -71,6 +71,7 @@ class LoveBurstService {
       current = 0;
     }
 
+    store.ringNotes.note('love');
     return store.putEncrypted(
       loveBurstTable,
       {

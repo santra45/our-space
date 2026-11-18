@@ -76,7 +76,9 @@ class LettersRepository extends TableRepository<LetterRecord> {
     } else {
       record['content'] = trimmedContent;
     }
-    return store.putEncrypted(lettersTable, record, key);
+    final written = await store.putEncrypted(lettersTable, record, key);
+    store.ringNotes.note('letter');
+    return written;
   }
 
   String _until(String lockDate) => '${formatDatePretty(lockDate)} - ${formatTimeRemaining(lockDate, now: store.now())}';
@@ -119,7 +121,7 @@ class LettersRepository extends TableRepository<LetterRecord> {
     try {
       final stored = await store.getDecrypted(lettersTable, id, key);
       if (stored == null || stored['deleted'] == true || stored['isOpened'] == true) return null;
-      return await store.putEncrypted(
+      final opened = await store.putEncrypted(
         lettersTable,
         {
           ...stripInternalFields(stored),
@@ -129,6 +131,8 @@ class LettersRepository extends TableRepository<LetterRecord> {
         },
         key,
       );
+      store.ringNotes.note('opened');
+      return opened;
     } catch (_) {
       return null;
     }

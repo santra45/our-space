@@ -53,6 +53,7 @@ Stream<LicenseEntry> bundledLicenses() async* {
 Future<OurSpace> openOurSpace() async => OurSpace.open(
       pushPlatform: await FirebasePushPlatform.start(),
       appUpdatePlatform: const MethodChannelAppUpdate(),
+      reminderPlatform: MethodChannelReminders(),
     );
 
 Widget vaultGate(BuildContext context, Widget shell) => InviteLinkGate(shell: shell);

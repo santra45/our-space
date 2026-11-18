@@ -10,6 +10,7 @@ import '../crypto/envelope.dart';
 import '../crypto/js_compat.dart';
 import '../crypto/kdf.dart';
 import '../domain/limits.dart';
+import '../sync/ring_notes.dart';
 import 'local_settings.dart';
 import 'merge_rules.dart';
 import 'sync_clock.dart';
@@ -34,6 +35,19 @@ class IncomingRow {
   final String table;
   final Row row;
   final bool unverifiedBinding;
+}
+
+enum IncomingSource { peer, mailbox }
+
+class IncomingChange {
+  const IncomingChange({required this.table, required this.row, required this.previous, required this.source});
+
+  final String table;
+  final Row row;
+  final Row? previous;
+  final IncomingSource source;
+
+  bool get isNew => previous == null || previous!['deleted'] == true || previous!['deleted'] == 1;
 }
 
 class IncomingCommit {
@@ -130,7 +144,7 @@ class StoreError implements Exception {
 const int _bulkWriteChunk = 100;
 
 class VaultStore {
-  VaultStore._(this._db, this.settings, this.clock, this._now);
+  VaultStore._(this._db, this.settings, this.clock, this._now) : ringNotes = RingNotes(settings);
 
   static const String defaultFileName = 'our_space.sqlite';
 
@@ -184,13 +198,24 @@ class VaultStore {
   final Database _db;
   final LocalSettings settings;
   final SyncClock clock;
+  final RingNotes ringNotes;
   final NowFn _now;
 
   final StreamController<Set<String>> _changes = StreamController<Set<String>>.broadcast();
   final StreamController<String> _localWrites = StreamController<String>.broadcast();
   final StreamController<SealedWrite> _localRows = StreamController<SealedWrite>.broadcast();
+  final StreamController<IncomingChange> _incoming = StreamController<IncomingChange>.broadcast();
 
   Stream<Set<String>> get changes => _changes.stream;
+
+  Stream<IncomingChange> get incoming => _incoming.stream;
+
+  void _noteIncoming(Iterable<IncomingChange> changes) {
+    if (_incoming.isClosed) return;
+    for (final change in changes) {
+      _incoming.add(change);
+    }
+  }
 
   Stream<String> get localWrites => _localWrites.stream;
 
@@ -237,6 +262,7 @@ class VaultStore {
 
   Future<void> close() async {
     await _changes.close();
+    await _incoming.close();
     await _localWrites.close();
     await _localRows.close();
     await _db.close();
@@ -375,6 +401,7 @@ class VaultStore {
     var stale = 0;
     var unverifiable = 0;
     final touched = <String>{};
+    final arrived = <IncomingChange>[];
     await _db.transaction((txn) async {
       for (final entry in staged) {
         final found = await txn.query('"${entry.table}"', where: 'id = ?', whereArgs: [entry.row['id']], limit: 1);
@@ -393,10 +420,12 @@ class VaultStore {
         }
         await txn.insert('"${entry.table}"', _toSql(entry.row), conflictAlgorithm: ConflictAlgorithm.replace);
         touched.add(entry.table);
+        arrived.add(IncomingChange(table: entry.table, row: entry.row, previous: existing, source: IncomingSource.peer));
         applied++;
       }
     });
     _emit(touched);
+    _noteIncoming(arrived);
     return IncomingCommit(applied, stale, unverifiable);
   }
 
@@ -752,7 +781,7 @@ class VaultStore {
     return MergePlan._(writes, perTable, totals, skippedTables, key);
   }
 
-  Future<MergeResult> applyBackupMerge(MergePlan plan) async {
+  Future<MergeResult> applyBackupMerge(MergePlan plan, {IncomingSource? source}) async {
     final written = <String, int>{};
     var superseded = 0;
     var refused = 0;
@@ -769,6 +798,7 @@ class VaultStore {
     }
 
     final touched = <String>{};
+    final arrived = <IncomingChange>[];
     await _db.transaction((txn) async {
       for (final name in tableNames) {
         final entries = plan.writes.where((entry) => entry.table == name).toList();
@@ -808,6 +838,9 @@ class VaultStore {
           }
           for (final row in stillWins) {
             await txn.insert('"$name"', _toSql(row), conflictAlgorithm: ConflictAlgorithm.replace);
+            if (source != null) {
+              arrived.add(IncomingChange(table: name, row: row, previous: found[row['id']], source: source));
+            }
           }
           if (stillWins.isNotEmpty) touched.add(name);
           written[name] = (written[name] ?? 0) + stillWins.length;
@@ -815,6 +848,7 @@ class VaultStore {
       }
     });
     _emit(touched);
+    _noteIncoming(arrived);
     return MergeResult(written, superseded, refused);
   }
 }

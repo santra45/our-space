@@ -28,6 +28,7 @@ Future<OurSpace> openHubSpace({
   http.Client? client,
   QuickUnlockPlatform? quickUnlock,
   PushPlatform? push,
+  ReminderPlatform? reminders,
 }) async {
   final dir = Directory.systemTemp.createTempSync('our_space_hub_');
   final space = await OurSpace.open(
@@ -39,6 +40,7 @@ Future<OurSpace> openHubSpace({
     autoSync: false,
     quickUnlockPlatform: quickUnlock,
     pushPlatform: push,
+    reminderPlatform: reminders,
   );
   await space.store.settings.setItem(DeviceIdentity.peerIdKey, space.device.peerId);
   return space;
@@ -52,10 +54,11 @@ Future<OurSpace> openUnlockedSpace(
   http.Client? client,
   QuickUnlockPlatform? quickUnlock,
   PushPlatform? push,
+  ReminderPlatform? reminders,
 }) async {
   final space = await real(
     tester,
-    () => openHubSpace(mailbox: mailbox, client: client, quickUnlock: quickUnlock, push: push),
+    () => openHubSpace(mailbox: mailbox, client: client, quickUnlock: quickUnlock, push: push, reminders: reminders),
   );
   await real(
     tester,

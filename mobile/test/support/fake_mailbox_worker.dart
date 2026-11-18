@@ -25,6 +25,9 @@ class FakeMailboxWorker extends http.BaseClient {
   final Set<String> failGets = {};
   final Map<String, String> pushes = {};
   final List<String> rings = [];
+  final List<String> manifestRings = [];
+
+  static const Set<String> manifestRingKinds = {'letter', 'polaroid', 'love', 'dream', 'done', 'answer', 'opened'};
   bool failRings = false;
 
   static FakeMailboxWorker fromKvDump(Map<String, Object?> dump, {required String token}) {
@@ -117,6 +120,10 @@ class FakeMailboxWorker extends http.BaseClient {
       if (bytes.length > maxObjectBytes) return _reply(413, utf8.encode('Too large'));
       if (failPuts.contains(key)) return _reply(500);
       objects[key] = Uint8List.fromList(bytes);
+      if (tail == 'manifest') {
+        final asked = request.url.queryParameters['ring'] ?? '';
+        manifestRings.add('${match.group(2)}/${manifestRingKinds.contains(asked) ? asked : 'mailbox'}');
+      }
       return _reply(204);
     }
 

@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 
 import '../../../core/engine.dart';
 import '../../app_shell.dart';
+import '../../route_requests.dart';
 import '../../sky/sky.dart';
 import '../../space_scope.dart';
 import 'add_memory_sheet.dart';
@@ -65,10 +66,47 @@ class _MemoriesPageState extends State<MemoriesPage> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    final routes = context.read<RouteRequests?>();
+    if (!identical(routes, _routes)) {
+      _routes?.removeListener(_onRoute);
+      _routes = routes?..addListener(_onRoute);
+      _onRoute();
+    }
     final active = SkyShellScope.activeTabOf(context);
     if (identical(active, _activeTab)) return;
     _activeTab?.removeListener(_onActiveTab);
     _activeTab = active?..addListener(_onActiveTab);
+  }
+
+  RouteRequests? _routes;
+
+  void _onRoute() {
+    final routes = _routes;
+    if (routes == null || !_ready || _locked) return;
+    final pending = routes.pending;
+    if (pending == null || !pending.startsWith('memories/')) return;
+    routes.takePrefixed('memories/');
+    final id = pending.substring('memories/'.length);
+    MemoryRecord? found;
+    for (final item in _items) {
+      if (item.id == id) found = item;
+    }
+    final memory = found;
+    if (memory == null) return;
+    unawaited(_openRequested(memory));
+  }
+
+  Future<void> _openRequested(MemoryRecord memory) async {
+    var photo = _photos.get(memory);
+    if (photo == null) {
+      try {
+        photo = await context.space.memories.loadPhoto(memory.id);
+      } catch (_) {
+        photo = null;
+      }
+    }
+    if (!mounted) return;
+    _open(memory, photo, MemoriesCopy.noImage);
   }
 
   void _onActiveTab() {
@@ -87,6 +125,7 @@ class _MemoriesPageState extends State<MemoriesPage> {
   @override
   void dispose() {
     _subscription?.cancel();
+    _routes?.removeListener(_onRoute);
     _activeTab?.removeListener(_onActiveTab);
     _marks.removeListener(_onMarks);
     _visibleIds.dispose();
@@ -125,6 +164,7 @@ class _MemoriesPageState extends State<MemoriesPage> {
       _noteFresh();
     });
     _visibleIds.value = {for (final item in items) item.id};
+    _onRoute();
   }
 
   void _onError(Object error, StackTrace stack) {

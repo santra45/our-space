@@ -16,6 +16,27 @@ const PUSH_MESSAGE = {
   kind: 'mailbox',
 };
 
+function littleRing(kind, title, body) {
+  return {
+    title,
+    body,
+    tag: `our-space-${kind}`,
+    channel: 'our_space_little_things',
+    ttl: '86400s',
+    kind: 'mailbox',
+  };
+}
+
+const MANIFEST_RINGS = {
+  letter: littleRing('letter', 'I left you a letter', 'It is waiting for you in Our Space.'),
+  polaroid: littleRing('polaroid', 'I added a new polaroid', 'Come and see it.'),
+  love: littleRing('love', 'I sent you a little love', 'Open Our Space to catch it.'),
+  dream: littleRing('dream', 'I added a dream for us', 'Come and see what it is.'),
+  done: littleRing('done', 'I ticked off one of our dreams', 'Come and see which one.'),
+  answer: littleRing('answer', "I answered today's question", 'Your turn, whenever you like.'),
+  opened: littleRing('opened', 'I just read your letter', 'Thank you for it.'),
+};
+
 const RINGS = {
   watch: {
     title: 'Come watch with me',
@@ -304,7 +325,9 @@ export default {
       await env.MAILBOX.put(key, body);
 
       if (tail === 'manifest') {
-        const ringing = ringOthers(env, mailboxId, owner);
+        const asked = url.searchParams.get('ring') || '';
+        const ring = Object.prototype.hasOwnProperty.call(MANIFEST_RINGS, asked) ? MANIFEST_RINGS[asked] : PUSH_MESSAGE;
+        const ringing = ringOthers(env, mailboxId, owner, ring);
         if (ctx && typeof ctx.waitUntil === 'function') ctx.waitUntil(ringing);
         else await ringing;
       }

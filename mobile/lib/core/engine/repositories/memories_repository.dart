@@ -91,6 +91,7 @@ class MemoriesRepository extends TableRepository<MemoryRecord> {
     }
     onSealed?.call();
     final trimmed = jsTrim(caption);
+    store.ringNotes.note('polaroid');
     return store.putEncrypted(
       memoriesTable,
       {

@@ -313,20 +313,25 @@ class Mailbox {
       return PublishResult(ok: failed == 0, reason: partial, uploaded: uploaded, skipped: skipped, unchanged: true);
     }
 
+    final ring = store.ringNotes.next;
+    final rings = store.ringNotes.take();
     try {
       final sealed = encryptJson(confirmed, key);
-      final response = await _request(cfg, 'PUT', '$base/manifest', jsonStringify(sealed.toJson()));
+      final path = ring == null ? '$base/manifest' : '$base/manifest?ring=$ring';
+      final response = await _request(cfg, 'PUT', path, jsonStringify(sealed.toJson()));
       if (!_ok(response)) {
+        store.ringNotes.restore(rings);
         return PublishResult(ok: false, reason: 'manifest-failed', uploaded: uploaded, skipped: skipped);
       }
     } catch (_) {
+      store.ringNotes.restore(rings);
       return PublishResult(ok: false, reason: 'offline', uploaded: uploaded, skipped: skipped);
     }
 
     return PublishResult(ok: failed == 0, reason: partial, uploaded: uploaded, skipped: skipped);
   }
 
-  Future<CollectResult> collect({required VaultKey? key, required String? partnerId}) async {
+  Future<CollectResult> collect({required VaultKey? key, required String? partnerId, bool fromPartner = false}) async {
     final cfg = config;
     if (cfg == null) return const CollectResult(ok: false, reason: 'disabled');
     if (key == null) return const CollectResult(ok: false, reason: 'locked');
@@ -377,7 +382,7 @@ class Mailbox {
     if (fetched == 0) return CollectResult(ok: failed == 0, reason: partial);
 
     final plan = await store.planBackupMerge(tables, key);
-    final result = await store.applyBackupMerge(plan);
+    final result = await store.applyBackupMerge(plan, source: fromPartner ? IncomingSource.mailbox : null);
 
     return CollectResult(
       ok: failed == 0,
@@ -397,7 +402,7 @@ class Mailbox {
     final collected = <CollectResult>[];
     for (final slot in slots) {
       if (slot == null || slot.isEmpty) continue;
-      collected.add(await collect(key: key, partnerId: slot));
+      collected.add(await collect(key: key, partnerId: slot, fromPartner: slot != ownerId));
     }
 
     final published = (ownerId != null && ownerId.isNotEmpty)

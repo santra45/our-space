@@ -5,6 +5,9 @@ import 'package:flutter/rendering.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
+import '../../route_requests.dart';
+import '../away/away_sheet.dart' show AwayBell;
+
 import '../../../core/engine.dart';
 import '../../app_shell.dart';
 import '../../sky/sky.dart';
@@ -88,9 +91,26 @@ class _OurSkyPageState extends State<OurSkyPage> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
   }
 
+  RouteRequests? _routes;
+
+  void _onRoute() {
+    final routes = _routes;
+    if (routes == null || routes.pending != 'daily') return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || routes.takeWhere((route) => route == 'daily') == null) return;
+      unawaited(_openSheet());
+    });
+  }
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    final routes = context.read<RouteRequests?>();
+    if (!identical(routes, _routes)) {
+      _routes?.removeListener(_onRoute);
+      _routes = routes?..addListener(_onRoute);
+      _onRoute();
+    }
     final link = SkyTogetherScope.maybeOf(context);
     if (identical(link, _together?.link)) return;
     _together?.dispose();
@@ -147,6 +167,7 @@ class _OurSkyPageState extends State<OurSkyPage> with WidgetsBindingObserver {
 
   @override
   void dispose() {
+    _routes?.removeListener(_onRoute);
     WidgetsBinding.instance.removeObserver(this);
     _together?.dispose();
     _daily.dispose();
@@ -591,7 +612,7 @@ class _OurSkyPageState extends State<OurSkyPage> with WidgetsBindingObserver {
               note: night ? SkyHomeCopy.moonLine(moonPhase) : null,
               title: SkyHomeCopy.title(night),
               titleKey: _title,
-              trailing: const ShellAvatar(),
+              trailing: const Row(mainAxisSize: MainAxisSize.min, children: [AwayBell(), ShellAvatar()]),
             ),
           ),
         ),

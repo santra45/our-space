@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../route_requests.dart';
+
 import '../../../core/engine.dart';
 import '../../sky/sky.dart';
 import '../../space_scope.dart';
@@ -66,6 +68,8 @@ class _LettersPageState extends State<LettersPage> {
   LetterSegment _segment = LetterSegment.waiting;
   bool _segmentBack = false;
 
+  RouteRequests? _routes;
+
   @override
   void initState() {
     super.initState();
@@ -73,7 +77,37 @@ class _LettersPageState extends State<LettersPage> {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final routes = context.read<RouteRequests?>();
+    if (identical(routes, _routes)) return;
+    _routes?.removeListener(_onRoute);
+    _routes = routes?..addListener(_onRoute);
+    _onRoute();
+  }
+
+  void _onRoute() {
+    final routes = _routes;
+    final snapshot = _snapshot;
+    if (routes == null || snapshot == null || !snapshot.unlocked) return;
+    final pending = routes.pending;
+    if (pending == null || !pending.startsWith('letters/')) return;
+    routes.takePrefixed('letters/');
+    final id = pending.substring('letters/'.length);
+    LetterRecord? found;
+    for (final letter in snapshot.items) {
+      if (letter.id == id) found = letter;
+    }
+    final letter = found;
+    if (letter == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) unawaited(_open(letter));
+    });
+  }
+
+  @override
   void dispose() {
+    _routes?.removeListener(_onRoute);
     _subscription?.cancel();
     _noticeTimer?.cancel();
     _lockTimer?.cancel();
@@ -106,6 +140,7 @@ class _LettersPageState extends State<LettersPage> {
     if (snapshot.unlocked && snapshot.items.isNotEmpty) {
       unawaited(_letters.upgradePendingLocks(snapshot.items).catchError((Object error) => 0));
     }
+    _onRoute();
   }
 
   bool _isLocked(LetterRecord letter) => letter.isLockedAt(_now);

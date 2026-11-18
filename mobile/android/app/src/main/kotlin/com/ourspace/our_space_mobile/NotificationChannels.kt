@@ -28,6 +28,13 @@ object NotificationChannels {
         filmInvites.enableVibration(true)
         filmInvites.vibrationPattern = HEARTBEAT
 
-        manager.createNotificationChannels(listOf(littleThings, filmInvites))
+        val reminders = NotificationChannel(
+            context.getString(R.string.notification_channel_reminders),
+            context.getString(R.string.notification_reminders_name),
+            NotificationManager.IMPORTANCE_DEFAULT,
+        )
+        reminders.description = context.getString(R.string.notification_reminders_description)
+
+        manager.createNotificationChannels(listOf(littleThings, filmInvites, reminders))
     }
 }

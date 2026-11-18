@@ -30,6 +30,10 @@ export 'engine/invite/invite.dart' show Invite, parseInvite, buildInviteUrl, def
 export 'engine/our_space.dart';
 export 'engine/p2p/app_update_link.dart' show AppUpdateLink, AppUpdatePlatform, AppUpdateStage, InstalledApp, MethodChannelAppUpdate;
 export 'engine/p2p/peer_hub.dart' show PeerSyncHub, PeerNotice;
+export 'engine/reminders/reminder_platform.dart';
+export 'engine/reminders/reminders.dart' show ReminderService, ReminderKind, ReminderRoutes, ReminderCopy, planReminders, ReminderInputs;
+export 'engine/sync/away_feed.dart' show AwayFeed, AwayEntry, AwayKind;
+export 'engine/sync/ring_notes.dart' show RingNotes;
 export 'engine/p2p/peer_status.dart';
 export 'engine/p2p/sky_together_link.dart';
 export 'engine/p2p/sky_together_wire.dart';

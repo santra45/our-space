@@ -16,6 +16,7 @@ import '../sync/quick_unlock_sheet.dart';
 import '../sync/together_now.dart';
 import 'settings_dates.dart';
 import 'widgets/couple_header.dart';
+import 'widgets/gentle_reminders.dart';
 import 'widgets/names_sheet.dart';
 import 'widgets/reminders_row.dart';
 import 'widgets/settings_row.dart';
@@ -59,6 +60,7 @@ class SettingsPage extends StatefulWidget {
   static const Key saveCopyKey = ValueKey<String>('settings-save-copy');
   static const Key bringInKey = ValueKey<String>('settings-bring-in');
   static const Key updateKey = ValueKey<String>('settings-update');
+  static const Key gentleKey = ValueKey<String>('settings-gentle');
 
   static const SkyScene scene = SkyScene(
     stars: 50,
@@ -273,6 +275,7 @@ class _SettingsPageState extends State<SettingsPage> {
           onTap: _toggleTouch,
           trailing: SkyToggle(value: quick.enrolled, semanticLabel: TouchCopy.title, onChanged: (_) => _toggleTouch()),
         ),
+      if (space.reminders.available) GentleRemindersRow(key: SettingsPage.gentleKey, reminders: space.reminders),
       if (space.push.available)
         RemindersRow(
           key: SettingsPage.remindersKey,

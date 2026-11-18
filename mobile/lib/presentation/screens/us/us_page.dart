@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../route_requests.dart';
+
 import '../../../core/engine.dart';
 import '../../app_shell.dart';
 import '../../sky/sky.dart';
@@ -68,8 +70,28 @@ class _UsPageState extends State<UsPage> {
     }
   }
 
+  RouteRequests? _routes;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final routes = context.read<RouteRequests?>();
+    if (identical(routes, _routes)) return;
+    _routes?.removeListener(_onRoute);
+    _routes = routes?..addListener(_onRoute);
+    _onRoute();
+  }
+
+  void _onRoute() {
+    final route = _routes?.takeWhere((route) => route == 'us' || route.startsWith('us/'));
+    if (route == null) return;
+    _pending = route == 'us/dreams' ? UsSection.dreams : UsSection.story;
+    _queueReveal();
+  }
+
   @override
   void dispose() {
+    _routes?.removeListener(_onRoute);
     _counter.dispose();
     _scroll.dispose();
     super.dispose();

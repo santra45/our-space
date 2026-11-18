@@ -17,6 +17,8 @@ import 'p2p/peer_records.dart';
 import 'p2p/peer_sync_engine.dart';
 import 'p2p/peerjs.dart';
 import 'p2p/signal_socket.dart';
+import 'reminders/reminder_platform.dart';
+import 'reminders/reminders.dart';
 import 'repositories/bucket_list_repository.dart';
 import 'repositories/date_ideas_repository.dart';
 import 'repositories/films_repository.dart';
@@ -25,6 +27,7 @@ import 'repositories/memories_repository.dart';
 import 'repositories/milestones_repository.dart';
 import 'repositories/roulette_repository.dart';
 import 'storage/vault_store.dart';
+import 'sync/away_feed.dart';
 import 'sync/backup_service.dart';
 import 'sync/mailbox.dart';
 import 'sync/mailbox_partner_codes.dart';
@@ -57,6 +60,8 @@ class OurSpace {
     required this.quickUnlock,
     required this.push,
     required this.skyDrawings,
+    required this.awayFeed,
+    required this.reminders,
   });
 
   static Future<OurSpace> open({
@@ -72,6 +77,7 @@ class OurSpace {
     QuickUnlockPlatform? quickUnlockPlatform,
     PushPlatform? pushPlatform,
     AppUpdatePlatform? appUpdatePlatform,
+    ReminderPlatform? reminderPlatform,
   }) async {
     final store = await VaultStore.open(factory: databaseFactory, path: databasePath, now: now);
     final device = DeviceIdentity(store.settings);
@@ -114,6 +120,9 @@ class OurSpace {
       autoSync: autoSync,
       peer: peer,
     );
+    final letters = LettersRepository(store: store, vault: vault);
+    final memories = MemoriesRepository(store: store, vault: vault);
+    final milestones = MilestonesRepository(store: store, vault: vault);
     final space = OurSpace._(
       store: store,
       device: device,
@@ -121,9 +130,9 @@ class OurSpace {
       peopleService: peopleService,
       repair: repair,
       identity: identity,
-      memories: MemoriesRepository(store: store, vault: vault),
-      milestones: MilestonesRepository(store: store, vault: vault),
-      letters: LettersRepository(store: store, vault: vault),
+      memories: memories,
+      milestones: milestones,
+      letters: letters,
       bucketList: BucketListRepository(store: store, vault: vault),
       roulette: RouletteRepository(store: store, vault: vault),
       dateIdeas: DateIdeasRepository(store: store, vault: vault),
@@ -144,6 +153,22 @@ class OurSpace {
         platform: pushPlatform,
       ),
       skyDrawings: SkyDrawingService(store: store),
+      awayFeed: AwayFeed(
+        store: store,
+        key: () => vault.key,
+        myOwnerIds: () => identity.myOwnerIds,
+        myBurstId: () => loveBursts.ownBurstRecordId,
+      ),
+      reminders: ReminderService(
+        store: store,
+        vault: vault,
+        identity: identity,
+        letters: letters,
+        memories: memories,
+        milestones: milestones,
+        dailyQuestion: dailyQuestion,
+        platform: reminderPlatform,
+      ),
     );
     await vault.check();
     return space;
@@ -171,12 +196,16 @@ class OurSpace {
   final QuickUnlockService quickUnlock;
   final PushService push;
   final SkyDrawingService skyDrawings;
+  final AwayFeed awayFeed;
+  final ReminderService reminders;
 
   PeerSyncHub get peer => sync.peer!;
 
   Stream<void> watchTable(String table) => store.watchTable(table);
 
   Future<void> close() async {
+    reminders.dispose();
+    awayFeed.dispose();
     push.dispose();
     quickUnlock.dispose();
     sync.dispose();
