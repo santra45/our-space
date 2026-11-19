@@ -267,8 +267,13 @@ async function ringOthers(env, mailboxId, writer, ring = PUSH_MESSAGE) {
 
 async function handleRing(request, env, cors, mailboxId, owner, name) {
   if (request.method !== 'PUT') return reply(405, null, cors);
-  if (!Object.prototype.hasOwnProperty.call(RINGS, name)) return reply(404, null, cors);
-  const rang = await ringOthers(env, mailboxId, owner, RINGS[name]);
+  const ring = Object.prototype.hasOwnProperty.call(RINGS, name)
+    ? RINGS[name]
+    : Object.prototype.hasOwnProperty.call(MANIFEST_RINGS, name)
+      ? MANIFEST_RINGS[name]
+      : null;
+  if (!ring) return reply(404, null, cors);
+  const rang = await ringOthers(env, mailboxId, owner, ring);
   if (rang === null) return reply(502, null, cors);
   return reply(200, JSON.stringify({ rang }), { ...cors, 'Content-Type': 'application/json' });
 }
