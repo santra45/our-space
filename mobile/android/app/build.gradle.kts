@@ -63,6 +63,8 @@ android {
 }
 
 dependencies {
+    implementation(platform("com.google.firebase:firebase-bom:35.0.0"))
+    implementation("com.google.firebase:firebase-messaging")
     implementation("androidx.biometric:biometric:1.1.0")
     implementation("androidx.media3:media3-exoplayer:1.9.3")
     implementation("androidx.media3:media3-exoplayer-hls:1.9.3")

@@ -16,6 +16,8 @@ import 'manifest_diff.dart';
 
 const List<String> mailboxWireFields = ['id', 'updatedAt', 'deleted', 'v', 'ciphertext', 'iv'];
 
+const String pushStyle = 'rich';
+
 final List<String> mailboxTextTables = syncedTables
     .where((name) => name != memoriesTable && !appOnlyTables.contains(name))
     .toList();
@@ -427,7 +429,7 @@ class Mailbox {
     if (cfg == null || key == null || ownerId == null || ownerId.isEmpty) return false;
     try {
       final path = '/m/${deriveMailboxId(key)}/$ownerId/push/$device';
-      return _ok(await _request(cfg, 'PUT', path, jsonEncode({'token': address})));
+      return _ok(await _request(cfg, 'PUT', path, jsonEncode({'token': address, 'style': pushStyle})));
     } catch (_) {
       return false;
     }

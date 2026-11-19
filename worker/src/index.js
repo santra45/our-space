@@ -7,7 +7,10 @@ const PATH =
 
 const PUSH_TOKEN = /^[A-Za-z0-9_:.-]+$/;
 
+const PUSH_STYLES = new Set(['rich']);
+
 const PUSH_MESSAGE = {
+  name: 'new',
   title: 'I was just in here',
   body: 'Come see what changed.',
   tag: 'our-space-new',
@@ -18,6 +21,7 @@ const PUSH_MESSAGE = {
 
 function littleRing(kind, title, body) {
   return {
+    name: kind,
     title,
     body,
     tag: `our-space-${kind}`,
@@ -39,6 +43,7 @@ const MANIFEST_RINGS = {
 
 const RINGS = {
   watch: {
+    name: 'watch',
     title: 'Come watch with me',
     body: "I'm already here, waiting for you.",
     tag: 'our-space-watch',
@@ -186,7 +191,24 @@ async function accessToken(account) {
   return cachedAccess.token;
 }
 
-function pushMessage(address, ring) {
+function pushMessage(address, ring, style) {
+  if (style === 'rich') {
+    return {
+      message: {
+        fid: address,
+        android: { priority: 'HIGH', ttl: ring.ttl, collapse_key: ring.tag },
+        data: {
+          style: 'rich',
+          kind: ring.kind,
+          ring: ring.name,
+          title: ring.title,
+          body: ring.body,
+          tag: ring.tag,
+          channel: ring.channel,
+        },
+      },
+    };
+  }
   return {
     message: {
       fid: address,
@@ -218,8 +240,11 @@ async function ringOthers(env, mailboxId, writer, ring = PUSH_MESSAGE) {
     await Promise.all(
       targets.map(async (key) => {
         let token;
+        let style;
         try {
-          token = JSON.parse((await readText(env.MAILBOX, key)) || '{}').token;
+          const stored = JSON.parse((await readText(env.MAILBOX, key)) || '{}');
+          token = stored.token;
+          style = stored.style;
         } catch {
           token = undefined;
         }
@@ -227,7 +252,7 @@ async function ringOthers(env, mailboxId, writer, ring = PUSH_MESSAGE) {
         const response = await fetch(endpoint, {
           method: 'POST',
           headers: { Authorization: `Bearer ${access}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify(pushMessage(token, ring)),
+          body: JSON.stringify(pushMessage(token, ring, style)),
         });
         if (response.ok) rang += 1;
         else if (response.status === 404) await env.MAILBOX.delete(key);
@@ -257,8 +282,11 @@ async function handlePush(request, env, cors, key) {
   if (request.method !== 'PUT') return reply(405, null, cors);
 
   let token;
+  let style;
   try {
-    token = (await request.json()).token;
+    const sent = await request.json();
+    token = sent.token;
+    style = PUSH_STYLES.has(sent.style) ? sent.style : undefined;
   } catch {
     token = undefined;
   }
@@ -266,7 +294,7 @@ async function handlePush(request, env, cors, key) {
     return reply(400, null, cors);
   }
 
-  await env.MAILBOX.put(key, JSON.stringify({ token, at: Date.now() }));
+  await env.MAILBOX.put(key, JSON.stringify(style ? { token, style, at: Date.now() } : { token, at: Date.now() }));
   return reply(204, null, cors);
 }
 

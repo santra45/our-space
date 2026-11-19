@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:our_space_mobile/presentation/app_shell.dart';
 import 'package:our_space_mobile/presentation/home_shell.dart';
 import 'package:our_space_mobile/presentation/route_requests.dart';
+import 'package:our_space_mobile/presentation/screens/away/away_sheet.dart';
 import 'package:our_space_mobile/presentation/screens/letters/letter_read_page.dart';
 import 'package:provider/provider.dart';
 
@@ -46,6 +47,10 @@ void main() {
     routes.open('us/dreams');
     await until(tester, () => tester.state<SkyShellState>(find.byType(SkyShell)).tab == SkyTab.us);
     await until(tester, () => routes.pending == null);
+
+    routes.open('away');
+    await untilFound(tester, find.byType(AwaySheet));
+    expect(routes.pending, isNull);
     await tester.pumpWidget(const SizedBox());
     await tester.pump(const Duration(seconds: 10));
   });

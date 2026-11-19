@@ -9,4 +9,10 @@
     <string name="notification_film_invites_description">When one of you is waiting to watch something together</string>
     <string name="notification_reminders_name">Gentle reminders</string>
     <string name="notification_reminders_description">Reminders this phone sets for itself, like a letter opening or the daily question</string>
+    <string name="notification_public_title">Something new in Our Space</string>
+    <string name="notification_summary_title">Our Space</string>
+    <plurals name="notification_summary">
+        <item quantity="one">%d new little thing</item>
+        <item quantity="other">%d new little things</item>
+    </plurals>
 </resources>

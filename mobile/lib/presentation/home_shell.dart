@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import '../core/engine.dart';
 import 'app_shell.dart';
 import 'route_requests.dart';
+import 'screens/away/away_sheet.dart' show showAwaySheet;
 import 'screens/love/love_sheet.dart';
 import 'screens/people/people_setup.dart';
 import 'screens/sky/together/sky_together_scope.dart';
@@ -177,6 +178,12 @@ class _HomeShellState extends State<HomeShell> {
     if (routes.takeWhere((r) => r == 'love') != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) unawaited(showLoveSheet(context));
+      });
+      return;
+    }
+    if (routes.takeWhere((r) => r == 'away') != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) unawaited(showAwaySheet(context));
       });
       return;
     }

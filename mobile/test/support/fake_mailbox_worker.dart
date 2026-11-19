@@ -24,6 +24,7 @@ class FakeMailboxWorker extends http.BaseClient {
   final Set<String> failPuts = {};
   final Set<String> failGets = {};
   final Map<String, String> pushes = {};
+  final Map<String, String?> pushStyles = {};
   final List<String> rings = [];
   final List<String> manifestRings = [];
 
@@ -95,6 +96,8 @@ class FakeMailboxWorker extends http.BaseClient {
       final token = decoded is Map ? decoded['token'] : null;
       if (token is! String || token.isEmpty) return _reply(400);
       pushes[pushKey] = token;
+      final style = decoded is Map ? decoded['style'] : null;
+      pushStyles[pushKey] = style == 'rich' ? 'rich' : null;
       return _reply(204);
     }
     if (tail.startsWith('ring/')) {

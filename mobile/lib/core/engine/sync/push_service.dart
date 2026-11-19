@@ -38,7 +38,7 @@ class PushService {
     identity.addListener(_onChange);
     _refreshes = platform.addressChanges.listen((address) {
       final registered = settings.getItem(pushRegisteredKey);
-      if (registered == null || !registered.endsWith('|$address')) unawaited(check());
+      if (registered == null || !registered.endsWith('|$address|$pushStyle')) unawaited(check());
     });
     _rings = platform.rings.listen((_) => unawaited(sync.syncNow('push')));
   }
@@ -111,7 +111,7 @@ class PushService {
 
     final registered = settings.getItem(pushRegisteredKey);
     final previous = registered?.split('|');
-    final previousOwner = previous != null && previous.length == 3 && previous[0] == salt ? previous[1] : null;
+    final previousOwner = previous != null && previous.length >= 3 && previous[0] == salt ? previous[1] : null;
 
     if (!allowed) {
       if (registered == null) return;
@@ -124,7 +124,7 @@ class PushService {
 
     final address = await platform.address();
     if (address == null || address.isEmpty) return;
-    final fingerprint = '$salt|$owner|$address';
+    final fingerprint = '$salt|$owner|$address|$pushStyle';
     if (registered == fingerprint) return;
 
     if (previousOwner != null && previousOwner != owner) {

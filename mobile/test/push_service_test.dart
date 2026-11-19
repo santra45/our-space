@@ -125,7 +125,8 @@ void main() {
     expect(key.startsWith('push/$mailboxId/${space.identity.myOwnerId}/'), isTrue);
     expect(worker.pushes[key], 'fid-0001');
     expect(push.asks, 1);
-    expect(space.store.settings.getItem(pushRegisteredKey), endsWith('|fid-0001'));
+    expect(space.store.settings.getItem(pushRegisteredKey), endsWith('|fid-0001|rich'));
+    expect(worker.pushStyles[key], 'rich');
 
     final calls = push.addressCalls;
     await Future<void>.delayed(const Duration(milliseconds: 300));
@@ -139,6 +140,20 @@ void main() {
     await space.identity.refresh();
     await space.push.check();
     expect(pushPuts(worker), 1);
+  });
+
+  test('a phone registered before the new notification look leaves its address once more, then stays quiet', () async {
+    await setUpCouple(space);
+    await eventually(() => worker.pushes.isNotEmpty);
+    final key = worker.pushes.keys.single;
+    final current = space.store.settings.getItem(pushRegisteredKey)!;
+    await space.store.settings.setItem(pushRegisteredKey, current.substring(0, current.lastIndexOf('|')));
+    worker.pushStyles[key] = null;
+    await space.push.check();
+    await eventually(() => worker.pushStyles[key] == 'rich', reason: 'registered again with the new look');
+    expect(pushPuts(worker), 2);
+    await space.push.check();
+    expect(pushPuts(worker), 2);
   });
 
   test('a new address from Google replaces the old one', () async {

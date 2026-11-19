@@ -13,7 +13,6 @@ import android.os.Build
 import android.provider.Settings
 import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
-import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import io.flutter.plugin.common.BinaryMessenger
 import io.flutter.plugin.common.MethodCall
@@ -91,7 +90,7 @@ object ReminderStore {
 object ReminderAlarms {
     const val ACTION_FIRE = "com.ourspace.our_space_mobile.REMINDER"
     const val EXTRA_ID = "reminder_id"
-    const val EXTRA_ROUTE = "our_space_route"
+    const val EXTRA_ROUTE = OurNotifications.EXTRA_ROUTE
     const val MAX_PLANNED = 64
 
     private fun alarmIntent(context: Context, id: String, create: Boolean): PendingIntent? {
@@ -133,40 +132,19 @@ object ReminderAlarms {
         ReminderStore.save(context, kept)
     }
 
-    fun canNotify(context: Context): Boolean {
-        if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) return false
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            val granted = ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS)
-            if (granted != PackageManager.PERMISSION_GRANTED) return false
-        }
-        return true
-    }
+    fun canNotify(context: Context): Boolean = OurNotifications.canNotify(context)
 
     fun show(context: Context, reminder: Reminder) {
-        if (!canNotify(context)) return
-        val open = Intent(context, MainActivity::class.java)
-            .setAction(Intent.ACTION_VIEW)
-            .setData(Uri.parse("ourspace://open/${Uri.encode(reminder.id)}"))
-            .putExtra(EXTRA_ROUTE, reminder.route)
-            .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
-        val tap = PendingIntent.getActivity(
+        OurNotifications.show(
             context,
-            0,
-            open,
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+            tag = "reminder:${reminder.id}",
+            channel = context.getString(R.string.notification_channel_reminders),
+            title = reminder.title,
+            body = reminder.body,
+            route = reminder.route,
+            category = NotificationCompat.CATEGORY_REMINDER,
+            at = reminder.at,
         )
-        val notification = NotificationCompat.Builder(context, context.getString(R.string.notification_channel_reminders))
-            .setSmallIcon(R.drawable.ic_stat_our_space)
-            .setColor(ContextCompat.getColor(context, R.color.notification_accent))
-            .setContentTitle(reminder.title)
-            .setContentText(reminder.body)
-            .setAutoCancel(true)
-            .setContentIntent(tap)
-            .build()
-        try {
-            NotificationManagerCompat.from(context).notify("reminder:${reminder.id}", 0, notification)
-        } catch (e: SecurityException) {
-        }
     }
 }
 
