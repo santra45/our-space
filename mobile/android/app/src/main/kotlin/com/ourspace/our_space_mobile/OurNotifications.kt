@@ -8,8 +8,6 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.graphics.Bitmap
-import android.graphics.Canvas
 import android.net.Uri
 import android.os.Build
 import androidx.core.app.NotificationCompat
@@ -20,11 +18,7 @@ object OurNotifications {
     const val GROUP = "com.ourspace.our_space_mobile.TOGETHER"
     const val EXTRA_ROUTE = "our_space_route"
     private const val SUMMARY_TAG = "our-space-summary"
-    private const val LOGO_SIZE = 192
     private const val MAX_LINES = 5
-
-    @Volatile
-    private var logo: Bitmap? = null
 
     fun canNotify(context: Context): Boolean {
         if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) return false
@@ -39,21 +33,6 @@ object OurNotifications {
         val state = ActivityManager.RunningAppProcessInfo()
         ActivityManager.getMyMemoryState(state)
         return state.importance == ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND
-    }
-
-    fun appLogo(context: Context): Bitmap? {
-        logo?.let { return it }
-        return try {
-            val drawable = context.packageManager.getApplicationIcon(context.packageName)
-            val bitmap = Bitmap.createBitmap(LOGO_SIZE, LOGO_SIZE, Bitmap.Config.ARGB_8888)
-            val canvas = Canvas(bitmap)
-            drawable.setBounds(0, 0, LOGO_SIZE, LOGO_SIZE)
-            drawable.draw(canvas)
-            logo = bitmap
-            bitmap
-        } catch (e: Exception) {
-            null
-        }
     }
 
     private fun openIntent(context: Context, key: String, route: String): PendingIntent {
@@ -96,7 +75,6 @@ object OurNotifications {
             .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
             .setPublicVersion(publicVersion(context, channel))
             .setContentIntent(openIntent(context, tag, route))
-        appLogo(context)?.let { builder.setLargeIcon(it) }
         try {
             NotificationManagerCompat.from(context).notify(tag, 0, builder.build())
             summarize(context, channel)
@@ -138,7 +116,6 @@ object OurNotifications {
             .setAutoCancel(true)
             .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
             .setContentIntent(openIntent(context, SUMMARY_TAG, "away"))
-        appLogo(context)?.let { summary.setLargeIcon(it) }
         try {
             NotificationManagerCompat.from(context).notify(SUMMARY_TAG, 0, summary.build())
         } catch (e: SecurityException) {
